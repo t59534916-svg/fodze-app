@@ -240,6 +240,9 @@ export default function FodzeApp({ user }: { user: any }) {
   const [showBets, setShowBets] = useState(false);
   const [placingBet, setPlacingBet] = useState<string|null>(null);
 
+  // Liga availability (which leagues have matchdays in DB)
+  const [leagueStatus, setLeagueStatus] = useState<Record<string, { label: string; date: string } | null>>({});
+
   const ld = LEAGUES[lg];
   const frac = ({ K: 0.25, M: 0.33, A: 0.5 } as any)[profile.risk_profile] || 0.33;
   const totalBankroll = parseFloat(profile.bankroll) || 0;
@@ -264,6 +267,15 @@ export default function FodzeApp({ user }: { user: any }) {
     loadProfile(supabase, user.id).then(p => { if (p) setProfile(p); });
     loadUserBets(supabase, user.id).then(b => setUserBets(b));
     fetch("/api/matchday").then(r => r.json()).then(d => setHasApi(d.hasKey === true)).catch(() => setHasApi(false));
+    // Check which leagues have data
+    (async () => {
+      const status: Record<string, { label: string; date: string } | null> = {};
+      for (const key of Object.keys(LEAGUES)) {
+        const md = await loadLatestMatchday(supabase, key);
+        status[key] = md ? { label: md.matchday_label || md.data?.matchday || "—", date: md.match_date || md.data?.date || "" } : null;
+      }
+      setLeagueStatus(status);
+    })();
   }, [user.id]);
 
   const loadCached = useCallback(async () => {
@@ -486,12 +498,36 @@ export default function FodzeApp({ user }: { user: any }) {
           </div>
         </div>
 
-        {/* Liga */}
-        <div style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", padding: 16 }}>
-          <select value={lg} onChange={e => setLg(e.target.value)} style={{ background: "transparent", border: "none", color: "#ede4d4", fontSize: 15, fontWeight: 500, flex: 1, padding: 0 }}>
-            {Object.entries(LEAGUES).map(([k, v]) => <option key={k} value={k} style={{ background: "#1a0f0a" }}>{v.name}</option>)}
-          </select>
-          <span style={{ color: "#c4a26550", fontSize: 11 }}>▾</span>
+        {/* Liga Grid */}
+        <div style={{ ...S.card, padding: 12 }}>
+          <div style={{ fontSize: 9, color: "#c4a26550", letterSpacing: 1, marginBottom: 8 }}>LIGA WÄHLEN</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {Object.entries(LEAGUES).map(([key, val]) => {
+              const info = leagueStatus[key];
+              const hasData = !!info;
+              const isSelected = lg === key;
+              const flag: Record<string, string> = { bundesliga: "🇩🇪", bundesliga2: "🇩🇪", liga3: "🇩🇪", epl: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", la_liga: "🇪🇸", serie_a: "🇮🇹", ligue_1: "🇫🇷", championship: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", eredivisie: "🇳🇱", cl: "🏆", el: "🏆", pokal: "🏆" };
+              return (
+                <div key={key} onClick={() => setLg(key)}
+                  style={{ padding: "10px 10px", borderRadius: 8, cursor: "pointer", transition: "all 0.2s",
+                    border: isSelected ? "1.5px solid #d4b86a" : "1px solid #c4a26515",
+                    background: isSelected ? "#c4a26512" : "#0d070530" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>{flag[key] || "⚽"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: hasData ? "#d4b86a" : "#c4a26535" }}>{val.name}</div>
+                      {hasData ? (
+                        <div style={{ fontSize: 9, color: "#c4a26550" }}>{info.label} · {info.date}</div>
+                      ) : (
+                        <div style={{ fontSize: 9, color: "#c4a26525" }}>Keine Daten</div>
+                      )}
+                    </div>
+                    {hasData && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#6aad55" }} />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Mode Toggle */}
