@@ -2,44 +2,27 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase";
 
-// Shiny gold gradient for buttons
-const goldBtn = {
+const goldBtnAnimated = {
   background: "linear-gradient(110deg, #a68940 0%, #d4b86a 25%, #f5e6b8 50%, #d4b86a 75%, #a68940 100%)",
   backgroundSize: "200% 100%",
   border: "none", borderRadius: 8, padding: 14, width: "100%",
   color: "#1a0f0a", fontSize: 14, fontWeight: 700 as const, cursor: "pointer",
   letterSpacing: "1px",
-};
-
-const goldBtnAnimated = {
-  ...goldBtn,
   animation: "goldShimmer 3s ease-in-out infinite",
 };
 
 export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const isSignup = false; // Invite-only: Registrierung deaktiviert
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const supabase = createClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true); setError(null); setSuccess(null);
-    if (isSignup) {
-      const { error } = await supabase.auth.signUp({
-        email, password,
-        options: { data: { display_name: displayName || email.split("@")[0] } },
-      });
-      if (error) setError(error.message);
-      else setSuccess("Account erstellt! Du kannst dich jetzt einloggen.");
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setError(error.message);
-    }
+    setLoading(true); setError(null);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError(error.message);
     setLoading(false);
   };
 
@@ -55,7 +38,6 @@ export default function Auth() {
       <div style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28, borderTop: "2px solid #c4a26540", borderRight: "2px solid #c4a26540", borderRadius: "0 4px 0 0" }} />
       <div style={{ position: "absolute", bottom: 12, left: 12, width: 28, height: 28, borderBottom: "2px solid #c4a26540", borderLeft: "2px solid #c4a26540", borderRadius: "0 0 0 4px" }} />
       <div style={{ position: "absolute", bottom: 12, right: 12, width: 28, height: 28, borderBottom: "2px solid #c4a26540", borderRight: "2px solid #c4a26540", borderRadius: "0 0 4px 0" }} />
-      {/* Subtle inner border */}
       <div style={{ position: "absolute", inset: 8, border: "1px solid #c4a26518", borderRadius: 12, pointerEvents: "none" as const }} />
 
       <div style={{ width: "100%", maxWidth: 340, position: "relative" }}>
@@ -87,27 +69,18 @@ export default function Auth() {
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {isSignup && (
-            <div>
-              <label style={{ display: "block", fontSize: 11, color: "#c4a26560", marginBottom: 4, letterSpacing: 0.5 }}>Anzeigename</label>
-              <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="z.B. Max" />
-            </div>
-          )}
           <div>
             <label style={{ display: "block", fontSize: 11, color: "#c4a26560", marginBottom: 4, letterSpacing: 0.5 }}>E-Mail</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" required />
           </div>
           <div>
             <label style={{ display: "block", fontSize: 11, color: "#c4a26560", marginBottom: 4, letterSpacing: 0.5 }}>Passwort</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isSignup ? "Min. 6 Zeichen" : "Passwort"} required minLength={6} />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Passwort" required minLength={6} />
           </div>
 
           {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: "#8c4a4a18", border: "1px solid #c4707030", color: "#c47070", fontSize: 12 }}>{error}</div>}
-          {success && <div style={{ padding: "8px 12px", borderRadius: 8, background: "#5a8c4a15", border: "1px solid #6aad5530", color: "#6aad55", fontSize: 12 }}>{success}</div>}
 
-          <button type="submit" disabled={loading} style={{
-            ...goldBtnAnimated, opacity: loading ? 0.6 : 1, marginTop: 4,
-          }}>
+          <button type="submit" disabled={loading} style={{ ...goldBtnAnimated, opacity: loading ? 0.6 : 1, marginTop: 4 }}>
             {loading ? "..." : "EINLOGGEN"}
           </button>
         </form>
