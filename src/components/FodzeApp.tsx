@@ -1138,6 +1138,26 @@ export default function FodzeApp({ user }: { user: any }) {
             </div>
             {showBets && (
               <div style={{ marginTop: 8, borderTop: "1px solid #c4a26510", paddingTop: 8 }}>
+                <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+                  <button onClick={() => {
+                    const header = "Datum,Heim,Gast,Markt,Quote,Einsatz,Modell-%,Edge,Ergebnis,Gewinn/Verlust,CLV\n";
+                    const rows = userBets.map((b: any) => {
+                      const pnl = b.result === "won" ? ((b.odds_placed - 1) * b.stake).toFixed(2) : b.result === "lost" ? (-b.stake).toFixed(2) : "0";
+                      return [
+                        b.placed_at?.slice(0, 10) || "", b.home_team || "", b.away_team || "",
+                        b.market || "", b.odds_placed || "", b.stake || "",
+                        b.model_prob ? (b.model_prob * 100).toFixed(1) : "", b.edge ? (b.edge * 100).toFixed(1) : "",
+                        b.result || "pending", pnl, b.clv || ""
+                      ].map(v => `"${v}"`).join(",");
+                    }).join("\n");
+                    const blob = new Blob(["\uFEFF" + header + rows], { type: "text/csv;charset=utf-8" });
+                    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+                    a.download = `fodze-bets-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+                  }}
+                    style={{ fontSize: 9, padding: "3px 8px", border: "1px solid #c4a26530", borderRadius: 4, background: "#c4a26510", color: "#c4a265", cursor: "pointer" }}>
+                    📥 CSV Export
+                  </button>
+                </div>
                 {userBets.slice(0, 20).map((bet: any) => (
                   <div key={bet.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", borderBottom: "1px solid #c4a26508", fontSize: 10 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%",
