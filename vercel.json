@@ -9,7 +9,7 @@
       "maxDuration": 30
     },
     "src/app/api/seed-history/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 60
     }
   },
   "headers": [
