@@ -801,7 +801,10 @@ export default function FodzeApp({ user }: { user: any }) {
                   <div key={r} style={{ padding: "5px 0", borderBottom: "1px solid #c4a26510", fontSize: 11, display: "flex", gap: 6 }}>
                     <Kit team={t.name} size={18} />
                     <div style={{ flex: 1 }}>
-                      <span style={{ fontWeight: 500, color: "#ede4d4" }}>{t.name}</span>
+                      <span style={{ fontWeight: 500, color: "#ede4d4", cursor: "pointer", textDecoration: "underline dotted #c4a26530" }}
+  onClick={(e) => { e.stopPropagation(); window.open('/team/' + encodeURIComponent(t.name), '_blank'); }}>
+  {t.name}
+</span>
                       <span style={{ fontWeight: 700, color: cl, fontSize: 9, marginLeft: 4 }}>({r})</span>
                       {t[xk]>0&&<span style={{color:"#c4a26550"}}> · xG {(t[xk]/(t.games||8)).toFixed(2)}/Sp · xGA {(t[xak]/(t.games||8)).toFixed(2)}/Sp</span>}
                       {t.form&&<span style={{color:"#c4a26550"}}> · {t.form}</span>}
