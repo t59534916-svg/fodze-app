@@ -36,3 +36,13 @@ jobs:
           else
             node scripts/fetch-odds.mjs
           fi
+
+      - name: Send Value Alerts to Telegram
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        working-directory: fodze-app
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/value-alerts.mjs --threshold 5
