@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { createClient, saveMatchday, loadLatestMatchday, saveOddsSnapshot, loadOddsHistory, deleteOddsHistory, loadProfile, updateProfile, saveBet, loadUserBets } from "@/lib/supabase";
 import { LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest, analyzeLineMovement, validateXGData, calcMatchEnhanced, loadCalibrationCurves, isCalibrationActive, getCorrectScores, getHtFt, getAsianHandicap, getWinningMargin, getGoalBothHalves } from "@/lib/dixon-coles";
 import ComboBuilder from "./ComboBuilder";
+import XGSparkline from "./XGSparkline";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
@@ -806,6 +807,11 @@ export default function FodzeApp({ user }: { user: any }) {
                       {t.form&&<span style={{color:"#c4a26550"}}> · {t.form}</span>}
                       {t.injuries&&t.injuries!=="None"&&<div style={{color:"#c47070",fontSize:10}}>Ausfälle: {t.injuries}</div>}
                       {t.yellow_risk&&<div style={{color:"#c4a265",fontSize:10}}>Gelb: {t.yellow_risk}</div>}
+                      {t.xg_history && t.xg_history.length >= 2 && (
+                        <div style={{ marginTop: 4 }}>
+                          <XGSparkline history={t.xg_history} width={160} height={32} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
