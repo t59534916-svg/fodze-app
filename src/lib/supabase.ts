@@ -76,3 +76,38 @@ export async function loadUserBets(supabase: any, userId: string) {
     .order("placed_at", { ascending: false });
   return data || [];
 }
+
+// ─── Live Odds (from The-Odds-API via GitHub Actions cron) ──────────
+
+export interface LiveOdds {
+  league: string;
+  event_id: string;
+  home_team: string;
+  away_team: string;
+  commence_time: string;
+  best_h: number | null;
+  best_d: number | null;
+  best_a: number | null;
+  best_over25: number | null;
+  best_under25: number | null;
+  sharp_h: number | null;
+  sharp_d: number | null;
+  sharp_a: number | null;
+  sharp_over25: number | null;
+  sharp_under25: number | null;
+  sharp_book: string | null;
+  bookmakers: { h2h?: any[]; totals?: any[] };
+  num_bookmakers: number;
+  fetched_at: string;
+}
+
+export async function loadLiveOdds(supabase: any, league: string): Promise<LiveOdds[]> {
+  const { data, error } = await supabase
+    .from("live_odds")
+    .select("*")
+    .eq("league", league)
+    .gte("commence_time", new Date().toISOString())
+    .order("commence_time", { ascending: true });
+  if (error) { console.error("loadLiveOdds error:", error); return []; }
+  return data || [];
+}

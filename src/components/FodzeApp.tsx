@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { createClient, saveMatchday, loadLatestMatchday, saveOddsSnapshot, loadOddsHistory, deleteOddsHistory, loadProfile, updateProfile, saveBet, loadUserBets } from "@/lib/supabase";
+import { createClient, saveMatchday, loadLatestMatchday, saveOddsSnapshot, loadOddsHistory, deleteOddsHistory, loadProfile, updateProfile, saveBet, loadUserBets, loadLiveOdds } from "@/lib/supabase";
 import { LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest, analyzeLineMovement, validateXGData, calcMatchEnhanced, loadCalibrationCurves, isCalibrationActive, getCorrectScores, getHtFt, getAsianHandicap, getWinningMargin, getGoalBothHalves } from "@/lib/dixon-coles";
 import ComboBuilder from "./ComboBuilder";
 import XGSparkline from "./XGSparkline";
@@ -241,6 +241,10 @@ export default function FodzeApp({ user }: { user: any }) {
   const [showBets, setShowBets] = useState(false);
   const [placingBet, setPlacingBet] = useState<string|null>(null);
 
+  // Live Odds state (from The-Odds-API via cron)
+  const [liveOdds, setLiveOdds] = useState<any[]>([]);
+  const [oddsSource, setOddsSource] = useState<"manual"|"live"|"history">("manual");
+
   // Liga availability (which leagues have matchdays in DB)
   const [leagueStatus, setLeagueStatus] = useState<Record<string, { label: string; date: string } | null>>({});
 
@@ -283,10 +287,48 @@ export default function FodzeApp({ user }: { user: any }) {
     const cached = await loadLatestMatchday(supabase, lg);
     if (cached) {
       setData(cached.data); setStep(2);
+
+      // 1. Load live odds from The-Odds-API (auto-populated via cron)
+      const live = await loadLiveOdds(supabase, lg);
+      setLiveOdds(live);
+
       for (let i = 0; i < (cached.data.matches?.length || 0); i++) {
-        const key = `${lg}:${cached.data.matches[i].home?.name}-${cached.data.matches[i].away?.name}`.toLowerCase().replace(/\s/g, "");
+        const match = cached.data.matches[i];
+        const key = `${lg}:${match.home?.name}-${match.away?.name}`.toLowerCase().replace(/\s/g, "");
+
+        // 2. Try manual odds history first
         const hist = await loadOddsHistory(supabase, key);
-        if (hist.length > 0) { setOddsHistory(prev => ({ ...prev, [i]: hist })); setOddsData(prev => ({ ...prev, [i]: hist[hist.length - 1].odds })); }
+        if (hist.length > 0) {
+          setOddsHistory(prev => ({ ...prev, [i]: hist }));
+          setOddsData(prev => ({ ...prev, [i]: hist[hist.length - 1].odds }));
+          continue;
+        }
+
+        // 3. Auto-match live odds by team name (fuzzy match)
+        const homeName = (match.home?.name || "").toLowerCase();
+        const awayName = (match.away?.name || "").toLowerCase();
+        const matched = live.find(lo => {
+          const loH = lo.home_team.toLowerCase();
+          const loA = lo.away_team.toLowerCase();
+          // Exact or substring match (handles "FC Bayern München" vs "Bayern Munich")
+          return (loH.includes(homeName) || homeName.includes(loH) ||
+                  loH.split(" ").some((w: string) => w.length > 3 && homeName.includes(w))) &&
+                 (loA.includes(awayName) || awayName.includes(loA) ||
+                  loA.split(" ").some((w: string) => w.length > 3 && awayName.includes(w)));
+        });
+
+        if (matched && matched.best_h) {
+          setOddsData(prev => ({ ...prev, [i]: {
+            h: String(matched.best_h), d: String(matched.best_d), a: String(matched.best_a),
+            o25: matched.best_over25 ? String(matched.best_over25) : "",
+            u25: matched.best_under25 ? String(matched.best_under25) : "",
+            _source: "live",
+            _sharp: { h: matched.sharp_h, d: matched.sharp_d, a: matched.sharp_a },
+            _bookmakers: matched.num_bookmakers,
+            _fetched: matched.fetched_at,
+          }}));
+          setOddsSource("live");
+        }
       }
       return true;
     }
@@ -988,7 +1030,25 @@ export default function FodzeApp({ user }: { user: any }) {
 
                 {/* Odds Input */}
                 <div style={{ ...S.card, padding: 10, marginBottom: 8 }}>
-                  <div style={{ fontSize: 9, color: "#c4a26550", letterSpacing: 1, marginBottom: 8 }}>DEINE QUOTEN</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 9, color: "#c4a26550", letterSpacing: 1 }}>
+                      {o._source === "live" ? "LIVE QUOTEN" : "DEINE QUOTEN"}
+                    </span>
+                    {o._source === "live" && (
+                      <span style={{ fontSize: 8, color: "#6aad55", background: "#6aad5515", padding: "2px 6px", borderRadius: 4 }}>
+                        ● LIVE · {o._bookmakers} Books · {o._fetched ? new Date(o._fetched).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                    )}
+                  </div>
+                  {/* Sharp vs Best comparison */}
+                  {o._sharp?.h && o._sharp.h !== o.h && (
+                    <div style={{ fontSize: 9, color: "#c4a26570", marginBottom: 6, padding: "4px 8px", background: "#c4a26508", borderRadius: 4 }}>
+                      Sharp ({o._sharp.book || "Pinnacle"}): {Number(o._sharp.h).toFixed(2)} / {Number(o._sharp.d).toFixed(2)} / {Number(o._sharp.a).toFixed(2)}
+                      <span style={{ color: "#6aad55", marginLeft: 6 }}>
+                        Best +{((1/Number(o._sharp.h) - 1/Number(o.h)) * 100).toFixed(1)}% Edge vs Sharp
+                      </span>
+                    </div>
+                  )}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5, marginBottom: 5 }}>
                     {[["h","1"],["d","X"],["a","2"]].map(([k,l]) => (
                       <div key={k} style={{ background: "#0d070533", border: "1px solid #c4a26520", borderRadius: 6, padding: "6px 4px", textAlign: "center" as const }}>
