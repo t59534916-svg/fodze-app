@@ -61,26 +61,37 @@ Quellen: kicker.de, sofascore.com, transfermarkt.de
 3. Paste dieses Script:
 
 ```javascript
-// ═══ FODZE xG Fetcher — Copy-Paste in Browser Console ═══
-// Extrahiert xG-Summen der letzten 8 Heim/Auswärtsspiele pro Team
+// ═══ FODZE xG Fetcher v2 — With Per-Match History ═══
 const result = {};
 Object.keys(teamsData).forEach(id => {
   const t = teamsData[id];
   const home = t.history.filter(g => g.h_a === 'h');
   const away = t.history.filter(g => g.h_a === 'a');
   const hL8 = home.slice(-8), aL8 = away.slice(-8);
+  const mapGame = g => ({
+    xg: +parseFloat(g.xG).toFixed(2),
+    xga: +parseFloat(g.xGA).toFixed(2),
+    result: g.result,
+    date: g.datetime?.split(' ')[0] || ''
+  });
   result[t.title] = {
     xg_h8:  +hL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
     xga_h8: +hL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
     xg_a8:  +aL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
     xga_a8: +aL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
+    xg_home_history: hL8.map(mapGame),
+    xg_away_history: aL8.map(mapGame)
   };
 });
-// Kopiere die Ausgabe
 copy(JSON.stringify(result, null, 2));
-console.log('✅ xG-Daten in Clipboard kopiert!');
-console.table(result);
+console.log('✅ xG-Daten + History in Clipboard kopiert!');
+console.table(Object.fromEntries(Object.entries(result).map(([k,v]) => [k, {xg_h8:v.xg_h8, xga_h8:v.xga_h8, xg_a8:v.xg_a8, xga_a8:v.xga_a8, history_games: v.xg_home_history.length + v.xg_away_history.length}])));
 ```
+
+**Neue Felder in v2:**
+- `xg_home_history` / `xg_away_history`: Array der letzten 8 Heim-/Auswaertsspiele mit per-match xG, xGA, result (W/D/L), date
+- Wird fuer Sparkline-Trendvisualisierung in der App verwendet
+- Die Summen (`xg_h8`, `xga_h8`, `xg_a8`, `xga_a8`) bleiben der primaere Engine-Input
 
 4. Die Daten werden automatisch in dein Clipboard kopiert.
 
