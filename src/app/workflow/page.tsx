@@ -9,7 +9,7 @@ const S = {
   code: { background: "#0d0705", border: "1px solid #c4a26520", borderRadius: 6, padding: "10px 12px", fontSize: 11, color: "#c4a26580", whiteSpace: "pre-wrap" as const, overflowX: "auto" as const, lineHeight: 1.5, fontFamily: "'Fira Code', 'SF Mono', monospace" } as React.CSSProperties,
 };
 
-const XG_SCRIPT = `// ═══ FODZE xG Fetcher ═══
+const XG_SCRIPT = `// ═══ FODZE xG Fetcher v2 (with per-match history for EWMA) ═══
 const result = {};
 Object.keys(teamsData).forEach(id => {
   const t = teamsData[id];
@@ -21,6 +21,9 @@ Object.keys(teamsData).forEach(id => {
     xga_h8: +hL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
     xg_a8:  +aL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
     xga_a8: +aL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
+    // Per-match history for EWMA time-decay (Dixon-Coles 1997)
+    xg_h_history: hL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
+    xg_a_history: aL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
   };
 });
 copy(JSON.stringify(result, null, 2));

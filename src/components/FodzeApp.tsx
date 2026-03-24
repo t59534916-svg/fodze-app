@@ -425,7 +425,8 @@ export default function FodzeApp({ user }: { user: any }) {
     const enh = calcMatchEnhanced(
       h.xg_h8, h.xga_h8, h.games || 8, h.form,
       a.xg_a8, a.xga_a8, a.games || 8, a.form,
-      ld.avg, matchHf, match.tags || []
+      ld.avg, matchHf, match.tags || [],
+      h.xg_h_history, a.xg_a_history
     );
 
     const o = oddsData[idx] || {};

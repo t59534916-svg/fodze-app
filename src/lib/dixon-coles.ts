@@ -549,6 +549,49 @@ export function kellyFraction(pEigen:number, quote:number, fraction=0.33):number
 
 const PRIOR_K = 6;
 
+// ═══════════════════════════════════════════════════════════════════════
+// TIME-DECAY (EWMA) — Dixon & Coles (1997) exponential weighting
+// φ(t) = exp(-ξ × t)  where t = weeks since match
+// ξ = 0.025 → half-weight after ~28 weeks, recent matches ~3× more weight
+// ═══════════════════════════════════════════════════════════════════════
+const DECAY_XI = 0.025; // Dixon-Coles decay parameter (per week)
+
+export interface XGHistoryEntry {
+  xg: number; xga: number; date?: string; weeks_ago?: number;
+}
+
+/**
+ * Calculate time-weighted xG per game using EWMA.
+ * If no history available, falls back to simple sum/games.
+ */
+export function ewmaXGPerGame(
+  history: XGHistoryEntry[] | undefined,
+  fallbackSum: number, fallbackGames: number,
+  xi = DECAY_XI
+): { xgPg: number; xgaPg: number; effectiveN: number } {
+  if (!history || history.length === 0) {
+    return { xgPg: fallbackSum / fallbackGames, xgaPg: 0, effectiveN: fallbackGames };
+  }
+  let wXG = 0, wXGA = 0, wSum = 0;
+  const now = Date.now();
+  for (let i = 0; i < history.length; i++) {
+    const entry = history[i];
+    // weeks_ago can be pre-calculated or derived from date
+    let weeksAgo = entry.weeks_ago ?? (
+      entry.date ? (now - new Date(entry.date).getTime()) / (7 * 24 * 3600 * 1000) : (history.length - 1 - i) * 2
+    );
+    const weight = Math.exp(-xi * weeksAgo);
+    wXG += entry.xg * weight;
+    wXGA += entry.xga * weight;
+    wSum += weight;
+  }
+  return {
+    xgPg: wSum > 0 ? wXG / wSum : fallbackSum / fallbackGames,
+    xgaPg: wSum > 0 ? wXGA / wSum : 0,
+    effectiveN: wSum, // sum of weights (< n for old data, ≈ n for recent)
+  };
+}
+
 export function bayesianShrinkage(obs:number, avg:number, n:number):{adjusted:number;shrinkage:number} {
   const s = n/(n+PRIOR_K);
   return {adjusted: avg+s*(obs-avg), shrinkage: s};
@@ -627,9 +670,16 @@ export interface EnhancedResult {
 export function calcMatchEnhanced(
   xgHS:number,xgaHC:number,hGames:number,formH:string|undefined,
   xgAS:number,xgaAC:number,aGames:number,formA:string|undefined,
-  leagueAvg:number,homeFactor:number,tags:string[]
+  leagueAvg:number,homeFactor:number,tags:string[],
+  hHistory?:XGHistoryEntry[],aHistory?:XGHistoryEntry[]
 ):EnhancedResult {
-  const hXGpg=xgHS/hGames, hXGApg=xgaHC/hGames, aXGpg=xgAS/aGames, aXGApg=xgaAC/aGames;
+  // Use EWMA time-decay when per-match history is available (Dixon-Coles 1997)
+  const hEwma = ewmaXGPerGame(hHistory, xgHS, hGames);
+  const aEwma = ewmaXGPerGame(aHistory, xgAS, aGames);
+  const hXGpg = hHistory ? hEwma.xgPg : xgHS/hGames;
+  const hXGApg = hHistory ? hEwma.xgaPg : xgaHC/hGames;
+  const aXGpg = aHistory ? aEwma.xgPg : xgAS/aGames;
+  const aXGApg = aHistory ? aEwma.xgaPg : xgaAC/aGames;
   const atkH_sh=bayesianShrinkage(hXGpg,leagueAvg,hGames);
   const defH_sh=bayesianShrinkage(hXGApg,leagueAvg,hGames);
   const atkA_sh=bayesianShrinkage(aXGpg,leagueAvg,aGames);
