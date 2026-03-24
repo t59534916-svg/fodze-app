@@ -66,8 +66,37 @@ function runMonteCarlo(cfg: SimConfig): { trajectories: number[][]; stats: any }
   });
   const avgMaxDD = maxDrawdown.reduce((a, b) => a + b, 0) / maxDrawdown.length;
 
+  // Risk of Ruin: probability of losing X% of bankroll at any point
+  const rorThresholds = [0.25, 0.50, 0.75, 1.0]; // 25%, 50%, 75%, 100%
+  const rorProbs = rorThresholds.map(threshold => {
+    const count = trajectories.filter(t => {
+      const minVal = Math.min(...t);
+      return minVal <= cfg.bankroll * (1 - threshold);
+    }).length;
+    return count / cfg.numSims;
+  });
+
+  // Drawdown duration: average number of bets spent below peak
+  const ddDurations = trajectories.map(t => {
+    let peak = t[0], ddBets = 0;
+    for (const v of t) { peak = Math.max(peak, v); if (v < peak * 0.95) ddBets++; }
+    return ddBets;
+  });
+  const avgDDDuration = ddDurations.reduce((a, b) => a + b, 0) / ddDurations.length;
+
+  // Longest losing streak (consecutive losses)
+  const longestStreaks = trajectories.map(t => {
+    let streak = 0, maxStreak = 0;
+    for (let i = 1; i < t.length; i++) {
+      if (t[i] < t[i-1]) { streak++; maxStreak = Math.max(maxStreak, streak); }
+      else { streak = 0; }
+    }
+    return maxStreak;
+  });
+  const avgLongestStreak = longestStreaks.reduce((a, b) => a + b, 0) / longestStreaks.length;
+
   return {
-    trajectories: trajectories.slice(0, 50), // Keep only 50 for rendering
+    trajectories: trajectories.slice(0, 50),
     stats: {
       profitable,
       profitablePct: profitable / cfg.numSims,
@@ -79,6 +108,10 @@ function runMonteCarlo(cfg: SimConfig): { trajectories: number[][]; stats: any }
       avgMaxDD,
       roi: (avg - cfg.bankroll) / cfg.bankroll,
       medianRoi: (median - cfg.bankroll) / cfg.bankroll,
+      // Risk of Ruin additions
+      rorProbs, // [p_lose25%, p_lose50%, p_lose75%, p_lose100%]
+      avgDDDuration,
+      avgLongestStreak,
     },
   };
 }
@@ -337,6 +370,37 @@ export default function SimulatorPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Risk of Ruin */}
+          <div style={S.card}>
+            <div style={{ ...S.label, marginBottom: 8 }}>RISK OF RUIN</div>
+            <table style={{ width: "100%", fontSize: 11, color: "#c4a26580", borderCollapse: "collapse" }}>
+              <tbody>
+                {[
+                  { label: "25% Bankroll verlieren", p: s.rorProbs[0], color: "#c4a265" },
+                  { label: "50% Bankroll verlieren", p: s.rorProbs[1], color: "#ad7755" },
+                  { label: "75% Bankroll verlieren", p: s.rorProbs[2], color: "#ad5555" },
+                  { label: "Totalverlust (Bust)", p: s.rorProbs[3], color: "#ad3333" },
+                ].map(r => (
+                  <tr key={r.label}>
+                    <td style={{ padding: "4px 0", color: "#c4a26560" }}>{r.label}</td>
+                    <td style={{ padding: "4px 0", textAlign: "right" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                        <div style={{ width: 60, height: 8, background: "#0d0705", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ width: `${Math.max(r.p * 100, 1)}%`, height: "100%", background: r.color, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontWeight: 600, color: r.color, minWidth: 40, textAlign: "right" }}>{(r.p * 100).toFixed(1)}%</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 8, fontSize: 10, color: "#c4a26560", borderTop: "1px solid #c4a26515", paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+              <span>Ø Drawdown-Dauer: <b style={{color:"#c4a265"}}>{s.avgDDDuration.toFixed(0)} Wetten</b></span>
+              <span>Ø längste Pechsträhne: <b style={{color:"#ad5555"}}>{s.avgLongestStreak.toFixed(0)} Verluste</b></span>
+            </div>
           </div>
 
           {/* Interpretation */}
