@@ -201,7 +201,7 @@ const Logo = ({ size = 30 }: { size?: number }) => (
 // ═════════════════════════════════════════════════════════════════════
 
 export default function FodzeApp({ user }: { user: any }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [lg, setLg] = useState("bundesliga");
   const [loading, setLoading] = useState(false);
   const [loadMsg, setLoadMsg] = useState("");
@@ -222,6 +222,8 @@ export default function FodzeApp({ user }: { user: any }) {
   const [manualMatches, setManualMatches] = useState<any[]>([]);
   const [editingMatch, setEditingMatch] = useState<any>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const [calLoaded, setCalLoaded] = useState(false);
 
   // Combo Builder state (lifted from ComboBuilder to persist across navigation)
   const [comboSelectedIds, setComboSelectedIds] = useState<Set<string>>(new Set());
@@ -263,6 +265,7 @@ export default function FodzeApp({ user }: { user: any }) {
       })
       .then(curves => {
         loadCalibrationCurves(curves);
+        setCalLoaded(true);
         console.log("[FODZE] Isotonische Kalibrierung AKTIV (4 Kurven geladen)");
       })
       .catch(() => console.warn("[FODZE] calibration_curves.json nicht gefunden — Identity-Modus (raw P = calibrated P)"));
@@ -272,13 +275,17 @@ export default function FodzeApp({ user }: { user: any }) {
     loadProfile(supabase, user.id).then(p => { if (p) setProfile(p); });
     loadUserBets(supabase, user.id).then(b => setUserBets(b));
     fetch("/api/matchday").then(r => r.json()).then(d => setHasApi(d.hasKey === true)).catch(() => setHasApi(false));
-    // Check which leagues have data
+    // Check which leagues have data (parallel)
     (async () => {
+      const keys = Object.keys(LEAGUES);
+      const results = await Promise.all(
+        keys.map(key => loadLatestMatchday(supabase, key))
+      );
       const status: Record<string, { label: string; date: string } | null> = {};
-      for (const key of Object.keys(LEAGUES)) {
-        const md = await loadLatestMatchday(supabase, key);
+      keys.forEach((key, i) => {
+        const md = results[i];
         status[key] = md ? { label: md.matchday_label || md.data?.matchday || "—", date: md.match_date || md.data?.date || "" } : null;
-      }
+      });
       setLeagueStatus(status);
     })();
   }, [user.id]);
@@ -420,8 +427,8 @@ export default function FodzeApp({ user }: { user: any }) {
     const warnings = validateXGData(h.xg_h8, h.xga_h8, h.games || 8, a.xg_a8, a.xga_a8, a.games || 8, ld.avg);
 
     // Enhanced: regression to mean + form + tags + confidence intervals
-    // Team-spezifischer Heimfaktor für 3. Liga (Fansupport-basiert)
-    const matchHf = lg === "liga3" ? getHomeFactor(h.name, ld.hf) : ld.hf;
+    // Team-spezifischer Heimfaktor (Fansupport-basiert, alle Ligen)
+    const matchHf = getHomeFactor(h.name, ld.hf);
     const enh = calcMatchEnhanced(
       h.xg_h8, h.xga_h8, h.games || 8, h.form,
       a.xg_a8, a.xga_a8, a.games || 8, a.form,
@@ -458,7 +465,7 @@ export default function FodzeApp({ user }: { user: any }) {
   const matches = data?.matches || [];
   const processed = useMemo(() =>
     matches.map((m: any, i: number) => ({ ...m, idx: i, calc: calcMatch(m, i) })),
-    [data, oddsData, frac, ld.avg, ld.hf, lg]
+    [data, oddsData, frac, ld.avg, ld.hf, lg, calLoaded]
   );
   const valueMatches = useMemo(() => processed.filter((m: any) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: any) => sum + m.calc.bets.filter((b: any) => b.isValue).reduce((s: number, b: any) => s + b.kelly * br, 0), 0), [valueMatches, br]);
@@ -840,7 +847,7 @@ export default function FodzeApp({ user }: { user: any }) {
                 {m.context && <div style={{ fontSize: 11, color: "#c4a26555", marginBottom: 8, lineHeight: 1.5 }}>{m.context}</div>}
 
                 {/* Teams */}
-                {[{t:m.home,r:"H",cl:"#d4b86a",xk:"xg_h8",xak:"xga_h8"},{t:m.away,r:"A",cl:"#c47070",xk:"xg_a8",xak:"xga_a8"}].map(({t,r,cl,xk,xak}:any) => t && (
+                {[{t:m.home,r:"H",cl:"#d4b86a",xk:"xg_h8",xak:"xga_h8",hk:"xg_h_history"},{t:m.away,r:"A",cl:"#c47070",xk:"xg_a8",xak:"xga_a8",hk:"xg_a_history"}].map(({t,r,cl,xk,xak,hk}:any) => t && (
                   <div key={r} style={{ padding: "5px 0", borderBottom: "1px solid #c4a26510", fontSize: 11, display: "flex", gap: 6 }}>
                     <Kit team={t.name} size={18} />
                     <div style={{ flex: 1 }}>
@@ -853,9 +860,9 @@ export default function FodzeApp({ user }: { user: any }) {
                       {t.form&&<span style={{color:"#c4a26550"}}> · {t.form}</span>}
                       {t.injuries&&t.injuries!=="None"&&<div style={{color:"#c47070",fontSize:10}}>Ausfälle: {t.injuries}</div>}
                       {t.yellow_risk&&<div style={{color:"#c4a265",fontSize:10}}>Gelb: {t.yellow_risk}</div>}
-                      {t.xg_history && t.xg_history.length >= 2 && (
+                      {(t[hk] || t.xg_h_history || t.xg_a_history) && (t[hk] || t.xg_h_history || t.xg_a_history).length >= 2 && (
                         <div style={{ marginTop: 4 }}>
-                          <XGSparkline history={t.xg_history} width={160} height={32} />
+                          <XGSparkline history={t[hk] || t.xg_h_history || t.xg_a_history} width={160} height={32} />
                         </div>
                       )}
                     </div>

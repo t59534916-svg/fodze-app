@@ -570,7 +570,8 @@ export function ewmaXGPerGame(
   xi = DECAY_XI
 ): { xgPg: number; xgaPg: number; effectiveN: number } {
   if (!history || history.length === 0) {
-    return { xgPg: fallbackSum / fallbackGames, xgaPg: 0, effectiveN: fallbackGames };
+    const xgPg = fallbackGames > 0 ? fallbackSum / fallbackGames : 1.3;
+    return { xgPg, xgaPg: xgPg, effectiveN: fallbackGames };
   }
   let wXG = 0, wXGA = 0, wSum = 0;
   const now = Date.now();
@@ -673,6 +674,25 @@ export function calcMatchEnhanced(
   leagueAvg:number,homeFactor:number,tags:string[],
   hHistory?:XGHistoryEntry[],aHistory?:XGHistoryEntry[]
 ):EnhancedResult {
+  // Guard against division by zero
+  if (hGames <= 0 || aGames <= 0) {
+    const lambdaH = leagueAvg * homeFactor;
+    const lambdaA = leagueAvg;
+    const matrix = buildMatrix(lambdaH, lambdaA);
+    const mk = deriveAllMarkets(matrix);
+    const ciH = lambdaCI(lambdaH, 1), ciA = lambdaCI(lambdaA, 1);
+    return {
+      lambdaH_raw: lambdaH, lambdaA_raw: lambdaA,
+      lambdaH_regressed: lambdaH, lambdaA_regressed: lambdaA,
+      lambdaH_formed: lambdaH, lambdaA_formed: lambdaA,
+      lambdaH, lambdaA,
+      shrinkageH: 0, shrinkageA: 0,
+      formH: { mult: 1, label: "—" }, formA: { mult: 1, label: "—" },
+      tagCorrections: [], tagMultH: 1, tagMultA: 1,
+      ciH, ciA, matrix, mk, mk_low: mk, mk_high: mk,
+    };
+  }
+
   // Use EWMA time-decay when per-match history is available (Dixon-Coles 1997)
   // Guard: empty arrays are truthy in JS — must check .length
   const hHasHistory = hHistory && hHistory.length > 0;

@@ -1,18 +1,22 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient, loadLiveOdds } from "@/lib/supabase";
+import { LEAGUES, TEAM_HOME_FACTORS, getHomeFactor } from "@/lib/dixon-coles";
 
 // ─── Inline Dixon-Coles (minimal, no TS imports needed) ──────────────
 
 const RHO = -0.05, MAX_GOALS = 15;
-const LEAGUES: Record<string, { name: string; hf: number; avg: number }> = {
-  bundesliga: { name: "Bundesliga", hf: 1.28, avg: 1.38 },
-  bundesliga2: { name: "2. Bundesliga", hf: 1.29, avg: 1.35 },
-  liga3: { name: "3. Liga", hf: 1.22, avg: 1.40 },
-  epl: { name: "Premier League", hf: 1.22, avg: 1.35 },
-  la_liga: { name: "La Liga", hf: 1.30, avg: 1.25 },
-  serie_a: { name: "Serie A", hf: 1.27, avg: 1.32 },
-};
+
+// ─── Vig Removal Helpers ─────────────────────────────────────────────
+
+function removeVig1X2(h: number, d: number, a: number) {
+  const total = 1/h + 1/d + 1/a;
+  return { h: 1/(1/h/total), d: 1/(1/d/total), a: 1/(1/a/total) };
+}
+function removeVigOU(over: number, under: number) {
+  const total = 1/over + 1/under;
+  return { over: 1/(1/over/total), under: 1/(1/under/total) };
+}
 
 function poissonPMF(k: number, lam: number) {
   if (lam <= 0) return k === 0 ? 1 : 0;
@@ -164,12 +168,13 @@ export default function SGPPage() {
       const h = match.home, a = match.away;
       if (!h?.xg_h8 || !a?.xg_a8 || h.xg_h8 === 0) continue;
 
-      // Calculate lambdas
+      // Calculate lambdas (with team-specific home factor)
       const hXGpg = h.xg_h8 / (h.games || 8);
       const hXGApg = h.xga_h8 / (h.games || 8);
       const aXGpg = a.xg_a8 / (a.games || 8);
       const aXGApg = a.xga_a8 / (a.games || 8);
-      const lambdaH = ld.avg * (hXGpg / ld.avg) * (aXGApg / ld.avg) * ld.hf;
+      const matchHf = getHomeFactor(h.name, ld.hf);
+      const lambdaH = ld.avg * (hXGpg / ld.avg) * (aXGApg / ld.avg) * matchHf;
       const lambdaA = ld.avg * (aXGpg / ld.avg) * (hXGApg / ld.avg);
 
       const mx = buildMatrix(lambdaH, lambdaA);
@@ -187,17 +192,23 @@ export default function SGPPage() {
 
       if (!lo || !lo.best_h) continue;
 
+      // Remove vig from bookmaker odds before SGP comparison
+      const fair1X2 = removeVig1X2(lo.best_h, lo.best_d || 3.5, lo.best_a);
+      const fairOU = removeVigOU(lo.best_over25 || 1.9, lo.best_under25 || 1.9);
+      const fairBtts = lo.best_btts ? 1 / (1 / lo.best_btts / (1/lo.best_btts + 1/(lo.best_btts_no || 2.0))) : 1.75;
+      const fairO35 = lo.best_over35 ? removeVigOU(lo.best_over35, lo.best_under35 || 1.4).over : 2.50;
+
       // Scan all SGP combos
       for (const combo of SGP_COMBOS) {
         const pExact = query(mx, combo.conditions);
         if (pExact < 0.01) continue; // skip near-impossible combos
 
-        // Estimate what bookmaker would offer
+        // Estimate what bookmaker would offer (using fair/vig-free odds)
         const bkOdds = combo.oddsEstimate(
-          lo.best_h, lo.best_d || 3.5, lo.best_a,
-          lo.best_over25 || 1.9, lo.best_under25 || 1.9,
-          lo.best_btts || 1.75,   // fallback if no BTTS market
-          lo.best_over35 || 2.50  // fallback if no Ü3.5 market
+          fair1X2.h, fair1X2.d, fair1X2.a,
+          fairOU.over, fairOU.under,
+          fairBtts,
+          fairO35
         );
         if (bkOdds <= 1) continue;
 

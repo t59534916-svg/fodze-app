@@ -55,14 +55,14 @@ export default function TeamPage() {
           for (const m of matches) {
             // Check home team
             if (m.home?.name === teamName) {
-              const hist = m.home.xg_home_history || m.home.xg_history;
+              const hist = m.home.xg_h_history || m.home.xg_home_history;
               if (hist && hist.length > 0 && foundHome.length === 0) {
                 foundHome = hist;
               }
             }
             // Check away team
             if (m.away?.name === teamName) {
-              const hist = m.away.xg_away_history || m.away.xg_history;
+              const hist = m.away.xg_a_history || m.away.xg_away_history;
               if (hist && hist.length > 0 && foundAway.length === 0) {
                 foundAway = hist;
               }
@@ -140,7 +140,7 @@ export default function TeamPage() {
             lineHeight: 1.8,
           }}>
             Keine xG-History-Daten f&uuml;r <strong style={{ color: "#d4b86a" }}>{teamName}</strong> gefunden.<br />
-            History-Daten werden beim Seeding der Spieltage mitgeliefert (xg_history / xg_home_history / xg_away_history).
+            History-Daten werden beim Seeding der Spieltage mitgeliefert (xg_h_history / xg_a_history).
           </div>
         )}
 
