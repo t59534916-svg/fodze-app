@@ -674,12 +674,15 @@ export function calcMatchEnhanced(
   hHistory?:XGHistoryEntry[],aHistory?:XGHistoryEntry[]
 ):EnhancedResult {
   // Use EWMA time-decay when per-match history is available (Dixon-Coles 1997)
+  // Guard: empty arrays are truthy in JS — must check .length
+  const hHasHistory = hHistory && hHistory.length > 0;
+  const aHasHistory = aHistory && aHistory.length > 0;
   const hEwma = ewmaXGPerGame(hHistory, xgHS, hGames);
   const aEwma = ewmaXGPerGame(aHistory, xgAS, aGames);
-  const hXGpg = hHistory ? hEwma.xgPg : xgHS/hGames;
-  const hXGApg = hHistory ? hEwma.xgaPg : xgaHC/hGames;
-  const aXGpg = aHistory ? aEwma.xgPg : xgAS/aGames;
-  const aXGApg = aHistory ? aEwma.xgaPg : xgaAC/aGames;
+  const hXGpg = hHasHistory ? hEwma.xgPg : xgHS/hGames;
+  const hXGApg = hHasHistory ? hEwma.xgaPg : xgaHC/hGames;
+  const aXGpg = aHasHistory ? aEwma.xgPg : xgAS/aGames;
+  const aXGApg = aHasHistory ? aEwma.xgaPg : xgaAC/aGames;
   const atkH_sh=bayesianShrinkage(hXGpg,leagueAvg,hGames);
   const defH_sh=bayesianShrinkage(hXGApg,leagueAvg,hGames);
   const atkA_sh=bayesianShrinkage(aXGpg,leagueAvg,aGames);

@@ -10,9 +10,12 @@
 
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = "https://resdrxgfcpaxosiwnxiu.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJlc2RyeGdmY3BheG9zaXdueGl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3MTkxNTEsImV4cCI6MjA4OTI5NTE1MX0.0sgQ8BAYkOWdhz5x1bSFkhQvKqO3xnP81p0zU9A2wVc";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error("Missing env vars: SUPABASE_URL and SUPABASE_ANON_KEY required");
+  process.exit(1);
+}
 
 // ─── Heim/Auswärts-Statistiken (Stand: Spieltag 30) ────────────────
 // Quelle: kicker.de Heim-/Auswärtstabelle

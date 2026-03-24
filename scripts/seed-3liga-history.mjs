@@ -13,8 +13,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { load } from "cheerio";
 
-const SUPABASE_URL = "https://resdrxgfcpaxosiwnxiu.supabase.co";
-const SUPABASE_SERVICE_KEY = "REMOVED";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.FODZE_SERVICE_KEY || process.env.SUPABASE_SERVICE_KEY;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error("Missing env vars: SUPABASE_URL and FODZE_SERVICE_KEY required");
+  process.exit(1);
+}
 
 const ALL_SEASONS = ["2020-21", "2021-22", "2022-23", "2023-24", "2024-25"];
 const MATCHDAYS_PER_SEASON = 38;

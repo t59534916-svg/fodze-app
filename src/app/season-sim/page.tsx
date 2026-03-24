@@ -137,12 +137,13 @@ function ProbBar({ label, value, color }: { label: string; value: number; color:
 // ─── Main Page ──────────────────────────────────────────────────────
 
 export default function SeasonSimPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [lg, setLg] = useState("bundesliga");
   const [matchdays, setMatchdays] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [simResult, setSimResult] = useState<SimResult[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [remainingPct, setRemainingPct] = useState("40");
   const ld = LEAGUES[lg];
 
   useEffect(() => {
@@ -190,15 +191,23 @@ export default function SeasonSimPage() {
     if (teamData.length < 4) return;
     setRunning(true);
     setTimeout(() => {
-      // Generate remaining fixtures (simplified round-robin)
-      const fixtures: { home: number; away: number }[] = [];
+      // Generate full double round-robin (each team plays every other home & away)
+      const allFixtures: { home: number; away: number }[] = [];
       for (let i = 0; i < teamData.length; i++) {
         for (let j = 0; j < teamData.length; j++) {
-          if (i !== j) fixtures.push({ home: i, away: j });
+          if (i !== j) allFixtures.push({ home: i, away: j });
         }
       }
-      // Take ~40% as "remaining" (assuming we're ~60% through season)
-      const remaining = fixtures.sort(() => Math.random() - 0.5).slice(0, Math.floor(fixtures.length * 0.4));
+      // Proper Fisher-Yates shuffle (unbiased)
+      for (let i = allFixtures.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [allFixtures[i], allFixtures[j]] = [allFixtures[j], allFixtures[i]];
+      }
+      // Estimate remaining: full season = n*(n-1) fixtures, take proportional remainder
+      // Each team should have roughly equal home/away splits in the remaining fixtures
+      const totalPerSeason = teamData.length * (teamData.length - 1);
+      const remainingCount = Math.floor(totalPerSeason * (parseInt(remainingPct) || 40) / 100);
+      const remaining = allFixtures.slice(0, remainingCount);
 
       const result = simulateSeason(teamData, remaining, ld.avg, ld.hf, 5000);
       setSimResult(result);

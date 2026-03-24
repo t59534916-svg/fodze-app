@@ -192,7 +192,8 @@ function DistributionChart({ trajectories, bankroll }: { trajectories: number[][
       })}
       {/* Break-even line */}
       {(() => {
-        const beX = P + ((bankroll - min) / (max - min)) * (W - 2 * P);
+        const range = max - min || 1;
+        const beX = P + ((bankroll - min) / range) * (W - 2 * P);
         return <line x1={beX} y1={P} x2={beX} y2={H - P} stroke="#d4b86a" strokeWidth={1} strokeDasharray="3 2" />;
       })()}
       <text x={W / 2} y={H - 2} textAnchor="middle" fontSize={8} fill="#c4a26560">Endkapital (€)</text>

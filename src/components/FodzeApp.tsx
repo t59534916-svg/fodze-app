@@ -458,7 +458,7 @@ export default function FodzeApp({ user }: { user: any }) {
   const matches = data?.matches || [];
   const processed = useMemo(() =>
     matches.map((m: any, i: number) => ({ ...m, idx: i, calc: calcMatch(m, i) })),
-    [data, oddsData, frac, ld.avg, ld.hf]
+    [data, oddsData, frac, ld.avg, ld.hf, lg]
   );
   const valueMatches = useMemo(() => processed.filter((m: any) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: any) => sum + m.calc.bets.filter((b: any) => b.isValue).reduce((s: number, b: any) => s + b.kelly * br, 0), 0), [valueMatches, br]);

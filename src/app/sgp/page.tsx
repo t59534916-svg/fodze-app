@@ -54,7 +54,7 @@ interface SGPCombo {
   label: string;
   legs: string[];
   conditions: Cond[];
-  oddsEstimate: (bestH: number, bestD: number, bestA: number, bestO25: number, bestU25: number) => number;
+  oddsEstimate: (bestH: number, bestD: number, bestA: number, bestO25: number, bestU25: number, bestBtts: number, bestO35: number) => number;
 }
 
 const SGP_COMBOS: SGPCombo[] = [
@@ -92,31 +92,31 @@ const SGP_COMBOS: SGPCombo[] = [
     label: "Heim + BTTS Ja",
     legs: ["1", "BTTS"],
     conditions: [(h, a) => h > a, (h, a) => h > 0 && a > 0],
-    oddsEstimate: (H) => H * 1.75 * 0.85,
+    oddsEstimate: (H, _D, _A, _O, _U, BTTS) => H * BTTS * 0.85,
   },
   {
     label: "Gast + BTTS Ja",
     legs: ["2", "BTTS"],
     conditions: [(h, a) => h < a, (h, a) => h > 0 && a > 0],
-    oddsEstimate: (_H, _D, A) => A * 1.75 * 0.85,
+    oddsEstimate: (_H, _D, A, _O, _U, BTTS) => A * BTTS * 0.85,
   },
   {
     label: "Heim + Ü3.5",
     legs: ["1", "Ü3.5"],
     conditions: [(h, a) => h > a, (h, a) => h + a > 3],
-    oddsEstimate: (H) => H * 2.5 * 0.85,
+    oddsEstimate: (H, _D, _A, _O, _U, _B, O35) => H * O35 * 0.85,
   },
   {
     label: "Heim 2+ Tore + Ü2.5",
     legs: ["H≥2", "Ü2.5"],
     conditions: [(h) => h >= 2, (h, a) => h + a > 2],
-    oddsEstimate: (H) => H * 1.8 * 0.82,
+    oddsEstimate: (H, _D, _A, O) => H * O * 0.82,
   },
   {
     label: "Heim zu Null",
     legs: ["1", "Gast=0"],
     conditions: [(h, a) => h > a, (_h, a) => a === 0],
-    oddsEstimate: (H) => H * 2.2 * 0.80,
+    oddsEstimate: (H) => H * 2.2 * 0.80, // no standard market for clean sheets
   },
 ];
 
@@ -135,7 +135,7 @@ function pe(v: number) { return (v * 100).toFixed(1) + "%"; }
 // ─── Main Component ─────────────────────────────────────────────────
 
 export default function SGPPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [lg, setLg] = useState("bundesliga");
   const [matchdays, setMatchdays] = useState<any>(null);
   const [liveOdds, setLiveOddsState] = useState<any[]>([]);
@@ -193,7 +193,12 @@ export default function SGPPage() {
         if (pExact < 0.01) continue; // skip near-impossible combos
 
         // Estimate what bookmaker would offer
-        const bkOdds = combo.oddsEstimate(lo.best_h, lo.best_d || 3.5, lo.best_a, lo.best_over25 || 1.9, lo.best_under25 || 1.9);
+        const bkOdds = combo.oddsEstimate(
+          lo.best_h, lo.best_d || 3.5, lo.best_a,
+          lo.best_over25 || 1.9, lo.best_under25 || 1.9,
+          lo.best_btts || 1.75,   // fallback if no BTTS market
+          lo.best_over35 || 2.50  // fallback if no Ü3.5 market
+        );
         if (bkOdds <= 1) continue;
 
         const pMarket = 1 / bkOdds;
