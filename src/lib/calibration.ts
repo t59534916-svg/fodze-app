@@ -81,7 +81,13 @@ export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25"): nu
   if (!curve) return rawP;
   if (rawP <= 0) return curve[0];
   if (rawP >= 1) return curve[100];
-  const exactIdx = rawP * 100;
+  let exactIdx = rawP * 100;
+
+  // CAL_D curve is unreliable above index 34 (trained on insufficient high-draw
+  // samples). The isotonic fit jumps from 0.377 at idx 33 to 0.6417 at idx 34
+  // and 0.999 at idx 35. Cap lookup to prevent pathological redistribution.
+  if (market === "D" && exactIdx > 34) exactIdx = 34;
+
   const lo = Math.floor(exactIdx);
   const hi = Math.ceil(exactIdx);
   let cal: number;
@@ -89,8 +95,8 @@ export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25"): nu
   else { const w = exactIdx - lo; cal = curve[lo] * (1 - w) + curve[hi] * w; }
 
   // Safety clamps for known curve instabilities (sparse data at extremes)
-  // D-Kurve kollabiert ab Index 35 auf 0.999 — kein Draw hat >45% Chance
-  if (market === "D") cal = Math.min(cal, 0.45);
+  // D-Kurve: draws almost never exceed 38% in real football
+  if (market === "D") cal = Math.min(cal, 0.38);
   // H/A Kurven saturieren bei 0.999 — kein Ergebnis hat >95% Chance
   if (market === "H" || market === "A") cal = Math.min(cal, 0.95);
 
@@ -105,8 +111,8 @@ export function calibrate1X2(rawH: number, rawD: number, rawA: number): { H: num
   let sum = calH + calD + calA;
   if (sum > 0) { calH /= sum; calD /= sum; calA /= sum; }
   // Post-renorm D-clamp: D-curve collapses at raw>34%, causing D to dominate
-  // after renormalization in defensive matches. Cap at 45% and redistribute.
-  const D_MAX_POST = 0.45;
+  // after renormalization in defensive matches. Cap at 38% and redistribute.
+  const D_MAX_POST = 0.38;
   if (calD > D_MAX_POST) {
     const excess = calD - D_MAX_POST;
     calD = D_MAX_POST;
