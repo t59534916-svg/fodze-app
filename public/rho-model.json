@@ -1,0 +1,25 @@
+{
+  "coefficients": [
+    -0.000418,
+    0.000222,
+    -0.059484,
+    -0.003457,
+    -0.000131,
+    0.036083
+  ],
+  "intercept": 0.030817,
+  "feature_names": [
+    "total_lambda",
+    "lambda_diff_abs",
+    "home_factor",
+    "is_derby",
+    "rest_days_diff",
+    "league_avg"
+  ],
+  "rho_min": -0.2,
+  "rho_max": 0.05,
+  "training_r2": 0.0015,
+  "cv_r2": 0.0004,
+  "n_train": 46807,
+  "note": "Coefficients for unscaled features. TypeScript uses sigmoid mapping."
+}

@@ -1,0 +1,194 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   FODZE Design System — Global CSS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Leather (backgrounds) */
+  --leather: #1a0f0a;
+  --leather2: #231510;
+  --leather3: #2a1810;
+
+  /* Gold (accents) */
+  --gold-shine: #f5e6b8;
+  --gold-light: #e8d5a0;
+  --gold: #d4b86a;
+  --gold-mid: #c4a265;
+  --gold-dark: #a68940;
+  --gold-deep: #8b7340;
+  --gold-muted: #c4a26560;
+  --gold-ghost: #c4a26518;
+
+  /* Text */
+  --text: #ede4d4;
+  --text2: #c4a26580;
+  --text3: #c4a26540;
+
+  /* Semantic */
+  --value: #6aad55;
+  --value-bg: #5a8c4a15;
+  --warn: #c47070;
+  --warn-bg: #8c4a4a18;
+  --info: #5a9ec4;
+  --info-bg: #4a6e8c15;
+
+  /* Layout */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --nav-height: 56px;
+  --nav-width: 220px;
+
+  /* Type scale (synced with tokens.ts) */
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-base: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-xxl: 32px;
+
+  /* Spacing */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+}
+
+/* ─── Reset ─────────────────────────────────────────────────────────── */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  background: var(--leather);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ─── Form Elements ─────────────────────────────────────────────────── */
+
+input, select, textarea {
+  background: var(--leather);
+  border: 1px solid var(--gold-muted);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4);
+  font-size: var(--fs-base);
+  font-family: inherit;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(212,184,106,0.15);
+}
+input::placeholder, textarea::placeholder { color: var(--text3); }
+select { appearance: none; cursor: pointer; }
+
+/* ─── Buttons ───────────────────────────────────────────────────────── */
+
+button {
+  font-family: inherit;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ─── Animations ────────────────────────────────────────────────────── */
+
+@keyframes goldShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+@keyframes spin {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes skeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Card Expand Animation ────────────────────────────────────────── */
+
+@keyframes expandIn {
+  from { opacity: 0; max-height: 0; transform: translateY(-8px); }
+  to { opacity: 1; max-height: 2000px; transform: translateY(0); }
+}
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Utility Classes ───────────────────────────────────────────────── */
+
+.fade-in { animation: fadeIn 0.25s ease forwards; }
+.slide-up { animation: slideUp 0.3s ease forwards; }
+.scale-in { animation: scaleIn 0.2s ease forwards; }
+.expand-in { animation: expandIn 0.3s ease forwards; overflow: hidden; }
+.tab-fade-in { animation: tabFadeIn 0.2s ease forwards; }
+
+/* ─── Interactive States ───────────────────────────────────────────── */
+
+.match-card {
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.match-card:hover {
+  background: #c4a2650a;
+}
+.league-tile {
+  transition: all 0.2s ease;
+}
+.league-tile:hover {
+  border-color: #c4a26540 !important;
+  background: #c4a26510 !important;
+}
+.league-tile:active {
+  transform: scale(0.98);
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--leather); }
+::-webkit-scrollbar-thumb { background: var(--gold-deep); border-radius: 2px; }
+
+/* ─── Accessibility ─────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── Tablet Breakpoint (768px+) ────────────────────────────────────── */
+
+/* Tablet+ already uses the correct sizes from :root */

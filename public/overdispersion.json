@@ -1,0 +1,12 @@
+{
+  "bundesliga": 0.0018,
+  "bundesliga2": 0.0043,
+  "championship": 0.001,
+  "epl": 0.001,
+  "eredivisie": 0.0063,
+  "la_liga": 0.001,
+  "ligue_1": 0.001,
+  "serie_a": 0.001,
+  "default": 0.001,
+  "global": 0.001
+}

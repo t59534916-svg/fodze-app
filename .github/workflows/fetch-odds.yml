@@ -1,0 +1,48 @@
+name: Fetch Live Odds
+
+on:
+  # Run every 4 hours on matchdays (Fri-Sun) + Wednesday (CL/EL)
+  schedule:
+    - cron: "17 6,10,14,18 * * 0,3,5,6"  # Sun, Wed, Fri, Sat at 06:17, 10:17, 14:17, 18:17 UTC
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      league:
+        description: "Single league to fetch (empty = all)"
+        required: false
+        default: ""
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch odds from The-Odds-API
+        working-directory: fodze-app
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -n "${{ github.event.inputs.league }}" ]; then
+            node scripts/fetch-odds.mjs --league ${{ github.event.inputs.league }}
+          else
+            node scripts/fetch-odds.mjs
+          fi
+
+      - name: Send Value Alerts to Telegram
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        working-directory: fodze-app
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/value-alerts.mjs --threshold 5
