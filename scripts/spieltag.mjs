@@ -183,10 +183,11 @@ Pro Spiel brauche ich:
 1. VERLETZUNGEN & SPERREN: Wer fehlt? (Name, Grund)
 2. FORM: Letzte 5 Ergebnisse (W/D/L mit Gegnern)
 3. GELBGEFÄHRDETE: Spieler auf 4 Gelben Karten
-4. SCHIEDSRICHTER: Wer pfeift? Karten-Schnitt?
+4. SCHIEDSRICHTER: Wer pfeift? Karten-Schnitt als DEZIMALZAHL (z.B. "Ø 4.2", NICHT "Ø 4")
 5. KONTEXT: Derby? Sandwich? Abstiegskampf?
+6. TOP-TORSCHÜTZEN: Die 3 wahrscheinlichsten Torschützen pro Spiel (basierend auf Saisontore, xG-Anteil, aktuelle Form). NUR angeben wenn SICHERE Daten vorhanden — lieber weglassen als raten!
 
-Quellen: transfermarkt.de, kicker.de, sofascore.com
+Quellen: transfermarkt.de, kicker.de, sofascore.com, understat.com
 
 Antworte als strukturiertes JSON:
 {
@@ -199,11 +200,16 @@ Antworte als strukturiertes JSON:
       "form_away": "...",
       "yellow_risk_home": "Spieler auf 4 Gelben",
       "yellow_risk_away": "...",
-      "referee": "Name, Ø X.X Karten/Spiel",
-      "context": "Kurzbeschreibung"
+      "referee": "Name, Ø 4.2 Karten/Spiel",
+      "context": "Kurzbeschreibung",
+      "top_scorers": [
+        {"name": "Spieler", "team": "H oder A", "prob": 0.30}
+      ]
     }
   ]
-}`);
+}
+
+WICHTIG: top_scorers nur angeben wenn du dir SICHER bist (Saisontore + aktuelle Form + Aufstellung bestätigt). Probability = geschätzte Trefferwahrscheinlichkeit für dieses Spiel (0.10 bis 0.50). Weglassen wenn unsicher.`);
 
   info("Tipp: Verletzungen die 2+ AIs nennen → sicher. Nur 1 AI → als 'fraglich' markieren.");
   const injText = await askMultiline(`\n${c.bold}Verletzungs-Daten hier einfügen (bestes Ergebnis oder Zusammenfassung):${c.reset}`);
@@ -231,6 +237,8 @@ ${injText.slice(0, 2000)}
 - Faustregel: Wert / 8 ≈ 0.8–2.5 pro Spiel. Wenn Wert < 5.0 → wahrscheinlich Durchschnitt statt Summe!
 - Tags: DERBY, SANDWICH, RELEGATION wenn zutreffend
 - data_confidence: HIGH (Understat xG), MEDIUM (geschätzt), LOW (wenig Daten)
+- referee: IMMER mit Dezimal-Karten-Schnitt: "Name, Ø 4.2 Karten/Spiel"
+- top_scorers: NUR wenn sichere Daten vorhanden (Saisontore + Form). Weglassen wenn unsicher!
 
 Antworte NUR mit dem JSON:
 {
@@ -243,7 +251,8 @@ Antworte NUR mit dem JSON:
     {
       "home": { "name": "...", "xg_h8": 12.5, "xga_h8": 7.2, "games": 8, "form": "W W D L W", "injuries": "...", "yellow_risk": "...", "notes": "" },
       "away": { "name": "...", "xg_a8": 9.0, "xga_a8": 11.5, "games": 8, "form": "L W W D W", "injuries": "...", "yellow_risk": "...", "notes": "" },
-      "tags": [], "context": "...", "referee": "...", "kickoff": "15:30"
+      "tags": [], "context": "...", "referee": "Name, Ø 4.2 Karten/Spiel", "kickoff": "15:30",
+      "top_scorers": [{"name": "Spieler", "team": "H", "prob": 0.30}]
     }
   ]
 }`);

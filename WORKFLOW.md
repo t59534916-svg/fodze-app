@@ -158,6 +158,10 @@ Recherchiere für JEDES Spiel:
 
 Quellen: sofascore.com, transfermarkt.de, kicker.de, ligaportal.de
 
+6. TOP-TORSCHÜTZEN pro Spiel:
+   - Die 3 wahrscheinlichsten Torschützen (basierend auf Saisontore, xG-Anteil, Einsatzminuten)
+   - NUR angeben wenn SICHERE Daten vorhanden — lieber weglassen als raten!
+
 Antworte als strukturiertes JSON mit diesem Format:
 {
   "data_confidence": "HIGH/MEDIUM/LOW",
@@ -166,13 +170,19 @@ Antworte als strukturiertes JSON mit diesem Format:
       "match": "Heim vs Gast",
       "injuries_suspensions": { "Heim": "...", "Gast": "..." },
       "form_last_5": { "Heim": "W W L D W", "Gast": "..." },
-      "referee": "Name",
-      "context": "..."
+      "referee": "Name, Ø 4.2 Karten/Spiel",
+      "context": "...",
+      "top_scorers": [
+        {"name": "Spieler", "team": "H", "prob": 0.30}
+      ]
     }
   ]
 }
 
-Nur FAKTEN, keine Vorhersagen.
+WICHTIG:
+- Schiedsrichter IMMER mit Dezimal-Kartenschnitt (z.B. "Ø 4.2", NICHT "Ø 4")
+- top_scorers: Probability = Trefferwahrscheinlichkeit für dieses Spiel (0.10–0.50). Weglassen wenn unsicher!
+- Nur FAKTEN, keine Vorhersagen.
 ```
 
 ### Auswertung der 3 AI-Antworten:
@@ -221,8 +231,13 @@ Nur FAKTEN, keine Vorhersagen.
       },
       "tags": [],
       "context": "Leverkusen Heimfestung. Wolfsburg auswärts schwach.",
-      "referee": "Daniel Siebert",
-      "kickoff": "15:30"
+      "referee": "Daniel Siebert, Ø 4.2 Karten/Spiel",
+      "kickoff": "15:30",
+      "top_scorers": [
+        {"name": "Wirtz", "team": "H", "prob": 0.35},
+        {"name": "Schick", "team": "H", "prob": 0.28},
+        {"name": "Wind", "team": "A", "prob": 0.22}
+      ]
     }
   ]
 }

@@ -12,6 +12,9 @@ WICHTIG – xG-Daten EXAKT so liefern:
 
 Beispiel: Bayern 8 Heimspiele xG: 2.1, 1.8, 3.2, 1.5, 2.4, 1.9, 2.7, 2.0 → xg_h8 = 17.6
 
+SCHIEDSRICHTER: Immer mit Karten-Schnitt als Dezimalzahl (z.B. "Ø 4.2 Karten/Spiel", NICHT "Ø 4")
+TOP-TORSCHÜTZEN: Pro Spiel die 3 wahrscheinlichsten Torschützen mit geschätzter Trefferwahrscheinlichkeit (basierend auf Saisonleistung, xG-Anteil, Einsatzminuten). NUR angeben wenn du SICHERE Daten hast — lieber weglassen als raten.
+
 KEINE Wettquoten. Antworte NUR als JSON:
 {
   "league": "${league}",
@@ -23,15 +26,21 @@ KEINE Wettquoten. Antworte NUR als JSON:
       "away": {"name": "Team B", "xg_a8": 9.0, "xga_a8": 11.5, "games": 8, "form": "L W W D W", "injuries": "", "yellow_risk": "", "notes": ""},
       "tags": ["DERBY"],
       "context": "Kurzer Kontext",
-      "referee": "Name, Ø X Karten/Spiel",
-      "kickoff": "15:30"
+      "referee": "Daniel Siebert, Ø 4.2 Karten/Spiel",
+      "kickoff": "15:30",
+      "top_scorers": [
+        {"name": "Wirtz", "team": "H", "prob": 0.35},
+        {"name": "Schick", "team": "H", "prob": 0.28},
+        {"name": "Wind", "team": "A", "prob": 0.22}
+      ]
     }
   ],
   "data_confidence": "HIGH/MEDIUM/LOW",
   "sources": ["understat.com", "transfermarkt.de"]
 }
 
-NOCHMAL: xg_h8/xga_h8/xg_a8/xga_a8 sind SUMMEN (5.0–20.0), NICHT Durchschnitte.`;
+NOCHMAL: xg_h8/xga_h8/xg_a8/xga_a8 sind SUMMEN (5.0–20.0), NICHT Durchschnitte.
+top_scorers: NUR wenn du sichere Daten hast. Probability = geschätzte Torwahrscheinlichkeit (0.0–0.5). Weglassen wenn unsicher.`;
 
 export const emptyMatch = () => ({
   home: { name: "", xg_h8: "", xga_h8: "", games: "8", form: "", injuries: "", yellow_risk: "", notes: "" },
