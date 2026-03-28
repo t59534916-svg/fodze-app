@@ -1,12 +1,14 @@
 "use client";
 import React, { useState } from "react";
 import AppShell from "@/components/layout/AppShell";
+import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
+import { button } from "@/styles/components";
 
 const S = {
-  card: { background: "#0d070540", border: "1px solid #c4a26515", borderRadius: 10, padding: "14px", marginBottom: 10 } as React.CSSProperties,
-  goldText: { background: "linear-gradient(135deg, #a68940, #e8d5a0, #f5e6b8, #d4b86a, #a68940)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
-  btn: { background: "transparent", border: "1px solid #c4a26530", color: "#c4a265", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontSize: 11, fontWeight: 500 } as React.CSSProperties,
-  code: { background: "#0d0705", border: "1px solid #c4a26520", borderRadius: 6, padding: "10px 12px", fontSize: 11, color: "#c4a26580", whiteSpace: "pre-wrap" as const, overflowX: "auto" as const, lineHeight: 1.5, fontFamily: "'Fira Code', 'SF Mono', monospace" } as React.CSSProperties,
+  card: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: `${space[5]}px`, marginBottom: space[4] } as React.CSSProperties,
+  goldText: { background: `linear-gradient(135deg, ${color.goldDark}, ${color.goldLight}, ${color.goldShine}, ${color.gold}, ${color.goldDark})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
+  btn: { ...button("outline") } as React.CSSProperties,
+  code: { background: color.leather, border: `1px solid ${color.border}`, borderRadius: radius.sm, padding: `${space[4]}px ${space[5]}px`, fontSize: fontSize.xs, color: color.textMuted, whiteSpace: "pre-wrap" as const, overflowX: "auto" as const, lineHeight: 1.5, fontFamily: fontFamily.mono } as React.CSSProperties,
 };
 
 const XG_SCRIPT = `// ═══ FODZE xG Fetcher v2 (with per-match history for EWMA) ═══

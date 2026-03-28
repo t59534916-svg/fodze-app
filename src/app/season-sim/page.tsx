@@ -32,14 +32,17 @@ function simMatch(lamH: number, lamA: number): [number, number] {
   return [samplePoisson(lamH), samplePoisson(lamA)];
 }
 
+import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
+import { text, page as pagestyle } from "@/styles/components";
+
 const S = {
-  page: { minHeight: "100dvh", padding: "16px 14px", background: "radial-gradient(ellipse at 50% 40%, #2a1810 0%, #1a0f0a 60%, #0d0705 100%)", color: "#ede4d4", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" } as React.CSSProperties,
-  card: { background: "#0d070540", border: "1px solid #c4a26515", borderRadius: 10, padding: "14px", marginBottom: 10 } as React.CSSProperties,
-  goldText: { background: "linear-gradient(135deg, #a68940, #e8d5a0, #f5e6b8, #d4b86a, #a68940)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
-  label: { fontSize: 10, color: "#c4a26560", textTransform: "uppercase" as const, letterSpacing: 1, marginBottom: 4 },
-  small: { fontSize: 11, color: "#c4a26580" },
-  input: { background: "#0d0705", border: "1px solid #c4a26525", borderRadius: 6, color: "#ede4d4", padding: "6px 8px", fontSize: 11, width: "100%" } as React.CSSProperties,
-  textarea: { background: "#0d0705", border: "1px solid #c4a26525", borderRadius: 6, color: "#ede4d4", padding: "8px", fontSize: 10, width: "100%", fontFamily: "monospace", resize: "vertical" as const } as React.CSSProperties,
+  page: { ...pagestyle, padding: `${space[5]}px ${space[5]}px`, background: `radial-gradient(ellipse at 50% 40%, ${color.leather3} 0%, ${color.leather} 60%, #0d0705 100%)` } as React.CSSProperties,
+  card: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: `${space[5]}px`, marginBottom: space[4] } as React.CSSProperties,
+  goldText: { background: `linear-gradient(135deg, ${color.goldDark}, ${color.goldLight}, ${color.goldShine}, ${color.gold}, ${color.goldDark})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
+  label: { ...text.label, marginBottom: space[2] } as React.CSSProperties,
+  small: { ...text.muted } as React.CSSProperties,
+  input: { background: color.leather, border: `1px solid ${color.border}`, borderRadius: radius.sm, color: color.text, padding: `${space[2]}px ${space[3]}px`, fontSize: fontSize.xs, width: "100%" } as React.CSSProperties,
+  textarea: { background: color.leather, border: `1px solid ${color.border}`, borderRadius: radius.sm, color: color.text, padding: `${space[3]}px`, fontSize: fontSize.xs, width: "100%", fontFamily: fontFamily.mono, resize: "vertical" as const } as React.CSSProperties,
 };
 
 interface TeamData {

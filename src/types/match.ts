@@ -5,6 +5,7 @@
 // ─── Raw Match Data (from Claude API / JSON Import) ──────────────────
 
 export interface TeamData {
+  [key: string]: any;  // allow dynamic key access (t[xk], t[xak], t[hk])
   name: string;
   xg_h8?: number;
   xga_h8?: number;

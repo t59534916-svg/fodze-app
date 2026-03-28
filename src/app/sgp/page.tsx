@@ -127,11 +127,14 @@ const SGP_COMBOS: SGPCombo[] = [
 
 // ─── Styles ─────────────────────────────────────────────────────────
 
+import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
+import { text } from "@/styles/components";
+
 const S = {
-  card: { background: "#0d070540", border: "1px solid #c4a26515", borderRadius: 10, padding: "14px", marginBottom: 10 } as React.CSSProperties,
-  goldText: { background: "linear-gradient(135deg, #a68940, #e8d5a0, #f5e6b8, #d4b86a, #a68940)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
-  label: { fontSize: 10, color: "#c4a26560", textTransform: "uppercase" as const, letterSpacing: 1, marginBottom: 4 },
-  small: { fontSize: 11, color: "#c4a26580" },
+  card: { background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: `${space[5]}px`, marginBottom: space[4] } as React.CSSProperties,
+  goldText: { background: `linear-gradient(135deg, ${color.goldDark}, ${color.goldLight}, ${color.goldShine}, ${color.gold}, ${color.goldDark})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" } as React.CSSProperties,
+  label: { ...text.label, marginBottom: space[2] } as React.CSSProperties,
+  small: { ...text.muted } as React.CSSProperties,
 };
 
 function pe(v: number) { return (v * 100).toFixed(1) + "%"; }

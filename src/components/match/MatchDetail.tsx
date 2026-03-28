@@ -26,7 +26,10 @@ function TabBtn({ label, active, onClick, id, controls }: { label: string; activ
 }
 
 // ─── Overview Tab ────────────────────────────────────────────────
-function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: any) {
+function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: {
+  match: RawMatch; calc: any; budget: number;
+  onPlaceBet: (match: RawMatch, bet: BetCalc) => void; placingBet: string | null;
+}) {
   const br = budget;
 
   return (
@@ -86,10 +89,10 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: any) {
       )}
 
       {/* Value Bets (simplified) */}
-      {calc?.bets?.filter((b: any) => b.isValue).length > 0 && (
+      {calc?.bets?.filter((b: BetCalc) => b.isValue).length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 10, color: "#6aad55", letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>VALUE BETS</div>
-          {calc.bets.filter((b: any) => b.isValue).map((b: any) => {
+          {calc.bets.filter((b: BetCalc) => b.isValue).map((b: BetCalc) => {
             const confColor = b.confidence === "HIGH" ? "#6aad55" : b.confidence === "MEDIUM" ? "#d4b86a" : "#c4a265";
             return (
               <div key={b.label} style={{
@@ -128,7 +131,10 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: any) {
 }
 
 // ─── Odds Tab ────────────────────────────────────────────────────
-function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, budget }: any) {
+function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, budget }: {
+  match: RawMatch; calc: any; idx: number; odds: OddsData; oddsHistory: OddsSnapshot[];
+  saving: boolean; onSetOdds: (f: string, v: string) => void; onSaveOdds: () => void; onDelHist: () => void; budget: number;
+}) {
   const movement = analyzeLineMovement(oddsHistory);
   const br = budget;
 
@@ -140,7 +146,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
       {calc?.bets?.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 10, color: "#c4a26570", letterSpacing: 0.5, marginBottom: 6, fontWeight: 600 }}>ALLE MÄRKTE</div>
-          {calc.bets.map((b: any) => (
+          {calc.bets.map((b: BetCalc) => (
             <div key={b.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #c4a26508", fontSize: 11 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 {b.isValue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#6aad55" }} />}
@@ -170,7 +176,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
             <span style={{ fontSize: 9, color: "#c4a26570", letterSpacing: 0.5 }}>QUOTENVERLAUF ({oddsHistory.length}x)</span>
             <button onClick={onDelHist} style={{ fontSize: 9, padding: "1px 6px", background: "#8c4a4a18", color: "#c47070", border: "none", borderRadius: 4, cursor: "pointer" }}>Löschen</button>
           </div>
-          {oddsHistory.map((s: any, si: number) => (
+          {oddsHistory.map((s: OddsSnapshot, si: number) => (
             <div key={si} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, padding: "3px 0", borderBottom: si < oddsHistory.length - 1 ? "1px solid #c4a26508" : "none" }}>
               <span style={{ color: "#c4a26560", minWidth: 42 }}>{new Date(s.snapshot_time).toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
               {["h", "d", "a"].map(k => {
@@ -185,7 +191,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
           ))}
           {movement && (
             <div style={{ background: "#c4a26510", borderRadius: 6, padding: "5px 8px", marginTop: 6 }}>
-              {Object.values(movement).map((mv: any, mi: number) => (
+              {Object.values(movement).map((mv: { label: string; from: number; to: number; dir: string }, mi: number) => (
                 <div key={mi} style={{ fontSize: 9, color: "#c4a26570" }}>{mv.label}: {mv.from.toFixed(2)}→{mv.to.toFixed(2)} ({mv.dir})</div>
               ))}
             </div>
@@ -197,7 +203,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
 }
 
 // ─── Details Tab ─────────────────────────────────────────────────
-function TabDetails({ match, calc }: any) {
+function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
   return (
     <div style={{ padding: "12px 0" }}>
       {/* Teams */}
@@ -253,7 +259,7 @@ function TabDetails({ match, calc }: any) {
             </span>
           </div>
           {calc.enh.tagCorrections.length > 0 && (
-            <div>{calc.enh.tagCorrections.map((tc: any, ti: number) => <div key={ti} style={{ color: "#d4b86a", fontSize: 9 }}>{tc.reason}</div>)}</div>
+            <div>{calc.enh.tagCorrections.map((tc: { reason: string }, ti: number) => <div key={ti} style={{ color: "#d4b86a", fontSize: 9 }}>{tc.reason}</div>)}</div>
           )}
           <div style={{ color: "#c4a26535", fontSize: 9, marginTop: 4 }}>
             90% CI: λH {calc.enh.ciH.low.toFixed(2)}–{calc.enh.ciH.high.toFixed(2)} · λA {calc.enh.ciA.low.toFixed(2)}–{calc.enh.ciA.high.toFixed(2)}
@@ -303,9 +309,9 @@ function TabDetails({ match, calc }: any) {
       })()}
 
       {/* Warnings */}
-      {calc?.warnings?.filter((w: any) => w.level === "error").length > 0 && (
+      {calc?.warnings?.filter((w: { level: string; message: string }) => w.level === "error").length > 0 && (
         <div style={{ padding: 8, borderRadius: 8, background: "#8c4a4a18", border: "1px solid #c4707020", marginTop: 12 }}>
-          {calc.warnings.filter((w: any) => w.level === "error").map((w: any, wi: number) => (
+          {calc.warnings.filter((w: { level: string; message: string }) => w.level === "error").map((w: { level: string; message: string }, wi: number) => (
             <div key={wi} style={{ fontSize: 10, color: "#c47070", marginBottom: 2 }}>{w.message}</div>))}
         </div>
       )}
