@@ -3,6 +3,7 @@ import { useState } from "react";
 import Kit from "@/components/shared/Kit";
 import XGSparkline from "@/components/XGSparkline";
 import OddsInput from "./OddsInput";
+import BettingSummary from "./BettingSummary";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves } from "@/lib/dixon-coles";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
@@ -26,9 +27,10 @@ function TabBtn({ label, active, onClick, id, controls }: { label: string; activ
 }
 
 // ─── Overview Tab ────────────────────────────────────────────────
-function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: {
+function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
   match: RawMatch; calc: any; budget: number;
   onPlaceBet: (match: RawMatch, bet: BetCalc) => void; placingBet: string | null;
+  league?: string;
 }) {
   const br = budget;
 
@@ -87,6 +89,9 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet }: {
           {calc.mk.O25 > 0.6 ? ` Torreich erwartet.` : calc.mk.O25 < 0.4 ? ` Wenig Tore erwartet.` : ""}
         </div>
       )}
+
+      {/* Betting Summary Card */}
+      <BettingSummary match={match} calc={calc} league={league} />
 
       {/* Value Bets (simplified) */}
       {calc?.bets?.filter((b: BetCalc) => b.isValue).length > 0 && (
@@ -320,11 +325,12 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
 }
 
 // ─── Main MatchDetail ────────────────────────────────────────────
-export default function MatchDetail({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, onPlaceBet, placingBet, budget }: {
+export default function MatchDetail({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, onPlaceBet, placingBet, budget, league }: {
   match: RawMatch; calc: MatchCalc | null; idx: number; odds: OddsData; oddsHistory: OddsSnapshot[]; saving: boolean;
   onSetOdds: (field: string, value: string) => void;
   onSaveOdds: () => void; onDelHist: () => void;
   onPlaceBet: (match: RawMatch, bet: BetCalc) => void; placingBet: string | null; budget: number;
+  league?: string;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
 
@@ -338,7 +344,7 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
       </div>
 
       <div key={tab} className="tab-fade-in" role="tabpanel" id={`panel-${tab}-${idx}`} aria-labelledby={`tab-${tab}-${idx}`}>
-        {tab === "overview" && <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} />}
+        {tab === "overview" && <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} league={league} />}
         {tab === "odds" && <TabOdds match={match} calc={calc} idx={idx} odds={odds} oddsHistory={oddsHistory} saving={saving} onSetOdds={onSetOdds} onSaveOdds={onSaveOdds} onDelHist={onDelHist} budget={budget} />}
         {tab === "details" && <TabDetails match={match} calc={calc} />}
       </div>

@@ -33,6 +33,7 @@ export interface RawMatch {
   context?: string;
   referee?: string;
   kickoff?: string;
+  top_scorers?: TopScorer[];
 }
 
 export interface MatchdayData {
@@ -127,6 +128,14 @@ export interface MatchCalc {
 export interface ProcessedMatch extends RawMatch {
   idx: number;
   calc: any;  // Dixon-Coles engine returns dynamic calc object
+}
+
+// ─── Top Scorers (optional, admin-provided) ──────────────────────────
+
+export interface TopScorer {
+  name: string;
+  team: "H" | "A";
+  prob: number;  // scoring probability 0-1
 }
 
 // ─── Odds ────────────────────────────────────────────────────────────

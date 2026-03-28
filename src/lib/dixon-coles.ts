@@ -286,6 +286,21 @@ export function getGoalBothHalves(lamH:number,lamA:number,rho=RHO):{yes:number;n
   return {yes, no: 1-yes};
 }
 
+// ─── Yellow Card Prediction (Poisson from referee average) ────────────
+const LEAGUE_AVG_CARDS: Record<string,number> = {
+  bundesliga: 3.8, epl: 3.2, la_liga: 4.5, serie_a: 4.2, ligue_1: 3.6,
+  bundesliga2: 3.9, liga3: 3.7, championship: 3.4, eredivisie: 3.5, cl: 3.3, el: 3.4, pokal: 3.6,
+};
+export function predictYellowCards(refereeStr?: string, leagueKey?: string): { expected: number; over25: number; over35: number; over45: number; over55: number } {
+  let avg = LEAGUE_AVG_CARDS[leagueKey || "bundesliga"] || 3.8;
+  if (refereeStr) {
+    const m = refereeStr.match(/(\d+[.,]\d+)\s*(Karten|cards|card)/i);
+    if (m) avg = parseFloat(m[1].replace(",", "."));
+  }
+  const poissonCdf = (k: number, lam: number) => { let s = 0; for (let i = 0; i <= k; i++) { let t = Math.exp(-lam); for (let j = 1; j <= i; j++) t *= lam / j; s += t; } return s; };
+  return { expected: avg, over25: 1 - poissonCdf(2, avg), over35: 1 - poissonCdf(3, avg), over45: 1 - poissonCdf(4, avg), over55: 1 - poissonCdf(5, avg) };
+}
+
 export function getFirstGoalTime(lamH:number,lamA:number,minute:number):number {
   return 1 - Math.exp(-(lamH+lamA)/90*minute);
 }

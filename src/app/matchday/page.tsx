@@ -22,7 +22,7 @@ const S = {
 
 export default function MatchdayPage() {
   const router = useRouter();
-  const { effectiveBudget, bankroll, dayBudget, setDayBudget } = useApp();
+  const { effectiveBudget, bankroll, dayBudget, setDayBudget, league } = useApp();
   const {
     data, matches, processed, valueMatches, totalStake, topTips, comboLegs,
     oddsData, oddsHistory, saving, setOdds, handleSaveOdds, handleDelHist, loadCached,
@@ -167,6 +167,7 @@ export default function MatchdayPage() {
                   onPlaceBet={handlePlaceBet}
                   placingBet={placingBet}
                   budget={br}
+                  league={league}
                 />
                 </div>
               )}
