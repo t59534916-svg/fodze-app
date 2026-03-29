@@ -184,7 +184,8 @@ export default function AnnaPage() {
           // Calc match
           const matchHf = getHomeFactor(h.name, ld.hf);
           const enh = calcMatchEnhanced(h.xg_h8, h.xga_h8, h.games || 8, h.form, a.xg_a8, a.xga_a8, a.games || 8, a.form,
-            ld.avg, matchHf, match.tags || [], h.xg_h_history, a.xg_a_history);
+            ld.avg, matchHf, match.tags || [], h.xg_h_history, a.xg_a_history,
+            undefined, undefined, undefined, undefined, { league: lgKey });
 
           const no: Record<string, number> = {};
           for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(oddsObj[k]); if (v > 0) no[k] = v; }

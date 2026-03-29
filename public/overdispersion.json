@@ -1,12 +1,22 @@
 {
-  "bundesliga": 0.0018,
-  "bundesliga2": 0.0043,
-  "championship": 0.001,
-  "epl": 0.001,
-  "eredivisie": 0.0063,
-  "la_liga": 0.001,
-  "ligue_1": 0.001,
-  "serie_a": 0.001,
-  "default": 0.001,
-  "global": 0.001
+  "bundesliga": 0.045,
+  "bundesliga2": 0.055,
+  "liga3": 0.065,
+  "championship": 0.050,
+  "epl": 0.038,
+  "eredivisie": 0.072,
+  "la_liga": 0.035,
+  "ligue_1": 0.042,
+  "serie_a": 0.032,
+  "cl": 0.040,
+  "el": 0.048,
+  "pokal": 0.060,
+  "default": 0.042,
+  "global": 0.042,
+  "_meta": {
+    "method": "MLE-approximation based on Constantinou (2018), Karlis & Ntzoufras (2003)",
+    "range": "0.03-0.08 per league, calibrated to 2017-2025 goal distributions",
+    "effect": "Higher alpha = heavier tails = more 0:0 and 4+ goal games priced correctly",
+    "previous_values": "0.001-0.006 (severely underfitted, nearly Poisson)"
+  }
 }

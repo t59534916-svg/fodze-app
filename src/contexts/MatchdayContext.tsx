@@ -176,7 +176,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       h.xg_h8, h.xga_h8 || 0, h.games || 8, h.form,
       a.xg_a8, a.xga_a8 || 0, a.games || 8, a.form,
       ld.avg, matchHf, match.tags || [],
-      h.xg_h_history, a.xg_a_history
+      h.xg_h_history, a.xg_a_history,
+      undefined, undefined, undefined, undefined, // SoS, names, absences
+      { league }  // enables NegBin overdispersion + dynamic rho
     );
     const o = oddsData[idx] || {};
     const no: Record<string, number> = {};
