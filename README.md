@@ -104,7 +104,8 @@ GROQ_API_KEY=gsk_...          # FREE — https://console.groq.com
 
 ## Dokumentation
 
-- **[Architecture](docs/ARCHITECTURE.md)** — System-Diagramm, Data Flow, Engine Pipeline, DB Schema
+- **[Engine](docs/ENGINE.md)** — Dixon-Coles, NegBin, XGBoost, Kalibrierung, Kelly (mathematisch detailliert)
+- **[Architecture](docs/ARCHITECTURE.md)** — System-Diagramm, Data Flow, DB Schema
 - **[Design Handoff](docs/DESIGN-HANDOFF.md)** — Tokens, Komponenten, Responsive, Accessibility
 - **[Workflow](WORKFLOW.md)** — Admin Spieltag-Workflow mit Prompts
 - **[CLAUDE.md](CLAUDE.md)** — Entwickler-Guide für Claude Code
