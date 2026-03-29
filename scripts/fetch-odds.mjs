@@ -192,14 +192,19 @@ async function upsertToSupabase(league, odds) {
     fetched_at: new Date().toISOString(),
   }));
 
-  // Upsert: update if event_id+league exists, insert otherwise
+  // Delete existing odds for this league, then insert fresh
+  await fetch(`${SUPA_URL}/rest/v1/live_odds?league=eq.${league}`, {
+    method: "DELETE",
+    headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
+  });
+
   const resp = await fetch(`${SUPA_URL}/rest/v1/live_odds`, {
     method: "POST",
     headers: {
       apikey: SUPA_KEY,
       Authorization: `Bearer ${SUPA_KEY}`,
       "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates",
+      Prefer: "return=minimal",
     },
     body: JSON.stringify(rows),
   });
@@ -208,7 +213,7 @@ async function upsertToSupabase(league, odds) {
     const txt = await resp.text();
     console.error(`  ❌ Supabase error: ${resp.status} ${txt}`);
   } else {
-    console.log(`  ✅ Upserted ${rows.length} events`);
+    console.log(`  ✅ Inserted ${rows.length} events (replaced old)`);
   }
 }
 

@@ -24,8 +24,10 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Fetch odds from The-Odds-API
-        working-directory: fodze-app
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -39,7 +41,6 @@ jobs:
 
       - name: Send Value Alerts to Telegram
         if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
-        working-directory: fodze-app
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
