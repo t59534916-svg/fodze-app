@@ -1,13 +1,13 @@
 {
   "coefficients": [
-    -0.000418,
-    0.000222,
-    -0.059484,
-    -0.003457,
-    -0.000131,
-    0.036083
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
   ],
-  "intercept": 0.030817,
+  "intercept": 0.009,
   "feature_names": [
     "total_lambda",
     "lambda_diff_abs",
@@ -18,8 +18,18 @@
   ],
   "rho_min": -0.2,
   "rho_max": 0.05,
-  "training_r2": 0.0015,
-  "cv_r2": 0.0004,
-  "n_train": 46807,
-  "note": "Coefficients for unscaled features. TypeScript uses sigmoid mapping."
+  "training_r2": 0.0,
+  "n_train": 28718,
+  "per_league_rho": {
+    "bundesliga": -0.0043,
+    "epl": 0.0058,
+    "la_liga": 0.0231,
+    "ligue_1": 0.0069,
+    "serie_a": 0.0137
+  },
+  "_meta": {
+    "method": "Empirical correlation from Supabase xG residuals",
+    "note": "Static rho (coefficients=0), uses intercept as global average",
+    "trained_at": "2026-03-29T17:13:40.361225"
+  }
 }

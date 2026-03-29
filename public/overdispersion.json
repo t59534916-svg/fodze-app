@@ -14,9 +14,8 @@
   "default": 0.042,
   "global": 0.042,
   "_meta": {
-    "method": "MLE-approximation based on Constantinou (2018), Karlis & Ntzoufras (2003)",
-    "range": "0.03-0.08 per league, calibrated to 2017-2025 goal distributions",
-    "effect": "Higher alpha = heavier tails = more 0:0 and 4+ goal games priced correctly",
-    "previous_values": "0.001-0.006 (severely underfitted, nearly Poisson)"
+    "method": "DEFAULT_OVERDISPERSION from neg-binomial.ts (literature-based)",
+    "note": "MLE on xG-vs-goals gives alpha~0.001 (near Poisson) because xG is already a good estimator. True overdispersion is at the match-level goal distribution, not xG residuals.",
+    "source": "Constantinou (2018), Karlis & Ntzoufras (2003)"
   }
 }
