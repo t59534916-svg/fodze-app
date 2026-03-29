@@ -236,8 +236,9 @@ export function ensemblePrediction(
   const sum1x2 = H + D + A;
   H /= sum1x2; D /= sum1x2; A /= sum1x2;
 
-  // O25: only DC and Logistic have this
-  const O25 = (w_dc * dixonColes.O25 + w_log * logistic.O25) / (w_dc + w_log);
+  // O25: use Dixon-Coles only (Poisson score-matrix is exact)
+  // Logistic O25 is a crude sigmoid approximation, not trained — systematically too high
+  const O25 = dixonColes.O25;
 
   // ─── Bayesian Bootstrap ───────────────────────────────────────
   // Resample xG history → recompute lambdas → distribution of predictions
