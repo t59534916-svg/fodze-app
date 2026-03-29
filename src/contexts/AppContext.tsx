@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { createClient, loadProfile, updateProfile, loadUserBets } from "@/lib/supabase";
 import { LEAGUES, loadCalibrationCurves, isCalibrationActive } from "@/lib/dixon-coles";
+import { loadEnsembleModel } from "@/lib/ensemble";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
 
@@ -54,6 +55,12 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     fetch("/calibration_curves.json")
       .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
       .then(curves => { loadCalibrationCurves(curves); setCalLoaded(true); })
+      .catch(() => {});
+
+    // Load ensemble model (Elo ratings, logistic coefficients, weights)
+    fetch("/ensemble-model.json")
+      .then(res => { if (!res.ok) throw new Error(); return res.json(); })
+      .then(model => { loadEnsembleModel(model); })
       .catch(() => {});
   }, []);
 

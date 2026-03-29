@@ -21,8 +21,8 @@ interface EloRatings {
   [team: string]: number;
 }
 
-// Global Elo store (persists across calls within session)
-const eloRatings: EloRatings = {};
+// Global Elo store (loaded from ensemble-model.json at runtime)
+let eloRatings: EloRatings = {};
 
 function getElo(team: string): number {
   return eloRatings[team] || DEFAULT_ELO;
@@ -50,6 +50,33 @@ export function updateElo(homeTeam: string, awayTeam: string, homeGoals: number,
   eloRatings[awayTeam] = getElo(awayTeam) + K_FACTOR * gdMult * ((1 - actual) - (1 - expected));
 }
 
+// Trained logistic regression coefficients (loaded from ensemble-model.json)
+let logisticCoeffs: number[][] | null = null;
+let logisticIntercepts: number[] | null = null;
+let logisticScalerMean: number[] | null = null;
+let logisticScalerScale: number[] | null = null;
+
+// Trained ensemble weights (optimized via cross-validation)
+let ensembleWeights = { dixonColes: 0.08, elo: 0.26, logistic: 0.46, market: 0.20 };
+
+/**
+ * Load trained ensemble model from JSON. Call once at app startup.
+ */
+export function loadEnsembleModel(model: any): void {
+  if (model.elo_ratings) {
+    eloRatings = model.elo_ratings;
+  }
+  if (model.logistic) {
+    logisticCoeffs = model.logistic.coefficients;
+    logisticIntercepts = model.logistic.intercepts;
+    logisticScalerMean = model.logistic.scaler_mean;
+    logisticScalerScale = model.logistic.scaler_scale;
+  }
+  if (model.weights) {
+    ensembleWeights = model.weights;
+  }
+}
+
 /**
  * Predict 1X2 probabilities from Elo ratings.
  */
@@ -74,22 +101,43 @@ export function eloPrediction(homeTeam: string, awayTeam: string): { H: number; 
  */
 export function logisticPrediction(features: {
   xgDiffPerGame: number;   // (home_xg - away_xg) per game
-  formDiff: number;         // home_form_points - away_form_points (0-15 scale)
+  formDiff: number;         // not used in trained model (kept for compat)
   homeFactor: number;       // league home factor
   totalXG: number;          // total expected goals
+  eloDiff?: number;         // (home_elo - away_elo) / 400
 }): { H: number; D: number; A: number; O25: number } {
-  const { xgDiffPerGame, formDiff, homeFactor, totalXG } = features;
+  const { xgDiffPerGame, homeFactor, totalXG } = features;
+  const eloDiff = features.eloDiff || 0;
 
-  // Softmax logistic (trained coefficients approximation)
-  const zH = 0.15 + 0.85 * xgDiffPerGame + 0.03 * formDiff + 0.4 * (homeFactor - 1.0);
-  const zD = -0.3 - 0.15 * Math.abs(xgDiffPerGame);
-  const zA = -0.15 - 0.85 * xgDiffPerGame - 0.03 * formDiff - 0.4 * (homeFactor - 1.0);
+  // Use trained coefficients if loaded, otherwise fallback
+  if (logisticCoeffs && logisticIntercepts && logisticScalerMean && logisticScalerScale) {
+    // Scale features as sklearn StandardScaler would
+    const raw = [xgDiffPerGame, totalXG, eloDiff, homeFactor];
+    const scaled = raw.map((v, i) => (v - logisticScalerMean![i]) / logisticScalerScale![i]);
 
+    // Multinomial logistic: z_class = coeff · x + intercept
+    const z = logisticCoeffs.map((coeff, cls) =>
+      coeff.reduce((s, c, i) => s + c * scaled[i], 0) + logisticIntercepts![cls]
+    );
+
+    // Softmax
+    const maxZ = Math.max(...z);
+    const expZ = z.map(v => Math.exp(v - maxZ));
+    const sumExp = expZ.reduce((s, v) => s + v, 0);
+    const probs = expZ.map(v => v / sumExp);
+
+    // Classes order from training: [away=0, draw=1, home=2]
+    const O25 = 1 / (1 + Math.exp(-(totalXG - 2.5) * 1.2));
+    return { H: probs[2], D: probs[1], A: probs[0], O25 };
+  }
+
+  // Fallback (not trained)
+  const zH = 0.35 + 0.48 * xgDiffPerGame + 0.05 * eloDiff;
+  const zD = -0.16 + 0.04 * xgDiffPerGame;
+  const zA = -0.20 - 0.52 * xgDiffPerGame - 0.04 * eloDiff;
   const expH = Math.exp(zH), expD = Math.exp(zD), expA = Math.exp(zA);
   const sum = expH + expD + expA;
-
   const O25 = 1 / (1 + Math.exp(-(totalXG - 2.5) * 1.2));
-
   return { H: expH / sum, D: expD / sum, A: expA / sum, O25 };
 }
 
@@ -159,13 +207,11 @@ export function ensemblePrediction(
     a: parseFloat(String(odds.a || 0)),
   }) : null;
 
-  // ─── Weights (empirically tuned) ──────────────────────────────
-  // Dixon-Coles is the strongest model, market is informative, Elo + Logistic add diversity
-
-  const w_dc = 0.45;     // Dixon-Coles: strongest, xG-based
-  const w_elo = 0.15;    // Elo: captures long-term form
-  const w_log = 0.15;    // Logistic: feature-based, different structure
-  const w_mkt = market ? 0.25 : 0;  // Market: very informative when available
+  // ─── Weights (optimized via cross-validation on 8,027 OOS matches) ──
+  const w_dc = ensembleWeights.dixonColes;
+  const w_elo = ensembleWeights.elo;
+  const w_log = ensembleWeights.logistic;
+  const w_mkt = market ? ensembleWeights.market : 0;
   const totalW = w_dc + w_elo + w_log + w_mkt;
 
   // ─── Weighted combination ─────────────────────────────────────
