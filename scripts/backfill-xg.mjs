@@ -1,27 +1,26 @@
 #!/usr/bin/env node
 /**
  * ═══════════════════════════════════════════════════════════════════
- * FODZE Historical xG Backfill
+ * FODZE Historical xG Backfill — Browser-Script Methode
  * ═══════════════════════════════════════════════════════════════════
  *
- * Scrapt historische per-Match xG-Daten von Understat (5 Top-Ligen)
- * und FBref (2. Bundesliga, Championship, Eredivisie) und seeded
- * sie in die Supabase `team_xg_history` Tabelle.
+ * Understat und FBref blocken automatisiertes Scraping.
+ * Dieses Script führt den Admin Schritt für Schritt:
+ *
+ * 1. Zeigt ein Browser-Script für Understat
+ * 2. Admin öffnet Understat im Browser, führt Script aus
+ * 3. Admin fügt die JSON-Daten hier ein
+ * 4. Script seeded in Supabase team_xg_history
  *
  * Usage:
- *   node scripts/backfill-xg.mjs                    # Alle Ligen, alle Saisons
- *   node scripts/backfill-xg.mjs --league bundesliga # Nur Bundesliga
- *   node scripts/backfill-xg.mjs --season 2023       # Nur 2023/24
- *   node scripts/backfill-xg.mjs --dry               # Nur anzeigen, nicht seeden
- *
- * Rate Limits:
- *   Understat: 3s zwischen Requests
- *   FBref: 5s zwischen Requests (aggressiveres Rate-Limiting)
+ *   node scripts/backfill-xg.mjs                    # Interaktiv
+ *   node scripts/backfill-xg.mjs --league bundesliga # Nur eine Liga
  */
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createInterface } from 'readline';
 import { createClient } from '@supabase/supabase-js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,176 +41,83 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.FODZE_SERVICE_KEY
 );
 
-// ─── CLI Args ────────────────────────────────────────────────────────
+const rl = createInterface({ input: process.stdin, output: process.stdout });
+const ask = (q) => new Promise(r => rl.question(q, r));
+const askMultiline = async (prompt) => {
+  console.log(prompt);
+  console.log(`${c.dim}  (Eingabe mit leerer Zeile + Enter beenden)${c.reset}\n`);
+  let lines = [];
+  while (true) {
+    const line = await ask('');
+    if (line.trim() === '' && lines.length > 0) break;
+    lines.push(line);
+  }
+  return lines.join('\n');
+};
 
-const args = process.argv.slice(2);
-const getArg = (flag) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : null; };
-const hasFlag = (flag) => args.includes(flag);
-const DRY_RUN = hasFlag('--dry');
-const LEAGUE_FILTER = getArg('--league');
-const SEASON_FILTER = getArg('--season');
+const c = { reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m', cyan: '\x1b[36m' };
+const ok = (msg) => console.log(`${c.green}✓ ${msg}${c.reset}`);
+const warn = (msg) => console.log(`${c.yellow}⚠ ${msg}${c.reset}`);
+const info = (msg) => console.log(`${c.dim}  ${msg}${c.reset}`);
 
 // ─── Config ──────────────────────────────────────────────────────────
 
 const UNDERSTAT_LEAGUES = {
-  bundesliga: { slug: "Bundesliga", seasons: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024"] },
-  epl:        { slug: "EPL",        seasons: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024"] },
-  la_liga:    { slug: "La_liga",    seasons: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024"] },
-  serie_a:    { slug: "Serie_A",    seasons: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024"] },
-  ligue_1:    { slug: "Ligue_1",    seasons: ["2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024"] },
+  bundesliga:  { slug: "Bundesliga",  seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
+  epl:         { slug: "EPL",         seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
+  la_liga:     { slug: "La_liga",     seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
+  serie_a:     { slug: "Serie_A",     seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
+  ligue_1:     { slug: "Ligue_1",     seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
+  eredivisie:  { slug: "Eredivisie",  seasons: ["2017","2018","2019","2020","2021","2022","2023","2024"] },
 };
 
-// FBref league IDs for xG-enabled leagues
-const FBREF_LEAGUES = {
-  bundesliga2:  { fbrefId: "33", name: "2. Bundesliga",  seasons: ["2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023", "2023-2024", "2024-2025"] },
-  championship: { fbrefId: "10", name: "Championship",    seasons: ["2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023", "2023-2024", "2024-2025"] },
-  eredivisie:   { fbrefId: "23", name: "Eredivisie",      seasons: ["2017-2018", "2018-2019", "2019-2020", "2020-2021", "2021-2022", "2022-2023", "2023-2024", "2024-2025"] },
-};
+// ─── Browser Script Generator ────────────────────────────────────────
 
-const c = { reset: '\x1b[0m', bold: '\x1b[1m', green: '\x1b[32m', yellow: '\x1b[33m', red: '\x1b[31m', dim: '\x1b[2m', cyan: '\x1b[36m' };
-const ok = (msg) => console.log(`${c.green}✓ ${msg}${c.reset}`);
-const warn = (msg) => console.log(`${c.yellow}⚠ ${msg}${c.reset}`);
-const info = (msg) => console.log(`${c.dim}  ${msg}${c.reset}`);
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-// ─── Understat Scraper (inline, no TS import) ────────────────────────
-
-function decodeHex(str) {
-  return str.replace(/\\x([\dA-Fa-f]{2})/g, (_, g1) => String.fromCharCode(parseInt(g1, 16)));
-}
-
-async function scrapeUnderstatSeason(leagueSlug, season) {
-  const url = `https://understat.com/league/${leagueSlug}/${season}`;
-  info(`Fetching ${url}...`);
-
-  const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (FODZE Backfill)" } });
-  if (!resp.ok) throw new Error(`Understat ${resp.status}: ${url}`);
-
-  const html = await resp.text();
-
-  // Extract datesData (contains all matches)
-  const datesMatch = html.match(/var datesData\s*=\s*JSON\.parse\('([^']+)'\)/);
-  if (!datesMatch?.[1]) throw new Error(`No datesData in ${url}`);
-
-  const matches = JSON.parse(decodeHex(datesMatch[1]));
-  const rows = [];
-
-  for (const m of matches) {
-    if (!m.isResult) continue;
-    const date = m.datetime?.split(" ")[0] || "";
-    const homeTeam = m.h?.title || "";
-    const awayTeam = m.a?.title || "";
-    const homeXG = parseFloat(m.xG?.h) || 0;
-    const awayXG = parseFloat(m.xG?.a) || 0;
-    const homeGoals = parseInt(m.goals?.h) || 0;
-    const awayGoals = parseInt(m.goals?.a) || 0;
-
-    if (!homeTeam || !awayTeam || !date) continue;
-
-    // Home perspective
-    rows.push({
-      team: homeTeam, opponent: awayTeam, venue: "home",
-      match_date: date, xg: homeXG, xga: awayXG,
-      goals_for: homeGoals, goals_against: awayGoals,
-    });
-    // Away perspective
-    rows.push({
-      team: awayTeam, opponent: homeTeam, venue: "away",
-      match_date: date, xg: awayXG, xga: homeXG,
-      goals_for: awayGoals, goals_against: homeGoals,
-    });
-  }
-
-  return rows;
-}
-
-// ─── FBref Scraper (for 2.BL, Championship, Eredivisie) ─────────────
-
-async function scrapeFBrefSeason(fbrefId, leagueName, season) {
-  // FBref schedule page: https://fbref.com/en/comps/33/2023-2024/schedule/...
-  const url = `https://fbref.com/en/comps/${fbrefId}/${season}/schedule/${season}-${leagueName.replace(/\s/g, "-")}-Scores-and-Fixtures`;
-  info(`Fetching ${url}...`);
-
-  const resp = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-      "Accept": "text/html",
-    },
-  });
-
-  if (!resp.ok) {
-    warn(`FBref ${resp.status} for ${leagueName} ${season} — skipping`);
-    return [];
-  }
-
-  const html = await resp.text();
-  const { load } = await import("cheerio");
-  const $ = load(html);
-
-  const rows = [];
-  const table = $("table.stats_table tbody");
-
-  table.find("tr:not(.thead)").each((_, row) => {
-    const cells = $(row).find("td, th");
-    if (cells.length < 8) return;
-
-    const date = $(cells[1]).text().trim();       // Date
-    const homeTeam = $(cells[3]).text().trim();    // Home
-    const score = $(cells[5]).text().trim();       // Score "2–1"
-    const awayTeam = $(cells[7]).text().trim();    // Away
-
-    if (!date || !homeTeam || !awayTeam || !score.includes("–")) return;
-
-    const [hGoals, aGoals] = score.split("–").map(s => parseInt(s.trim()));
-    if (isNaN(hGoals) || isNaN(aGoals)) return;
-
-    // Try xG columns (FBref has them for some leagues since ~2018)
-    const homeXGStr = cells.length > 9 ? $(cells[9]).text().trim() : "";
-    const awayXGStr = cells.length > 10 ? $(cells[10]).text().trim() : "";
-    const homeXG = homeXGStr ? parseFloat(homeXGStr) : null;
-    const awayXG = awayXGStr ? parseFloat(awayXGStr) : null;
-
-    // Home perspective
-    rows.push({
-      team: homeTeam, opponent: awayTeam, venue: "home",
-      match_date: date,
-      xg: homeXG ?? hGoals,     // Echte xG wenn vorhanden, sonst Tore
-      xga: awayXG ?? aGoals,
-      goals_for: hGoals, goals_against: aGoals,
-    });
-    // Away perspective
-    rows.push({
-      team: awayTeam, opponent: homeTeam, venue: "away",
-      match_date: date,
-      xg: awayXG ?? aGoals,
-      xga: homeXG ?? hGoals,
-      goals_for: aGoals, goals_against: hGoals,
+function generateBrowserScript(leagueSlug) {
+  return `// ═══ FODZE xG Backfill — ${leagueSlug} ═══
+// Dieses Script extrahiert ALLE per-Match xG-Daten für die Supabase team_xg_history Tabelle
+const result = [];
+Object.values(teamsData).forEach(t => {
+  t.history.forEach(g => {
+    result.push({
+      team: t.title,
+      opponent: "", // wird beim Seed ergänzt
+      venue: g.h_a === "h" ? "home" : "away",
+      match_date: (g.datetime || "").split(" ")[0],
+      xg: +parseFloat(g.xG).toFixed(2),
+      xga: +parseFloat(g.xGA).toFixed(2),
+      goals_for: parseInt(g.scored) || 0,
+      goals_against: parseInt(g.missed) || 0,
+      result: g.result
     });
   });
-
-  return rows;
+});
+copy(JSON.stringify(result));
+console.log("✅ " + result.length + " Einträge in Clipboard!");
+console.log("Teams:", [...new Set(result.map(r => r.team))].length);`;
 }
 
 // ─── Seed to Supabase ────────────────────────────────────────────────
 
-async function seedBatch(league, rows) {
-  if (DRY_RUN) {
-    info(`[DRY] Would insert ${rows.length} rows for ${league}`);
-    return 0;
-  }
-
-  // Upsert in batches of 500
+async function seedRows(league, rows) {
   let inserted = 0;
   for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500).map(r => ({ ...r, league }));
+    const batch = rows.slice(i, i + 500).map(r => ({
+      team: r.team,
+      opponent: r.opponent || "",
+      league,
+      venue: r.venue,
+      match_date: r.match_date,
+      xg: r.xg,
+      xga: r.xga,
+      goals_for: r.goals_for,
+      goals_against: r.goals_against,
+    }));
     const { error } = await supabase.from("team_xg_history").upsert(batch, {
       onConflict: "team,league,venue,match_date",
     });
-    if (error) {
-      warn(`Seed error: ${error.message}`);
-    } else {
-      inserted += batch.length;
-    }
+    if (error) warn(`Seed error: ${error.message}`);
+    else inserted += batch.length;
   }
   return inserted;
 }
@@ -222,71 +128,84 @@ async function seedBatch(league, rows) {
 
 async function main() {
   console.log(`\n${c.bold}${c.cyan}⚽ FODZE xG BACKFILL${c.reset}`);
-  console.log(`${c.dim}Historische xG-Daten in Supabase team_xg_history laden${c.reset}`);
-  if (DRY_RUN) console.log(`${c.yellow}DRY RUN — keine Daten werden geschrieben${c.reset}`);
-  console.log();
+  console.log(`${c.dim}Historische xG-Daten via Browser-Script → Supabase${c.reset}\n`);
 
-  let totalRows = 0;
+  const args = process.argv.slice(2);
+  const leagueFilter = args.includes('--league') ? args[args.indexOf('--league') + 1] : null;
 
-  // ─── Understat Ligen (echte xG) ────────────────────────────────────
-  for (const [key, config] of Object.entries(UNDERSTAT_LEAGUES)) {
-    if (LEAGUE_FILTER && key !== LEAGUE_FILTER) continue;
-
-    console.log(`${c.bold}${c.green}━━━ ${key.toUpperCase()} (Understat · echte xG) ━━━${c.reset}`);
-
-    for (const season of config.seasons) {
-      if (SEASON_FILTER && season !== SEASON_FILTER) continue;
-
-      try {
-        const rows = await scrapeUnderstatSeason(config.slug, season);
-        const inserted = await seedBatch(key, rows);
-        ok(`${key} ${season}: ${rows.length} Einträge${DRY_RUN ? " (dry)" : ` → ${inserted} geseeded`}`);
-        totalRows += rows.length;
-      } catch (e) {
-        warn(`${key} ${season}: ${e.message}`);
-      }
-
-      await sleep(3000);  // Rate limit: 3s
-    }
-    console.log();
+  // Liga auswählen
+  const keys = Object.keys(UNDERSTAT_LEAGUES);
+  if (!leagueFilter) {
+    console.log(`${c.bold}Verfügbare Ligen:${c.reset}`);
+    keys.forEach((k, i) => console.log(`  ${c.cyan}${i + 1}${c.reset}  ${UNDERSTAT_LEAGUES[k].slug}`));
   }
 
-  // ─── FBref Ligen (xG wenn vorhanden, sonst Tore) ──────────────────
-  for (const [key, config] of Object.entries(FBREF_LEAGUES)) {
-    if (LEAGUE_FILTER && key !== LEAGUE_FILTER) continue;
+  const targetKeys = leagueFilter ? [leagueFilter] : keys;
 
-    console.log(`${c.bold}${c.yellow}━━━ ${key.toUpperCase()} (FBref · xG/Tore) ━━━${c.reset}`);
+  for (const key of targetKeys) {
+    const config = UNDERSTAT_LEAGUES[key];
+    if (!config) { warn(`Liga ${key} nicht gefunden`); continue; }
+
+    console.log(`\n${c.bold}${c.green}━━━ ${config.slug.toUpperCase()} ━━━${c.reset}\n`);
 
     for (const season of config.seasons) {
-      if (SEASON_FILTER && season !== SEASON_FILTER) continue;
+      const url = `https://understat.com/league/${config.slug}/${season}`;
+
+      console.log(`${c.cyan}${c.bold}┌─── Saison ${season}/${parseInt(season)+1} ───${c.reset}`);
+      console.log(`${c.cyan}│${c.reset}  1. Öffne: ${c.bold}${url}${c.reset}`);
+      console.log(`${c.cyan}│${c.reset}  2. Chrome DevTools (F12) → Console`);
+      console.log(`${c.cyan}│${c.reset}  3. Paste dieses Script:`);
+      console.log(`${c.cyan}│${c.reset}`);
+      const script = generateBrowserScript(config.slug);
+      for (const line of script.split('\n')) {
+        console.log(`${c.cyan}│${c.reset}  ${c.dim}${line}${c.reset}`);
+      }
+      console.log(`${c.cyan}│${c.reset}`);
+      console.log(`${c.cyan}│${c.reset}  4. Daten sind im Clipboard`);
+      console.log(`${c.cyan}${c.bold}└───────────────────────────${c.reset}\n`);
+
+      const input = await askMultiline(`${c.bold}JSON für ${config.slug} ${season} hier einfügen (oder "skip" zum Überspringen):${c.reset}`);
+
+      if (input.trim().toLowerCase() === 'skip') {
+        warn(`${config.slug} ${season} übersprungen`);
+        continue;
+      }
 
       try {
-        const rows = await scrapeFBrefSeason(config.fbrefId, config.name, season);
-        if (rows.length === 0) {
-          warn(`${key} ${season}: Keine Daten gefunden`);
+        const data = JSON.parse(input.match(/\[[\s\S]*\]/)?.[0] || input);
+        if (!Array.isArray(data) || data.length === 0) {
+          warn("Keine Daten geparst");
           continue;
         }
 
-        const hasXG = rows.some(r => r.xg !== r.goals_for);
-        const inserted = await seedBatch(key, rows);
-        ok(`${key} ${season}: ${rows.length} Einträge (${hasXG ? "echte xG" : "Tore-Proxy"})${DRY_RUN ? " (dry)" : ` → ${inserted} geseeded`}`);
-        totalRows += rows.length;
-      } catch (e) {
-        warn(`${key} ${season}: ${e.message}`);
-      }
+        // Validierung
+        const teams = new Set(data.map(r => r.team));
+        const homeCount = data.filter(r => r.venue === "home").length;
+        const awayCount = data.filter(r => r.venue === "away").length;
+        info(`${data.length} Einträge, ${teams.size} Teams, ${homeCount} Heim / ${awayCount} Auswärts`);
 
-      await sleep(5000);  // FBref: 5s Rate Limit
+        // Plausibilitätscheck
+        const avgXG = data.reduce((s, r) => s + r.xg, 0) / data.length;
+        if (avgXG < 0.5 || avgXG > 3.0) warn(`Durchschnitt xG = ${avgXG.toFixed(2)} — verdächtig!`);
+
+        const confirm = await ask(`${c.bold}In Supabase seeden? (j/n): ${c.reset}`);
+        if (confirm.toLowerCase() === 'j' || confirm.toLowerCase() === 'y') {
+          const inserted = await seedRows(key, data);
+          ok(`${inserted} Einträge für ${config.slug} ${season} geseeded!`);
+        } else {
+          // Speichere als Backup
+          const outFile = resolve(__dirname, `${key}-${season}-xg.json`);
+          writeFileSync(outFile, JSON.stringify(data, null, 2));
+          ok(`JSON gespeichert: ${outFile}`);
+        }
+      } catch (e) {
+        warn(`Parse-Fehler: ${e.message}`);
+      }
     }
-    console.log();
   }
 
-  // ─── Summary ───────────────────────────────────────────────────────
-  console.log(`${c.bold}${c.cyan}━━━ ZUSAMMENFASSUNG ━━━${c.reset}`);
-  console.log(`  Gesamt: ${totalRows} Einträge`);
-  console.log(`  Understat: ${Object.keys(UNDERSTAT_LEAGUES).length} Ligen × 8 Saisons = echte xG`);
-  console.log(`  FBref: ${Object.keys(FBREF_LEAGUES).length} Ligen × 8 Saisons = xG/Tore`);
-  if (DRY_RUN) console.log(`  ${c.yellow}DRY RUN — nichts geschrieben${c.reset}`);
-  console.log();
+  console.log(`\n${c.bold}${c.cyan}Backfill abgeschlossen.${c.reset}\n`);
+  rl.close();
 }
 
 main().catch(e => { console.error(`${c.red}Fatal: ${e.message}${c.reset}`); process.exit(1); });
