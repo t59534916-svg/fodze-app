@@ -6,6 +6,7 @@ import {
   validateXGData, calcMatchEnhanced, isCalibrationActive,
 } from "@/lib/dixon-coles";
 import { useApp } from "./AppContext";
+import { validateMatchdayJSON } from "@/lib/schemas";
 import type { MatchdayData, RawMatch, OddsData, OddsSnapshot, MatchCalc, ProcessedMatch, ComboLeg, BetCalc } from "@/types/match";
 
 interface TopTip extends BetCalc {
@@ -74,7 +75,15 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const lg = overrideLeague || league;
     const cached = await loadLatestMatchday(supabase, lg);
     if (cached) {
-      setData(cached.data);
+      // Runtime validation: catch corrupted/malformed data from Supabase
+      const validation = validateMatchdayJSON(cached.data);
+      if (!validation.success) {
+        console.error("[FODZE] Matchday validation failed:", validation.errors);
+      }
+      if (validation.warnings?.length) {
+        console.warn("[FODZE] Matchday data warnings:", validation.warnings);
+      }
+      setData(validation.data ?? cached.data);
       const live = await loadLiveOdds(supabase, lg);
       setLiveOdds(live);
 
@@ -119,8 +128,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     try {
       const jsonMatch = jsonInput.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("Kein JSON gefunden.");
-      const parsed = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
-      if (!parsed.matches?.length) throw new Error("Keine Spiele im JSON.");
+      const raw = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+      // Runtime validation: catch malformed import data
+      const validation = validateMatchdayJSON(raw);
+      if (!validation.success) throw new Error(`Validierung fehlgeschlagen: ${validation.errors?.join(", ")}`);
+      const parsed = validation.data!;
       await saveMatchday(supabase, league, parsed.matchday || "Import", parsed, user.id);
       setData(parsed);
       return null;

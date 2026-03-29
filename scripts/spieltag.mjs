@@ -263,7 +263,26 @@ Antworte NUR mit dem JSON:
   try {
     const jsonMatch = jsonInput.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Kein JSON gefunden");
-    matchdayData = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+    const rawParsed = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+
+    // Zod Runtime-Validierung
+    try {
+      const { validateMatchdayJSON } = await import('../src/lib/schemas.ts');
+      const validation = validateMatchdayJSON(rawParsed);
+      if (!validation.success) {
+        warn("Zod-Validierung fehlgeschlagen:");
+        validation.errors?.forEach(e => warn(`  ${e}`));
+      } else {
+        if (validation.warnings?.length) {
+          validation.warnings.forEach(w => warn(w));
+        }
+        matchdayData = validation.data;
+      }
+    } catch {
+      // Zod nicht verfügbar (TS import failed) — fallback auf manuelles Parsing
+      matchdayData = rawParsed;
+    }
+    if (!matchdayData) matchdayData = rawParsed;
     ok(`JSON geparst: ${matchdayData.matches?.length || 0} Spiele`);
   } catch (e) {
     log(`${c.red}✗ JSON-Fehler: ${e.message}${c.reset}`);
