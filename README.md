@@ -130,13 +130,25 @@ GROQ_API_KEY=gsk_...          # FREE — https://console.groq.com
 - **[Workflow](WORKFLOW.md)** — Admin Spieltag-Workflow mit Prompts
 - **[CLAUDE.md](CLAUDE.md)** — Entwickler-Guide für Claude Code
 
+## Engine Performance (OOS, kein Data Leakage)
+
+| Modell | Brier Score | Gewicht |
+|--------|------------|---------|
+| Dixon-Coles (Poisson + NegBin) | 0.6047 | 4.9% |
+| Elo Rating (212 Teams) | 0.6036 | 11.5% |
+| Logistic (6 EWMA Features) | 0.5880 | 63.7% |
+| Market-Implied (Pinnacle) | — | 20.0% |
+| **Ensemble** | **0.5876** | — |
+
+Trainiert auf 38.379 Matches, evaluiert auf 1.752 OOS Matches (nach 01.08.2023).
+
 ## Qualität
 
 | Metrik | Wert |
 |--------|------|
 | Build | ✅ 0 Fehler, 19 Routen |
-| Tests | ✅ 13/13 (Dixon-Coles Engine) |
-| TypeScript | 95% typisiert (52 justified `any`) |
+| Tests | ✅ 23/23 (Engine + Zod) |
+| TypeScript | Strict Types (TeamData, MatchCalc, Zod Runtime) |
 | Accessibility | WCAG 2.1 AA (ARIA, Focus, Landmarks) |
 | Security | HSTS, RLS, X-Frame-Options, Permissions-Policy |
-| Dependencies | 5 Runtime, 5 Dev |
+| Dependencies | 6 Runtime (+ zod), 5 Dev |

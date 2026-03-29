@@ -2,14 +2,14 @@
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App. Dixon-Coles Modell berechnet Wahrscheinlichkeiten aus xG-Daten, vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
+Quantitative Fußball-Wettanalyse App. 4-Modell Ensemble (Dixon-Coles + Elo + Logistic EWMA + Market) mit Bayesian Bootstrap Confidence. Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
 
 ## Projekt starten
 
 ```bash
 npm install
 npm run dev       # http://localhost:3000
-npm run test      # 13 Tests (Dixon-Coles Engine)
+npm run test      # 23 Tests (Engine + Zod Schemas)
 npm run build     # Production Build
 ```
 

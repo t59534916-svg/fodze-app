@@ -1,7 +1,8 @@
 # FODZE Prediction Engine — Technische Dokumentation
 
-> Dixon-Coles Bivariate Poisson + Negative Binomial + XGBoost Residuals + Isotonische Kalibrierung
-> Version 3 · 14.359 Trainingsspiele · 12 Ligen · 15×15 Score-Matrix
+> 4-Modell Ensemble: Dixon-Coles + Elo + Logistic EWMA + Market
+> Bayesian Bootstrap Confidence · Unified Entity Resolution
+> Version 4 · 40.131 Trainingsspiele · OOT Cutoff 2023-08-01 · Ensemble Brier 0.5876
 
 ---
 
@@ -38,16 +39,26 @@ Phase 3B: Negative Binomial (Overdispersion α=0.032-0.095 je Liga)
 23 Märkte ableiten (H/D/A, Ü/U 1.5-5.5, BTTS, DC, CS, Asian HC, HT/FT)
   │
   ▼
-Phase 4A: Isotonische Kalibrierung (101-Punkt Lookup, 14.359 Spiele)
+Phase 4A: Kalibrierung DEAKTIVIERT (Identity — raw DC ist besser als Platt/Isotonic)
   │
   ▼
-Phase 4B: XGBoost Residual-Korrekturen (200 Bäume, 14 Features)
+Phase 4B: XGBoost Residual-Korrekturen (200 Bäume, 15 Features, 46.807 Spiele)
   │
   ▼
 Phase 4C: Pinnacle-Anchoring (KL-Divergenz Blending + Kelly-Dampening)
   │
   ▼
-Output: pModel, pMarket, Edge, EV, Kelly%, Konfidenz (HIGH/MEDIUM/LOW)
+Phase 5: ENSEMBLE (4 Modelle, Brier 0.5876)
+  ├── Dixon-Coles ──── 4.9%
+  ├── Elo Rating ──── 11.5%  (212 Teams, K=32)
+  ├── Logistic ────── 63.7%  (6 EWMA Features, α=0.15)
+  └── Market ──────── 20.0%  (Pinnacle wenn vorhanden)
+  │
+  ▼
+Phase 6: Bayesian Bootstrap (500 Resamples → 90% CI)
+  │
+  ▼
+Output: pModel, pMarket, Edge, EV, Kelly%, Konfidenz, CI [low-high]
 ```
 
 ---
