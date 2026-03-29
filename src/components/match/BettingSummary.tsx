@@ -201,16 +201,34 @@ export default function BettingSummary({ match, calc, league }: {
       <div style={sectionStyle}>GELBE KARTEN</div>
       {cards ? (
         <>
+          {/* Referee name prominently displayed when available */}
+          {cardsSource === "referee" && match.referee && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "#c4a26510", borderRadius: 6, padding: "5px 8px", marginBottom: 6,
+            }}>
+              <span style={{ fontSize: 14 }}>👨‍⚖️</span>
+              <div>
+                <div style={{ fontSize: 11, color: "#ede4d4", fontWeight: 600 }}>{match.referee.split(",")[0].trim()}</div>
+                <div style={{ fontSize: 9, color: "#c4a26570" }}>Ø {cards.expected.toFixed(1)} Karten/Spiel</div>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 12, fontSize: 11, marginBottom: 4 }}>
             <span style={{ color: "#ede4d4" }}>Ü3.5 <span style={{ color: "#d4b86a", fontWeight: 600 }}>{pc(cards.over35)}</span></span>
             <span style={{ color: "#ede4d4" }}>Ü4.5 <span style={{ color: "#c4a26580" }}>{pc(cards.over45)}</span></span>
             <span style={{ color: "#ede4d4" }}>Ü5.5 <span style={{ color: "#c4a26560" }}>{pc(cards.over55)}</span></span>
           </div>
-          <div style={{ fontSize: 9, color: "#c4a26545" }}>
-            {cardsSource === "referee" ? `${match.referee!.split(",")[0]} · ` : ""}
-            Ø {cards.expected.toFixed(1)} Karten/Spiel
-            {cardsSource === "league_avg" && " (Liga-Durchschnitt)"}
-          </div>
+          {cardsSource === "league_avg" && (
+            <div style={{ fontSize: 9, color: "#c4706080", fontStyle: "italic" }}>
+              ⚠ Kein Schiedsrichter bekannt — nur Liga-Durchschnitt (Ø {cards.expected.toFixed(1)})
+            </div>
+          )}
+          {cardsSource === "referee" && (
+            <div style={{ fontSize: 8, color: "#c4a26540", marginTop: 2 }}>
+              Basiert auf Schiedsrichter-Statistik · Poisson-Modell
+            </div>
+          )}
         </>
       ) : (
         <InsufficientData reason="Keine Schiedsrichter-Daten verfügbar" />
