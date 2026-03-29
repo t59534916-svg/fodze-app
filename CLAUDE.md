@@ -139,11 +139,28 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ```sql
 -- Wichtigste Tabellen:
-matchdays       -- Spieltag-JSON pro Liga (JSONB)
-odds_snapshots  -- Quotenverlauf mit Timestamps
-bets            -- Platzierte Wetten + P&L
-profiles        -- Bankroll, Risikoprofil
-live_odds       -- Auto-Import via GitHub Actions Cron
+matchdays        -- Spieltag-JSON pro Liga (JSONB)
+odds_snapshots   -- Quotenverlauf mit Timestamps
+bets             -- Platzierte Wetten + P&L
+profiles         -- Bankroll, Risikoprofil
+live_odds        -- Auto-Import via GitHub Actions Cron
+team_xg_history  -- 28.718 historische per-Match xG-Einträge (2017-2025)
+                 -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against
 ```
 
 RLS aktiv: User sehen alles, ändern nur eigene Daten.
+
+## Data Pipeline Scripts
+
+```bash
+npm run spieltag     # Interaktiver 6-Schritt Admin-Wizard (Prompts → Paste → Validate → Seed)
+npm run backfill     # Historisches xG Backfill via Browser-Scripts auf Understat
+npm run export-xg    # Supabase team_xg_history → lokale JSON-Backups (backups/)
+```
+
+### Backfill-Methode
+Understat blockiert automatisiertes Scraping (SPA). Stattdessen:
+1. Script zeigt Browser-Console-Script pro Liga/Saison
+2. Admin öffnet Understat im Chrome, führt Script aus
+3. JSON wird ins Terminal eingefügt → validiert → nach Supabase geseeded
+4. Lokale Backups via `npm run export-xg`

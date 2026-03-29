@@ -78,11 +78,31 @@ npm run spieltag    # Interaktiver 6-Schritt Wizard
 
 Details: [WORKFLOW.md](WORKFLOW.md)
 
+## Historische xG-Daten
+
+28.718 echte xG-Einträge in Supabase `team_xg_history` (2017-2025):
+
+| Liga | Einträge | Quelle |
+|------|----------|--------|
+| Bundesliga | 4.896 | Understat (echte xG) |
+| Premier League | 6.080 | Understat (echte xG) |
+| La Liga | 6.080 | Understat (echte xG) |
+| Serie A | 6.080 | Understat (echte xG) |
+| Ligue 1 | 5.582 | Understat (echte xG) |
+
+```bash
+npm run backfill     # Historisches xG Backfill (Browser-Script Methode)
+npm run export-xg    # Supabase → lokale JSON-Backups (backups/)
+```
+
 ## Scripts
 
 ```bash
 npm run dev          # Lokaler Dev-Server
 npm run build        # Production Build
+npm run spieltag     # Admin Spieltag-Wizard (interaktiv)
+npm run backfill     # Historisches xG Backfill
+npm run export-xg    # Supabase Export → backups/
 npm run test         # vitest (13 Tests für Dixon-Coles Engine)
 npm run test:watch   # Watch-Mode
 npm run lint         # ESLint
