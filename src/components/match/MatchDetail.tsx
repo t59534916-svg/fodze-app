@@ -167,10 +167,10 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
       )}
 
       {/* Overround */}
-      {calc?.ov !== null && (
+      {calc && calc.ov !== null && (
         <div style={{ fontSize: 10, marginBottom: 8, padding: "4px 8px", borderRadius: 6, display: "inline-block",
-          background: calc.ov > 0.08 ? "#c4a26510" : "#5a8c4a15", color: calc.ov > 0.08 ? "#c4a265" : "#6aad55" }}>
-          Marge: {pc(calc.ov)}
+          background: (calc.ov || 0) > 0.08 ? "#c4a26510" : "#5a8c4a15", color: (calc.ov || 0) > 0.08 ? "#c4a265" : "#6aad55" }}>
+          Marge: {pc(calc.ov || 0)}
         </div>
       )}
 

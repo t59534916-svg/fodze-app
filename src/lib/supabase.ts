@@ -44,7 +44,7 @@ export async function saveOddsSnapshot(
 export async function loadOddsHistory(supabase: SupabaseClient, matchKey: string) {
   const { data, error } = await supabase
     .from("odds_snapshots")
-    .select("*, profiles(display_name)")
+    .select("*")
     .eq("match_key", matchKey)
     .order("snapshot_time", { ascending: true });
   if (error) return [];
