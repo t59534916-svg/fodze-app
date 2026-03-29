@@ -358,6 +358,28 @@ export default function AnnaPage() {
       `}</style>
 
       <div className="anna-container">
+        {/* Anna Header */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "16px 16px 12px", borderBottom: "1px solid #c4a26515",
+          background: "linear-gradient(to bottom, #1a0f0a, transparent)",
+        }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/anna-avatar.jpg" alt="Anna" style={{
+            width: 48, height: 48, borderRadius: "50%", objectFit: "cover",
+            border: "2px solid #d4b86a40",
+            boxShadow: "0 0 12px rgba(212,184,106,0.15)",
+          }} />
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#d4b86a", letterSpacing: 0.5 }}>Anna</div>
+            <div style={{ fontSize: 11, color: "#c4a26560" }}>KI-Wettberaterin · FODZE</div>
+          </div>
+          <div style={{
+            marginLeft: "auto", width: 8, height: 8, borderRadius: "50%",
+            background: "#6aad55", boxShadow: "0 0 6px #6aad5580",
+          }} />
+        </div>
+
         <div className="anna-messages" ref={scrollRef} aria-live="polite" aria-label="Chat-Verlauf">
           {messages.map(msg => (
             <ChatMessage key={msg.id} role={msg.role} content={msg.content} isStreaming={isStreaming && msg === messages[messages.length - 1] && msg.role === "assistant"}>
