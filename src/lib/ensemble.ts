@@ -107,18 +107,21 @@ export function eloPrediction(homeTeam: string, awayTeam: string): { H: number; 
  */
 export function logisticPrediction(features: {
   xgDiffPerGame: number;   // (home_xg - away_xg) per game
-  formDiff: number;         // not used in trained model (kept for compat)
+  xgaDiffPerGame?: number; // (home_xga - away_xga) per game (defensive)
+  formDiff: number;         // home form points - away form points
   homeFactor: number;       // league home factor
   totalXG: number;          // total expected goals
   eloDiff?: number;         // (home_elo - away_elo) / 400
 }): { H: number; D: number; A: number; O25: number } {
-  const { xgDiffPerGame, homeFactor, totalXG } = features;
+  const { xgDiffPerGame, homeFactor, totalXG, formDiff } = features;
+  const xgaDiffPerGame = features.xgaDiffPerGame || 0;
   const eloDiff = features.eloDiff || 0;
 
   // Use trained coefficients if loaded, otherwise fallback
   if (logisticCoeffs && logisticIntercepts && logisticScalerMean && logisticScalerScale) {
     // Scale features as sklearn StandardScaler would
-    const raw = [xgDiffPerGame, totalXG, eloDiff, homeFactor];
+    // Order must match training: [xg_diff, xga_diff, elo_diff, total_goals, home_factor, form_diff]
+    const raw = [xgDiffPerGame, xgaDiffPerGame, eloDiff, totalXG, homeFactor, formDiff];
     const scaled = raw.map((v, i) => (v - logisticScalerMean![i]) / logisticScalerScale![i]);
 
     // Multinomial logistic: z_class = coeff · x + intercept
@@ -192,6 +195,7 @@ export function ensemblePrediction(
   awayTeam: string,
   features: {
     xgDiffPerGame: number;
+    xgaDiffPerGame?: number;
     formDiff: number;
     homeFactor: number;
     totalXG: number;
@@ -206,7 +210,9 @@ export function ensemblePrediction(
   // ─── Individual model predictions ──────────────────────────────
 
   const elo = eloPrediction(homeTeam, awayTeam);
-  const logistic = logisticPrediction(features);
+  // Add eloDiff to features for logistic model (normalized by 400)
+  const eloDiff = (getElo(homeTeam) - getElo(awayTeam)) / 400;
+  const logistic = logisticPrediction({ ...features, eloDiff });
   const market = odds ? marketImpliedProbs({
     h: parseFloat(String(odds.h || 0)),
     d: parseFloat(String(odds.d || 0)),

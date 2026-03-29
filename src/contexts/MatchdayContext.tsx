@@ -233,14 +233,15 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // ── Ensemble: combine Dixon-Coles with Elo + Logistic + Market ──
     const hGames = h.games || 8, aGames = a.games || 8;
     const xgDiffPerGame = (h.xg_h8 / hGames) - (a.xg_a8 / aGames);
+    const xgaDiffPerGame = ((h.xga_h8 || 0) / hGames) - ((a.xga_a8 || 0) / aGames);
     const formToPoints = (f: string | undefined) => {
-      if (!f) return 7.5; // neutral
+      if (!f) return 7.5;
       return f.split(/\s+/).reduce((s, r) => s + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
     };
     const ensemble = ensemblePrediction(
       { H: enh.mk.H, D: enh.mk.D, A: enh.mk.A, O25: enh.mk.O25 },
       h.name, a.name,
-      { xgDiffPerGame, formDiff: formToPoints(h.form) - formToPoints(a.form), homeFactor: matchHf, totalXG: enh.lambdaH + enh.lambdaA },
+      { xgDiffPerGame, xgaDiffPerGame, formDiff: formToPoints(h.form) - formToPoints(a.form), homeFactor: matchHf, totalXG: enh.lambdaH + enh.lambdaA },
       hasOdds ? { h: no.h, d: no.d, a: no.a } : undefined,
       h.xg_h_history, a.xg_a_history, ld.avg,
     );
