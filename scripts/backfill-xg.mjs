@@ -100,9 +100,15 @@ console.log("Teams:", [...new Set(result.map(r => r.team))].length);`;
 // ─── Seed to Supabase ────────────────────────────────────────────────
 
 async function seedRows(league, rows) {
+  // Filter out rows with empty/invalid dates
+  const valid = rows.filter(r => r.match_date && r.match_date.match(/^\d{4}-\d{2}-\d{2}$/));
+  if (valid.length < rows.length) {
+    warn(`${rows.length - valid.length} Einträge ohne gültiges Datum übersprungen`);
+  }
+
   let inserted = 0;
-  for (let i = 0; i < rows.length; i += 500) {
-    const batch = rows.slice(i, i + 500).map(r => ({
+  for (let i = 0; i < valid.length; i += 500) {
+    const batch = valid.slice(i, i + 500).map(r => ({
       team: r.team,
       opponent: r.opponent || "",
       league,
