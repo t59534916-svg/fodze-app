@@ -216,6 +216,36 @@ export default function BettingSummary({ match, calc, league }: {
         <InsufficientData reason="Keine Schiedsrichter-Daten verfügbar" />
       )}
 
+      {/* ═══ ENSEMBLE KONFIDENZ ═══ */}
+      {calc.ensemble?.confidence && (
+        <>
+          <div style={sectionStyle}>KONFIDENZ (Bayesian Bootstrap)</div>
+          <div style={{ display: "flex", gap: 8, fontSize: 11, marginBottom: 4 }}>
+            {[
+              { label: "H", ci: calc.ensemble.confidence.H_ci },
+              { label: "X", ci: calc.ensemble.confidence.D_ci },
+              { label: "A", ci: calc.ensemble.confidence.A_ci },
+            ].map(({ label, ci }) => (
+              <div key={label} style={{ flex: 1, textAlign: "center", background: "#0d070530", borderRadius: 6, padding: "4px 2px" }}>
+                <div style={{ fontSize: 9, color: "#c4a26560" }}>{label}</div>
+                <div style={{ fontSize: 11, color: "#ede4d4", fontFamily: "'SF Mono', monospace" }}>
+                  {(ci[0] * 100).toFixed(0)}–{(ci[1] * 100).toFixed(0)}%
+                </div>
+              </div>
+            ))}
+            <div style={{ flex: 1, textAlign: "center", background: calc.ensemble.confidence.uncertainty < 0.08 ? "#5a8c4a15" : calc.ensemble.confidence.uncertainty < 0.15 ? "#c4a26510" : "#8c4a4a15", borderRadius: 6, padding: "4px 2px" }}>
+              <div style={{ fontSize: 9, color: "#c4a26560" }}>Sicherheit</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: calc.ensemble.confidence.uncertainty < 0.08 ? "#6aad55" : calc.ensemble.confidence.uncertainty < 0.15 ? "#d4b86a" : "#c47070" }}>
+                {calc.ensemble.confidence.uncertainty < 0.08 ? "HOCH" : calc.ensemble.confidence.uncertainty < 0.15 ? "MITTEL" : "NIEDRIG"}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: 8, color: "#c4a26540", textAlign: "center" }}>
+            {calc.ensemble.nBootstrap}× Bootstrap · {calc.ensemble.models.market ? "4" : "3"} Modelle · 90% CI
+          </div>
+        </>
+      )}
+
       {/* ═══ TORSCHÜTZEN (nur wenn Admin-Daten vorhanden — NIE halluziniert) ═══ */}
       {quality.hasScorers && scorers && scorers.length > 0 ? (
         <>

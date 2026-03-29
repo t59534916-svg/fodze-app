@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, toXGHistoryEntries } from "@/lib/supabase";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
+import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
   validateXGData, calcMatchEnhanced, isCalibrationActive,
@@ -229,12 +230,34 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           if (enh.matrix[i]?.[j] > 0.005) topScores.push({ s: `${i}:${j}`, p: enh.matrix[i][j] });
     }
     topScores.sort((a, b) => b.p - a.p);
+    // ── Ensemble: combine Dixon-Coles with Elo + Logistic + Market ──
+    const hGames = h.games || 8, aGames = a.games || 8;
+    const xgDiffPerGame = (h.xg_h8 / hGames) - (a.xg_a8 / aGames);
+    const formToPoints = (f: string | undefined) => {
+      if (!f) return 7.5; // neutral
+      return f.split(/\s+/).reduce((s, r) => s + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
+    };
+    const ensemble = ensemblePrediction(
+      { H: enh.mk.H, D: enh.mk.D, A: enh.mk.A, O25: enh.mk.O25 },
+      h.name, a.name,
+      { xgDiffPerGame, formDiff: formToPoints(h.form) - formToPoints(a.form), homeFactor: matchHf, totalXG: enh.lambdaH + enh.lambdaA },
+      hasOdds ? { h: no.h, d: no.d, a: no.a } : undefined,
+      h.xg_h_history, a.xg_a_history, ld.avg,
+    );
+
+    // Use ensemble probabilities for final mk (override Dixon-Coles)
+    const ensembleMk = { ...enh.mk, H: ensemble.H, D: ensemble.D, A: ensemble.A, O25: ensemble.O25 };
+
+    // Recalculate bets with ensemble probabilities
+    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac);
+
     return {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,
       lambdaH_raw: enh.lambdaH_raw, lambdaA_raw: enh.lambdaA_raw,
-      mk: enh.mk, bets, enh, topScores: topScores.slice(0, 5),
+      mk: ensembleMk, bets: ensembleBets, enh, topScores: topScores.slice(0, 5),
       ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
-      hasValue: bets.some(b => b.isValue), hasOdds, warnings,
+      hasValue: ensembleBets.some(b => b.isValue), hasOdds, warnings,
+      ensemble,  // Expose ensemble details for UI
     } as MatchCalc;
   }
 

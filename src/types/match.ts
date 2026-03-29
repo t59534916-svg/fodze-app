@@ -205,6 +205,16 @@ export interface MatchCalc extends LambdaEstimates {
   hasValue: boolean;
   hasOdds: boolean;
   warnings?: { level: "error" | "warning"; message: string }[];
+  ensemble?: {
+    H: number; D: number; A: number; O25: number;
+    models: Record<string, any>;
+    confidence: {
+      H_ci: [number, number]; D_ci: [number, number];
+      A_ci: [number, number]; O25_ci: [number, number];
+      uncertainty: number;
+    };
+    nBootstrap: number;
+  };
 }
 
 // ─── Processed Match ─────────────────────────────────────────────────
