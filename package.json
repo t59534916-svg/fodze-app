@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "lint": "next lint",
     "spieltag": "node scripts/spieltag.mjs",
-    "backfill": "node scripts/backfill-xg.mjs"
+    "backfill": "node scripts/backfill-xg.mjs",
+    "export-xg": "node scripts/export-xg.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
