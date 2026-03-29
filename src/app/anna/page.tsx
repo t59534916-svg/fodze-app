@@ -391,8 +391,8 @@ export default function AnnaPage() {
       <div className="anna-container">
         {/* Anna Header */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 14,
-          padding: "16px 16px 14px", borderBottom: "1px solid #c4a26515",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+          padding: "20px 16px 16px", borderBottom: "1px solid #c4a26515",
           background: "linear-gradient(to bottom, #1a0f0a, transparent)",
         }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -401,28 +401,27 @@ export default function AnnaPage() {
             alt="Anna"
             onClick={cycleAvatar}
             style={{
-              width: 80, height: 80, borderRadius: "50%", objectFit: "cover",
-              border: "2.5px solid #d4b86a50",
-              boxShadow: "0 0 20px rgba(212,184,106,0.2)",
+              width: 240, height: 240, borderRadius: "50%", objectFit: "cover",
+              border: "3px solid #d4b86a50",
+              boxShadow: "0 0 30px rgba(212,184,106,0.2)",
               cursor: availableAvatars.length > 1 ? "pointer" : "default",
               transition: "transform 0.2s ease, box-shadow 0.2s ease",
             }}
-            onMouseEnter={e => { if (availableAvatars.length > 1) { e.currentTarget.style.transform = "scale(1.05)"; e.currentTarget.style.boxShadow = "0 0 24px rgba(212,184,106,0.35)"; } }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 0 20px rgba(212,184,106,0.2)"; }}
+            onMouseEnter={e => { if (availableAvatars.length > 1) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 0 36px rgba(212,184,106,0.35)"; } }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(212,184,106,0.2)"; }}
           />
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#d4b86a", letterSpacing: 0.5 }}>Anna</div>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#d4b86a", letterSpacing: 0.5 }}>Anna</div>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6aad55", boxShadow: "0 0 6px #6aad5580" }} />
+            </div>
             <div style={{ fontSize: 11, color: "#c4a26560" }}>KI-Wettberaterin · FODZE</div>
             {availableAvatars.length > 1 && (
-              <div style={{ fontSize: 8, color: "#c4a26535", marginTop: 2 }}>
+              <div style={{ fontSize: 8, color: "#c4a26535", marginTop: 3 }}>
                 Tippe auf das Bild zum Wechseln · {avatarIdx + 1}/{availableAvatars.length}
               </div>
             )}
           </div>
-          <div style={{
-            marginLeft: "auto", width: 8, height: 8, borderRadius: "50%",
-            background: "#6aad55", boxShadow: "0 0 6px #6aad5580",
-          }} />
         </div>
 
         <div className="anna-messages" ref={scrollRef} aria-live="polite" aria-label="Chat-Verlauf">
