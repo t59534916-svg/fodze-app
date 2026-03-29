@@ -118,10 +118,20 @@ GitHub Actions (`.github/workflows/ci.yml`):
 - Lint + TypeCheck dürfen feilen (continue-on-error)
 - Tests + Build müssen bestehen
 
+## Type System
+
+### TeamData — Strikte xG-Keys (kein Index-Signatur)
+`TeamData` hat explizite Properties (`xg_h8`, `xga_h8`, `xg_a8`, `xga_a8`) statt `[key: string]: any`. Dynamischer Key-Zugriff (`t[xk]`) wurde durch explizite Property-Zugriffe ersetzt.
+
+### MatchCalc — Interface Segregation
+`ProcessedMatch.calc` ist `MatchCalc | null` mit strukturell getyptem `enh`-Feld. Die Engine gibt `EnhancedResult` zurück, das via `as MatchCalc` assertion zugewiesen wird. Core-Fields (lambdaH, mk, matrix, ciH, formH, tagCorrections) sind strikt typisiert, Engine-Erweiterungen via `Record<string, any>` intersection erlaubt.
+
+### OddsData — Index-Signatur für parseFloat(o[k])
+`OddsData` hat typisierte Haupt-Keys (`h`, `d`, `a`, `o25`) plus Index-Signatur `[key: string]: string | OddsSharpData | number | undefined` für den dynamischen `parseFloat(String(o[k]))` Zugriff.
+
 ## Bekannte Einschränkungen
 
-- `ProcessedMatch.calc` ist `any` weil der Dixon-Coles Engine Return-Type zu komplex für ein statisches Interface ist
-- `TeamData` hat Index-Signature `[key: string]: any` für dynamischen Key-Zugriff (xg_h8, xg_a8 etc.)
+- `MatchCalc.enh` nutzt `Record<string, any> &` Intersection — ein Kompromiss weil `Markets` (Engine-intern) und `MarketProbs` (types/match.ts) strukturell identisch aber nominell verschieden sind
 - Standalone-Seiten (Simulator, SGP, Season-Sim) haben eigene Inline-Engines die nicht den zentralen dixon-coles.ts nutzen
 - Kein E2E Testing — nur Unit-Tests für die Engine
 

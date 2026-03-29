@@ -185,7 +185,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
             <div key={si} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, padding: "3px 0", borderBottom: si < oddsHistory.length - 1 ? "1px solid #c4a26508" : "none" }}>
               <span style={{ color: "#c4a26560", minWidth: 42 }}>{new Date(s.snapshot_time).toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
               {["h", "d", "a"].map(k => {
-                const val = parseFloat(s.odds[k]), prev = si > 0 ? parseFloat(oddsHistory[si - 1].odds[k]) : null;
+                const val = parseFloat(String(s.odds[k] ?? "")), prev = si > 0 ? parseFloat(String(oddsHistory[si - 1].odds[k] ?? "")) : null;
                 const mv = prev !== null && val > 0 && Math.abs(val - prev) >= 0.03;
                 return <span key={k} style={{ minWidth: 40, textAlign: "right", fontWeight: mv ? 700 : 400,
                   color: mv ? (val < prev! ? "#6aad55" : "#c47070") : "#c4a26570" }}>
@@ -212,8 +212,10 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
   return (
     <div style={{ padding: "12px 0" }}>
       {/* Teams */}
-      {[{ t: match.home, r: "H", cl: "#d4b86a", xk: "xg_h8", xak: "xga_h8", hk: "xg_h_history" },
-        { t: match.away, r: "A", cl: "#c47070", xk: "xg_a8", xak: "xga_a8", hk: "xg_a_history" }].map(({ t, r, cl, xk, xak, hk }) => t && (
+      {[
+        { t: match.home, r: "H" as const, cl: "#d4b86a", xg: match.home.xg_h8, xga: match.home.xga_h8, hist: match.home.xg_h_history },
+        { t: match.away, r: "A" as const, cl: "#c47070", xg: match.away.xg_a8, xga: match.away.xga_a8, hist: match.away.xg_a_history },
+      ].map(({ t, r, cl, xg, xga, hist }) => t && (
         <div key={r} style={{ padding: "10px 0", borderBottom: "1px solid #c4a26510", fontSize: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <Kit team={t.name} size={20} />
@@ -222,16 +224,16 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
             <span style={{ fontWeight: 700, color: cl, fontSize: 10 }}>({r})</span>
           </div>
           <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#c4a26560", marginBottom: 4, paddingLeft: 28 }}>
-            {t[xk] > 0 && <span>xG {(t[xk] / (t.games || 8)).toFixed(2)}/Sp</span>}
-            {t[xak] > 0 && <span>xGA {(t[xak] / (t.games || 8)).toFixed(2)}/Sp</span>}
+            {xg && xg > 0 && <span>xG {(xg / (t.games || 8)).toFixed(2)}/Sp</span>}
+            {xga && xga > 0 && <span>xGA {(xga / (t.games || 8)).toFixed(2)}/Sp</span>}
             {t.form && <span>{t.form}</span>}
           </div>
           {t.injuries && t.injuries !== "None" && (
             <div style={{ color: "#c47070", fontSize: 10, paddingLeft: 28 }}>Ausfälle: {t.injuries}</div>
           )}
           {t.yellow_risk && <div style={{ color: "#c4a265", fontSize: 10, paddingLeft: 28 }}>Gelb: {t.yellow_risk}</div>}
-          {(t[hk] || t.xg_h_history || t.xg_a_history)?.length >= 2 && (
-            <div style={{ marginTop: 6, paddingLeft: 28 }}><XGSparkline history={t[hk] || t.xg_h_history || t.xg_a_history} width={180} height={36} /></div>
+          {hist && hist.length >= 2 && (
+            <div style={{ marginTop: 6, paddingLeft: 28 }}><XGSparkline history={hist} width={180} height={36} /></div>
           )}
         </div>
       ))}

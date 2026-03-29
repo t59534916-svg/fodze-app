@@ -182,7 +182,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     );
     const o = oddsData[idx] || {};
     const no: Record<string, number> = {};
-    for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(o[k]); if (v > 0) no[k] = v; }
+    for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
     const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac);
     const topScores: { s: string; p: number }[] = [];
@@ -198,7 +198,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       mk: enh.mk, bets, enh, topScores: topScores.slice(0, 5),
       ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
       hasValue: bets.some(b => b.isValue), hasOdds, warnings,
-    };
+    } as MatchCalc;
   }
 
   const matches: RawMatch[] = data?.matches || [];
