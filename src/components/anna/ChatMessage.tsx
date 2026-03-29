@@ -1,9 +1,15 @@
 "use client";
 import type { CSSProperties } from "react";
 
+const avatarStyle: CSSProperties = {
+  width: 32, height: 32, borderRadius: "50%",
+  objectFit: "cover", flexShrink: 0,
+  border: "1.5px solid #d4b86a40",
+};
+
 const assistantStyle: CSSProperties = {
   background: "#c4a2650c", border: "1px solid #c4a26518", borderRadius: "12px 12px 12px 4px",
-  padding: "12px 14px", maxWidth: "88%", fontSize: 13, lineHeight: 1.65, color: "#ede4d4",
+  padding: "12px 14px", maxWidth: "85%", fontSize: 13, lineHeight: 1.65, color: "#ede4d4",
   whiteSpace: "pre-wrap", animation: "slideUp 0.2s ease",
 };
 
@@ -24,14 +30,26 @@ export default function ChatMessage({ role, content, isStreaming, children }: {
   children?: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", marginBottom: 12 }}>
-      {/* Role label */}
-      <div style={{ fontSize: 9, color: "#c4a26560", marginBottom: 4, fontWeight: 600, letterSpacing: 0.5,
-        textAlign: role === "user" ? "right" : "left" }}>
-        {role === "assistant" ? "ANNA" : "DU"}
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", marginBottom: 14 }}>
+      {/* Assistant: Avatar + Name row */}
+      {role === "assistant" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/anna-avatar.jpg" alt="Anna" style={avatarStyle} />
+          <span style={{ fontSize: 11, color: "#d4b86a", fontWeight: 600, letterSpacing: 0.3 }}>Anna</span>
+        </div>
+      )}
+      {/* User label */}
+      {role === "user" && (
+        <div style={{ fontSize: 9, color: "#c4a26560", marginBottom: 4, fontWeight: 600, letterSpacing: 0.5, textAlign: "right" }}>
+          DU
+        </div>
+      )}
       {/* Message bubble */}
-      <div style={role === "user" ? userStyle : assistantStyle}>
+      <div style={{
+        ...(role === "user" ? userStyle : assistantStyle),
+        ...(role === "assistant" ? { marginLeft: 40 } : {}),  // indent under avatar
+      }}>
         {content}
         {isStreaming && !content && (
           <div style={typingDots}>
@@ -43,7 +61,7 @@ export default function ChatMessage({ role, content, isStreaming, children }: {
         {isStreaming && content && <span style={{ display: "inline-block", width: 2, height: 14, background: "#d4b86a", marginLeft: 2, animation: "pulse 1s infinite", verticalAlign: "text-bottom" }} />}
       </div>
       {/* Interactive elements below bubble */}
-      {children && <div style={{ marginTop: 8 }}>{children}</div>}
+      {children && <div style={{ marginTop: 8, marginLeft: role === "assistant" ? 40 : 0 }}>{children}</div>}
     </div>
   );
 }
