@@ -21,11 +21,17 @@ interface EloRatings {
   [team: string]: number;
 }
 
+import { toCsvName } from "./team-resolver";
+
 // Global Elo store (loaded from ensemble-model.json at runtime)
 let eloRatings: EloRatings = {};
 
 function getElo(team: string): number {
-  return eloRatings[team] || DEFAULT_ELO;
+  // Direct lookup first (already a CSV name)
+  if (eloRatings[team] !== undefined) return eloRatings[team];
+  // Resolve FODZE/Understat name to CSV name
+  const csvName = toCsvName(team);
+  return eloRatings[csvName] ?? DEFAULT_ELO;
 }
 
 function expectedScore(ratingA: number, ratingB: number): number {

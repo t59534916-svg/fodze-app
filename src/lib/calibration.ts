@@ -68,12 +68,33 @@ let CALIBRATION: Record<string, number[]> = {
   H: CAL_H, D: CAL_D, A: CAL_A, O25: CAL_O25,
 };
 
-let CALIBRATION_ACTIVE = true; // Real curves loaded from backtest
+let CALIBRATION_ACTIVE = true;
+
+// Calibration method: isotonic (101-point lookup) or platt (2-param sigmoid)
+let CALIBRATION_METHOD: "isotonic" | "platt" = "isotonic";
+let PLATT_PARAMS: Record<string, { a: number; b: number }> = {};
 
 // Per-league calibration curves (loaded from retrained model)
 let LEAGUE_CALIBRATION: Record<string, Record<string, number[]>> = {};
 
-export function loadCalibrationCurves(curves: Record<string, number[]>): void {
+export function loadCalibrationCurves(curves: any): void {
+  // Identity: no calibration (raw probs are already well-calibrated)
+  if (curves.method === "identity") {
+    CALIBRATION_METHOD = "isotonic"; // fallback path, but won't be used since ACTIVE=false
+    CALIBRATION_ACTIVE = false;
+    return;
+  }
+
+  // Check for Platt scaling
+  if (curves.method === "platt" && curves.platt_params) {
+    CALIBRATION_METHOD = "platt";
+    PLATT_PARAMS = curves.platt_params;
+    CALIBRATION_ACTIVE = true;
+    return;
+  }
+
+  // Isotonic fallback
+  CALIBRATION_METHOD = "isotonic";
   for (const key of ["H", "D", "A", "O25"]) {
     const globalKey = `CAL_${key}`;
     if (curves[globalKey] && curves[globalKey].length === 101) CALIBRATION[key] = curves[globalKey];
@@ -82,7 +103,7 @@ export function loadCalibrationCurves(curves: Record<string, number[]>): void {
   // Load per-league curves
   for (const [key, arr] of Object.entries(curves)) {
     const match = key.match(/^CAL_(H|D|A|O25)_(.+)$/);
-    if (match && arr.length === 101) {
+    if (match && Array.isArray(arr) && arr.length === 101) {
       const [, market, league] = match;
       if (!LEAGUE_CALIBRATION[league]) LEAGUE_CALIBRATION[league] = {};
       LEAGUE_CALIBRATION[league][market] = arr;
@@ -94,7 +115,16 @@ export function loadCalibrationCurves(curves: Record<string, number[]>): void {
 export function isCalibrationActive(): boolean { return CALIBRATION_ACTIVE; }
 
 export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", league?: string): number {
-  // Use per-league curve if available, fallback to global
+  // Platt scaling: calibrated_p = 1 / (1 + exp(a * logit(p) + b))
+  if (CALIBRATION_METHOD === "platt") {
+    const params = PLATT_PARAMS[market];
+    if (!params) return rawP;
+    const clipped = Math.max(rawP, 1e-6);
+    const logit = Math.log(clipped / Math.max(1 - clipped, 1e-6));
+    return 1 / (1 + Math.exp(params.a * logit + params.b));
+  }
+
+  // Isotonic: use per-league curve if available, fallback to global
   const curve = (league && LEAGUE_CALIBRATION[league]?.[market]) || CALIBRATION[market];
   if (!curve) return rawP;
   if (rawP <= 0) return curve[0];
