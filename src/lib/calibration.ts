@@ -70,17 +70,32 @@ let CALIBRATION: Record<string, number[]> = {
 
 let CALIBRATION_ACTIVE = true; // Real curves loaded from backtest
 
+// Per-league calibration curves (loaded from retrained model)
+let LEAGUE_CALIBRATION: Record<string, Record<string, number[]>> = {};
+
 export function loadCalibrationCurves(curves: Record<string, number[]>): void {
   for (const key of ["H", "D", "A", "O25"]) {
-    if (curves[key] && curves[key].length === 101) CALIBRATION[key] = curves[key];
+    const globalKey = `CAL_${key}`;
+    if (curves[globalKey] && curves[globalKey].length === 101) CALIBRATION[key] = curves[globalKey];
+    else if (curves[key] && curves[key].length === 101) CALIBRATION[key] = curves[key];
+  }
+  // Load per-league curves
+  for (const [key, arr] of Object.entries(curves)) {
+    const match = key.match(/^CAL_(H|D|A|O25)_(.+)$/);
+    if (match && arr.length === 101) {
+      const [, market, league] = match;
+      if (!LEAGUE_CALIBRATION[league]) LEAGUE_CALIBRATION[league] = {};
+      LEAGUE_CALIBRATION[league][market] = arr;
+    }
   }
   CALIBRATION_ACTIVE = true;
 }
 
 export function isCalibrationActive(): boolean { return CALIBRATION_ACTIVE; }
 
-export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25"): number {
-  const curve = CALIBRATION[market];
+export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", league?: string): number {
+  // Use per-league curve if available, fallback to global
+  const curve = (league && LEAGUE_CALIBRATION[league]?.[market]) || CALIBRATION[market];
   if (!curve) return rawP;
   if (rawP <= 0) return curve[0];
   if (rawP >= 1) return curve[100];

@@ -1,21 +1,6 @@
 {
-  "bundesliga": 0.045,
-  "bundesliga2": 0.055,
-  "liga3": 0.065,
-  "championship": 0.050,
-  "epl": 0.038,
-  "eredivisie": 0.072,
-  "la_liga": 0.035,
-  "ligue_1": 0.042,
-  "serie_a": 0.032,
-  "cl": 0.040,
-  "el": 0.048,
-  "pokal": 0.060,
-  "default": 0.042,
-  "global": 0.042,
-  "_meta": {
-    "method": "DEFAULT_OVERDISPERSION from neg-binomial.ts (literature-based)",
-    "note": "MLE on xG-vs-goals gives alpha~0.001 (near Poisson) because xG is already a good estimator. True overdispersion is at the match-level goal distribution, not xG residuals.",
-    "source": "Constantinou (2018), Karlis & Ntzoufras (2003)"
-  }
+  "bundesliga": 0.045, "bundesliga2": 0.055, "liga3": 0.065, "championship": 0.050,
+  "epl": 0.038, "eredivisie": 0.072, "la_liga": 0.035, "ligue_1": 0.042,
+  "serie_a": 0.032, "cl": 0.040, "el": 0.048, "pokal": 0.060,
+  "default": 0.042, "global": 0.042
 }
