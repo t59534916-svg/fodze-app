@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 import { text } from "@/styles/components";
@@ -198,6 +199,72 @@ function GradeBar() {
 }
 
 // ─── Main Page ───
+function LivePerformance() {
+  const { userBets } = useApp();
+  const settled = userBets.filter(b => b.result === "won" || b.result === "lost");
+  if (settled.length === 0) return (
+    <div style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space[5], marginBottom: space[4], textAlign: "center" }}>
+      <div style={{ fontSize: fontSize.sm, color: color.textMuted }}>Noch keine abgerechneten Wetten für Live-Performance</div>
+    </div>
+  );
+
+  const won = settled.filter(b => b.result === "won");
+  const pnl = settled.reduce((s, b) => s + (b.result === "won" ? (b.odds_placed - 1) * b.stake : -b.stake), 0);
+  const totalStake = settled.reduce((s, b) => s + b.stake, 0);
+  const roi = totalStake > 0 ? (pnl / totalStake) * 100 : 0;
+  const winRate = (won.length / settled.length) * 100;
+
+  // Brier Score (if model_prob available)
+  const withProb = settled.filter(b => b.model_prob && b.model_prob > 0);
+  let brier = null;
+  if (withProb.length >= 5) {
+    brier = withProb.reduce((s, b) => {
+      const actual = b.result === "won" ? 1 : 0;
+      return s + Math.pow((b.model_prob || 0) - actual, 2);
+    }, 0) / withProb.length;
+  }
+
+  // CLV: closing line value
+  const avgEdge = settled.reduce((s, b) => s + (b.edge || 0), 0) / settled.length;
+
+  return (
+    <div style={{ background: "linear-gradient(135deg, #5a8c4a08, #c4a26508)", border: "1px solid #6aad5520", borderRadius: radius.md, padding: space[5], marginBottom: space[4] }}>
+      <div style={{ ...text.label, color: "#6aad55", marginBottom: 8 }}>LIVE PERFORMANCE</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 70, textAlign: "center" }}>
+          <div style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, fontFamily: fontFamily.mono, color: pnl >= 0 ? "#6aad55" : "#c47070" }}>
+            {pnl >= 0 ? "+" : ""}€{pnl.toFixed(0)}
+          </div>
+          <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>P&L</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 70, textAlign: "center" }}>
+          <div style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, fontFamily: fontFamily.mono, color: roi >= 0 ? "#6aad55" : "#c47070" }}>
+            {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+          </div>
+          <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>ROI</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 70, textAlign: "center" }}>
+          <div style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, fontFamily: fontFamily.mono, color: color.goldShine }}>
+            {won.length}/{settled.length}
+          </div>
+          <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>{winRate.toFixed(0)}% Win</div>
+        </div>
+        {brier !== null && (
+          <div style={{ flex: 1, minWidth: 70, textAlign: "center" }}>
+            <div style={{ fontSize: fontSize.xl, fontWeight: fontWeight.bold, fontFamily: fontFamily.mono, color: brier < 0.25 ? "#6aad55" : color.goldShine }}>
+              {brier.toFixed(4)}
+            </div>
+            <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>Brier</div>
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: fontSize.xs, color: color.textFaint, marginTop: 8, textAlign: "center" }}>
+        {settled.length} Wetten · Ø Edge {(avgEdge * 100).toFixed(1)}% · €{totalStake.toFixed(0)} Einsatz
+      </div>
+    </div>
+  );
+}
+
 export default function PerformancePage() {
   const [curves, setCurves] = useState<Record<string, number[]> | null>(null);
   const [tab, setTab] = useState<"overview" | "calibration" | "pnl">("overview");
@@ -234,6 +301,9 @@ export default function PerformancePage() {
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (
         <>
+          {/* Live Performance from actual bets */}
+          <LivePerformance />
+
           {/* Training Info */}
           <div style={S.card}>
             <div style={{ ...S.label, marginBottom: 8 }}>Trainingsdaten</div>

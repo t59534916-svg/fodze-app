@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory } from "@/lib/supabase";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, toXGHistoryEntries } from "@/lib/supabase";
+import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
   validateXGData, calcMatchEnhanced, isCalibrationActive,
@@ -83,7 +84,31 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       if (validation.warnings?.length) {
         console.warn("[FODZE] Matchday data warnings:", validation.warnings);
       }
-      setData(validation.data ?? cached.data);
+      const matchdayData = validation.data ?? cached.data;
+
+      // Enrich matches with per-match xG history from Supabase (for EWMA decay)
+      if (matchdayData.matches) {
+        for (const match of matchdayData.matches) {
+          // Resolve team name to Understat name via mapping
+          const resolveTeam = (name: string) => {
+            const mapped = TEAM_SCRAPER_MAP[name];
+            return mapped?.understat || name;
+          };
+
+          if (match.home?.name && !match.home.xg_h_history?.length) {
+            const understatName = resolveTeam(match.home.name);
+            const hist = await loadTeamXGHistory(supabase, understatName, lg, "home", 8);
+            if (hist.length > 0) match.home.xg_h_history = toXGHistoryEntries(hist);
+          }
+          if (match.away?.name && !match.away.xg_a_history?.length) {
+            const understatName = resolveTeam(match.away.name);
+            const hist = await loadTeamXGHistory(supabase, understatName, lg, "away", 8);
+            if (hist.length > 0) match.away.xg_a_history = toXGHistoryEntries(hist);
+          }
+        }
+      }
+
+      setData(matchdayData);
       const live = await loadLiveOdds(supabase, lg);
       setLiveOdds(live);
 
