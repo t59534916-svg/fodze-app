@@ -83,7 +83,7 @@ Object.values(teamsData).forEach(t => {
       team: t.title,
       opponent: "", // wird beim Seed ergänzt
       venue: g.h_a === "h" ? "home" : "away",
-      match_date: (g.datetime || "").split(" ")[0],
+      match_date: (g.date||g.datetime || "").split(" ")[0],
       xg: +parseFloat(g.xG).toFixed(2),
       xga: +parseFloat(g.xGA).toFixed(2),
       goals_for: parseInt(g.scored) || 0,
