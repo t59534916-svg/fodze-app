@@ -655,6 +655,7 @@ export interface AccumulatorLeg {
   pTrackA: number;          // Raw matrix probability (for display)
   pTrackB: number;          // Isotonic-calibrated probability (for Kelly/edge)
   quote: number;            // Bookmaker odds
+  volatility?: number;      // npxg_volatility des involvierten Teams (0-2+)
 }
 
 export interface AccumulatorResult {
@@ -708,11 +709,43 @@ export function calcAccumulator(
   // Für Akkus dividieren wir durch die Anzahl der Legs.
   // 2er-Akku: Kelly / 2, 3er: Kelly / 3, etc.
   // Grund: Varianz wächst geometrisch mit jedem Leg.
-  // Ein 4er-Akku mit gleicher Kelly-Fraction wie ein Single
-  // hat ~16× höhere Varianz → Ruin-Risiko steigt exponentiell.
   const nLegs = legs.length;
-  const kellyDivisor = nLegs;  // Konservativ: Kelly / nLegs
-  const adjustedFraction = kellyBaseFraction / kellyDivisor;
+  const kellyDivisor = nLegs;
+  let adjustedFraction = kellyBaseFraction / kellyDivisor;
+
+  // ═══ VOLATILITÄTS-DAMPENER (Chaos Pricing) ═══
+  // npxg_volatility ist das stärkste Feature im Modell.
+  // Chaotische Teams (hohe Volatilität) zerstören Kombi-Wetten:
+  // Ihre wahre Wahrscheinlichkeitsverteilung hat fette Tails,
+  // die das Poisson-Modell nicht vollständig abbildet.
+  // Wenn ein Leg ein hochvolatiles Team enthält, reduzieren wir
+  // den Kelly-Einsatz proportional zur maximalen Volatilität.
+  //
+  // Schwellenwerte (aus npxg_volatility Feature-Verteilung):
+  //   < 0.8: Normal — kein Dampening
+  //   0.8–1.2: Erhöht — 15% Reduktion
+  //   1.2–1.6: Hoch — 30% Reduktion
+  //   > 1.6: Extrem — 45% Reduktion
+  const VOL_THRESHOLD_NORMAL = 0.8;
+  const VOL_THRESHOLD_HIGH = 1.2;
+  const VOL_THRESHOLD_EXTREME = 1.6;
+
+  const maxVol = Math.max(...legs.map(l => l.volatility ?? 0));
+  let volDampener = 1.0;
+  const volWarnings: string[] = [];
+
+  if (maxVol > VOL_THRESHOLD_EXTREME) {
+    volDampener = 0.55;
+    volWarnings.push(`Extrem volatiles Team (σ=${maxVol.toFixed(2)}): Kelly -45%`);
+  } else if (maxVol > VOL_THRESHOLD_HIGH) {
+    volDampener = 0.70;
+    volWarnings.push(`Hochvolatiles Team (σ=${maxVol.toFixed(2)}): Kelly -30%`);
+  } else if (maxVol > VOL_THRESHOLD_NORMAL) {
+    volDampener = 0.85;
+    volWarnings.push(`Erhöhte Volatilität (σ=${maxVol.toFixed(2)}): Kelly -15%`);
+  }
+
+  adjustedFraction *= volDampener;
 
   const kelly = comboQuote > 1 && ev_trackB > 0
     ? Math.max(0, Math.min(
@@ -722,12 +755,14 @@ export function calcAccumulator(
     : 0;
 
   // Warnungen
-  let warning: string | null = null;
+  const warnings: string[] = [...volWarnings];
   if (ev_trackA > 0 && ev_trackB <= 0) {
-    warning = `Track A zeigt +EV (${(ev_trackA * 100).toFixed(1)}%), aber Track B (kalibriert) sagt -EV (${(ev_trackB * 100).toFixed(1)}%). Das Modell ist wahrscheinlich overconfident — NICHT wetten.`;
-  } else if (nLegs >= 5) {
-    warning = `${nLegs}-Leg Akku: Varianz extrem hoch. Selbst mit +EV ist der Erwartungswert der Volatilität dominant. Systemwette erwägen.`;
+    warnings.push(`Track A zeigt +EV (${(ev_trackA * 100).toFixed(1)}%), aber Track B (kalibriert) sagt -EV (${(ev_trackB * 100).toFixed(1)}%). Modell overconfident — NICHT wetten.`);
   }
+  if (nLegs >= 5) {
+    warnings.push(`${nLegs}-Leg Akku: Varianz extrem hoch. Systemwette erwägen.`);
+  }
+  const warning = warnings.length > 0 ? warnings.join(" · ") : null;
 
   const isValue = ev_trackB > 0 && edge_trackB > 0.02;
 

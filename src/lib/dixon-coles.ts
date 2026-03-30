@@ -582,6 +582,8 @@ const DECAY_XI = 0.025; // Dixon-Coles decay parameter (per week)
 export interface XGHistoryEntry {
   xg: number; xga: number;
   npxg?: number; npxga?: number;  // Non-penalty xG (v2.0)
+  ppda_att?: number; ppda_def?: number;      // Pressing intensity (v2.1)
+  deep?: number; deep_allowed?: number;       // Final-third completions (v2.1)
   date?: string; weeks_ago?: number;
   opponent?: string; result?: string;
 }

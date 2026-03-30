@@ -181,9 +181,9 @@ describe("LightGBM Runtime", () => {
       if (!modelJson) return;
       loadLGBMModel(modelJson);
 
-      // Bayern-like home team vs mid-table away (12 features, no motivation_diff)
+      // Bayern-like home team vs mid-table away (dynamic feature count)
       const nFeatures = modelJson.feature_names.length;
-      const features = [
+      const baseFeatures = [
         0.8,   // npxg_diff_ewma (strong home)
         -0.3,  // npxga_diff_ewma (solid defense)
         0.6,   // elo_diff (+240 Elo)
@@ -196,7 +196,10 @@ describe("LightGBM Runtime", () => {
         0.1,   // npxg_momentum
         0.5,   // npxg_volatility
         0.3,   // h2h_npxg_diff
-      ].slice(0, nFeatures);
+        1.5,   // ppda_ratio_diff (home presses harder)
+        1.0,   // deep_completions_diff (home penetrates more)
+      ];
+      const features = baseFeatures.slice(0, nFeatures);
 
       const pred = lgbmPredict(features);
       expect(pred).not.toBeNull();

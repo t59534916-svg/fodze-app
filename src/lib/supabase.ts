@@ -114,6 +114,10 @@ export interface TeamXGMatch {
   xga: number;
   npxg: number | null;   // Non-penalty xG (v2.0)
   npxga: number | null;  // Non-penalty xGA (v2.0)
+  ppda_att: number | null;    // Pressing: passes attempted (v2.1)
+  ppda_def: number | null;    // Pressing: defensive actions (v2.1)
+  deep: number | null;        // Deep completions (v2.1)
+  deep_allowed: number | null; // Deep completions conceded (v2.1)
   goals_for: number;
   goals_against: number;
 }
@@ -131,7 +135,7 @@ export async function loadTeamXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, goals_for, goals_against")
+    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, ppda_att, ppda_def, deep, deep_allowed, goals_for, goals_against")
     .eq("team", team)
     .eq("league", league)
     .eq("venue", venue)
@@ -152,7 +156,7 @@ export async function loadLeagueXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, goals_for, goals_against")
+    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, ppda_att, ppda_def, deep, deep_allowed, goals_for, goals_against")
     .eq("league", league)
     .eq("venue", "home") // One row per match (home perspective)
     .gte("match_date", seasonStartDate)
@@ -171,6 +175,10 @@ export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{ xg: number; 
     xga: m.xga,
     npxg: m.npxg ?? undefined,
     npxga: m.npxga ?? undefined,
+    ppda_att: m.ppda_att ?? undefined,
+    ppda_def: m.ppda_def ?? undefined,
+    deep: m.deep ?? undefined,
+    deep_allowed: m.deep_allowed ?? undefined,
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));

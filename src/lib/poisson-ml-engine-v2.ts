@@ -119,6 +119,42 @@ function h2hNpxgDiff(
   return diff;
 }
 
+/**
+ * PPDA ratio EWMA: Passes Per Defensive Action = pressing intensity.
+ * Low PPDA = high press (aggressive). High PPDA = low press (sit back).
+ * Uses ppda_att/ppda_def from XGHistoryEntry if available.
+ */
+function ppdaRatioEwma(history: XGHistoryEntry[]): number {
+  const DEFAULT_PPDA = 11.1;  // League average
+  if (!history.length) return DEFAULT_PPDA;
+  const alpha = 0.85;
+  let wSum = 0, wPpda = 0;
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].ppda_att == null || history[i].ppda_def == null) continue;
+    const w = Math.pow(alpha, history.length - 1 - i);
+    wSum += w;
+    wPpda += w * (history[i].ppda_att! / Math.max(1, history[i].ppda_def!));
+  }
+  return wSum > 0 ? wPpda / wSum : DEFAULT_PPDA;
+}
+
+/**
+ * Deep completions net EWMA: deep - deep_allowed.
+ * Positive = team penetrates more than opponent = better final-third quality.
+ */
+function deepCompletionsEwma(history: XGHistoryEntry[]): number {
+  if (!history.length) return 0;
+  const alpha = 0.85;
+  let wSum = 0, wDeep = 0;
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].deep == null) continue;
+    const w = Math.pow(alpha, history.length - 1 - i);
+    wSum += w;
+    wDeep += w * ((history[i].deep ?? 0) - (history[i].deep_allowed ?? 0));
+  }
+  return wSum > 0 ? wDeep / wSum : 0;
+}
+
 export interface PoissonMLv2Input {
   xgHS: number; xgaHC: number; hGames: number;
   xgAS: number; xgaAC: number; aGames: number;
@@ -132,7 +168,7 @@ export interface PoissonMLv2Input {
   fraction: number;
   sosRatings?: SoSRatings;
   absences?: { home: PlayerProfile[]; away: PlayerProfile[] };
-  motivationDiff?: number; // Pre-computed motivation differential
+  // motivationDiff removed — leakage risk with reconstructed standings
   options?: {
     overdispersion?: OverdispersionConfig;
     restDaysDiff?: number;
@@ -228,7 +264,7 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
 
   const h2hDiff = h2hNpxgDiff(hHistory, aHistory, homeTeam, awayTeam);
 
-  const motivationDiff = input.motivationDiff ?? 0;
+  // motivationDiff removed — ppda + deep replace it as leakage-free features
 
   const features = [
     hXGpg - aXGpg,          // 0: npxg_diff_ewma
@@ -242,8 +278,9 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     isDerby,                 // 8: is_derby
     momentumDiff,            // 9: npxg_momentum
     volatility,              // 10: npxg_volatility
-    h2hDiff,                 // 11: h2h_npxg_diff
-    motivationDiff,          // 12: motivation_diff
+    h2hDiff,                                                          // 11: h2h_npxg_diff
+    ppdaRatioEwma(hHistory) - ppdaRatioEwma(aHistory),               // 12: ppda_ratio_diff
+    deepCompletionsEwma(hHistory) - deepCompletionsEwma(aHistory),   // 13: deep_completions_diff
   ];
 
   // ── 3. LightGBM Lambda Prediction ─────────────────────────────
@@ -309,7 +346,9 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
         bH.npxgPg - bA.npxgPg, bH.npxgaPg - bA.npxgaPg, eloDiffApprox,
         bH.npxgPg + bA.npxgPg, homeFactor, leagueAvg,
         restDaysDiff, sosStrength, isDerby,
-        momentumDiff, volatility, h2hDiff, motivationDiff,
+        momentumDiff, volatility, h2hDiff,
+        ppdaRatioEwma(hSample) - ppdaRatioEwma(aSample),
+        deepCompletionsEwma(hSample) - deepCompletionsEwma(aSample),
       ];
       const bML = lgbmPredict(bFeatures);
       if (!bML) continue;
