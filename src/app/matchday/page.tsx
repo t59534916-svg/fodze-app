@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
+import { ENGINES } from "@/lib/engine-registry";
 import { useMatchday } from "@/hooks/useMatchday";
 import { useBets } from "@/hooks/useBets";
 import AppShell from "@/components/layout/AppShell";
@@ -22,7 +23,7 @@ const S = {
 
 export default function MatchdayPage() {
   const router = useRouter();
-  const { effectiveBudget, bankroll, dayBudget, setDayBudget, league } = useApp();
+  const { effectiveBudget, bankroll, dayBudget, setDayBudget, league, engine, setEngine } = useApp();
   const {
     data, matches, processed, valueMatches, totalStake, topTips, comboLegs,
     oddsData, oddsHistory, saving, setOdds, handleSaveOdds, handleDelHist, loadCached,
@@ -61,7 +62,7 @@ export default function MatchdayPage() {
   return (
     <AppShell>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, ...S.goldText }}>{data?.league} — {data?.matchday}</div>
           <div style={{ fontSize: 10, color: "#c4a26560" }}>{matches.length} Spiele · {data?.data_confidence}</div>
@@ -76,6 +77,27 @@ export default function MatchdayPage() {
           )}
           <button onClick={() => router.push("/")} style={S.outlineBtn}>←</button>
         </div>
+      </div>
+      {/* Engine Toggle */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 12, background: "#c4a2650a", borderRadius: 8, border: "1px solid #c4a26515", overflow: "hidden" }}>
+        {ENGINES.map(eng => {
+          const active = engine === eng.id;
+          return (
+            <button key={eng.id} onClick={() => setEngine(eng.id)}
+              style={{
+                flex: 1, padding: "6px 10px", border: "none", cursor: "pointer",
+                background: active ? "#d4b86a18" : "transparent",
+                color: active ? "#d4b86a" : "#c4a26550",
+                fontSize: 11, fontWeight: active ? 700 : 400,
+                letterSpacing: active ? "0.3px" : "0",
+                transition: "all 0.2s",
+                borderRight: eng.id !== ENGINES[ENGINES.length - 1].id ? "1px solid #c4a26515" : "none",
+              }}
+            >
+              {eng.name}
+            </button>
+          );
+        })}
       </div>
 
       {/* Budget Bar */}

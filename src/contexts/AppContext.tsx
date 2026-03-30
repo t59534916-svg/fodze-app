@@ -3,6 +3,8 @@ import { createContext, useContext, useState, useEffect, useMemo, useCallback } 
 import { createClient, loadProfile, updateProfile, loadUserBets } from "@/lib/supabase";
 import { LEAGUES, loadCalibrationCurves, isCalibrationActive } from "@/lib/dixon-coles";
 import { loadEnsembleModel } from "@/lib/ensemble";
+import { loadPoissonModel } from "@/lib/poisson-regression";
+import { type PredictionEngine, DEFAULT_ENGINE, isValidEngine, ENGINES } from "@/lib/engine-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
 
@@ -21,6 +23,8 @@ interface AppContextValue {
   kellyFraction: number;
   calLoaded: boolean;
   hasApi: boolean | null;
+  engine: PredictionEngine;
+  setEngine: (e: PredictionEngine) => void;
   userBets: PlacedBet[];
   refreshBets: () => Promise<void>;
   leagueStatus: Record<string, LeagueStatus | null>;
@@ -40,6 +44,7 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const [profile, setProfile] = useState<ProfileData>({ risk_profile: "M", bankroll: 0, display_name: "" });
   const [dayBudget, setDayBudget] = useState("");
   const [calLoaded, setCalLoaded] = useState(false);
+  const [engine, setEngineState] = useState<PredictionEngine>(DEFAULT_ENGINE);
   const [hasApi, setHasApi] = useState<boolean | null>(null);
   const [userBets, setUserBets] = useState<PlacedBet[]>([]);
   const [leagueStatus, setLeagueStatus] = useState<Record<string, { label: string; date: string } | null>>({});
@@ -60,13 +65,20 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     // Load ensemble model (Elo ratings, logistic coefficients, weights)
     fetch("/ensemble-model.json")
       .then(res => { if (!res.ok) throw new Error(); return res.json(); })
-      .then(model => { loadEnsembleModel(model); })
+      .then(model => { loadEnsembleModel(model); loadPoissonModel(model); })
       .catch(() => {});
   }, []);
 
   // Load user profile + bets + API check + league status
   useEffect(() => {
-    loadProfile(supabase, user.id).then(p => { if (p) setProfile(p); });
+    loadProfile(supabase, user.id).then(p => {
+      if (p) {
+        setProfile(p);
+        if (p.prediction_engine && isValidEngine(p.prediction_engine)) {
+          setEngineState(p.prediction_engine);
+        }
+      }
+    });
     loadUserBets(supabase, user.id).then(b => setUserBets(b));
     fetch("/api/matchday").then(r => r.json()).then(d => setHasApi(d.hasKey === true)).catch(() => setHasApi(false));
 
@@ -89,6 +101,11 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     await updateProfile(supabase, user.id, { [f]: v });
   }, [supabase, user.id]);
 
+  const setEngine = useCallback((e: PredictionEngine) => {
+    setEngineState(e);
+    saveProf("prediction_engine", e);
+  }, [saveProf]);
+
   const refreshBets = useCallback(async () => {
     const bets = await loadUserBets(supabase, user.id);
     setUserBets(bets);
@@ -98,9 +115,11 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     user, supabase, league, setLeague, leagueConfig, profile, saveProf,
     bankroll, dayBudget, setDayBudget, effectiveBudget, kellyFraction,
     calLoaded, hasApi, userBets, refreshBets, leagueStatus,
+    engine, setEngine,
   }), [user, supabase, league, leagueConfig, profile, saveProf,
     bankroll, dayBudget, effectiveBudget, kellyFraction,
-    calLoaded, hasApi, userBets, refreshBets, leagueStatus]);
+    calLoaded, hasApi, userBets, refreshBets, leagueStatus,
+    engine, setEngine]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -1,12 +1,14 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, toXGHistoryEntries } from "@/lib/supabase";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, loadLeagueXGHistory, toXGHistoryEntries } from "@/lib/supabase";
+import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
   validateXGData, calcMatchEnhanced, isCalibrationActive,
 } from "@/lib/dixon-coles";
+import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
 import type { MatchdayData, RawMatch, OddsData, OddsSnapshot, MatchCalc, ProcessedMatch, ComboLeg, BetCalc } from "@/types/match";
@@ -53,7 +55,7 @@ export function useMatchdayContext() {
 }
 
 export function MatchdayProvider({ children }: { children: React.ReactNode }) {
-  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded } = useApp();
+  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded, engine } = useApp();
 
   const [data, setData] = useState<MatchdayData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,6 +66,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   const [liveOdds, setLiveOdds] = useState<any[]>([]);
   const [oddsSource, setOddsSource] = useState<"manual" | "live" | "history">("manual");
   const [saving, setSaving] = useState<number | null>(null);
+  const [sosRatings, setSosRatings] = useState<SoSRatings | null>(null);
 
   const ld = leagueConfig;
   const frac = kellyFraction;
@@ -108,6 +111,16 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
+
+      // Load league-wide xG history for SoS (Strength of Schedule) ratings
+      try {
+        const leagueXG = await loadLeagueXGHistory(supabase, lg);
+        if (leagueXG.length > 0) {
+          const lgConfig = LEAGUES[lg] || LEAGUES.bundesliga;
+          const sosMatches = leagueXG.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
+          setSosRatings(computeSoSRatings(sosMatches, lgConfig.avg));
+        }
+      } catch (e) { /* SoS is optional — engine works without it */ }
 
       setData(matchdayData);
       const live = await loadLiveOdds(supabase, lg);
@@ -208,8 +221,32 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   function calcMatch(match: RawMatch, idx: number) {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
-    const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
+
+    // Parse odds for this match
+    const o = oddsData[idx] || {};
+    const no: Record<string, number> = {};
+    for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const matchHf = getHomeFactor(h.name, ld.hf);
+
+    // ── Poisson-ML Engine ──────────────────────────────────────────
+    if (engine === "poisson-ml") {
+      const result = calcMatchPoissonML({
+        xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
+        xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
+        leagueAvg: ld.avg, homeFactor: matchHf, league,
+        tags: match.tags || [],
+        hHistory: h.xg_h_history, aHistory: a.xg_a_history,
+        homeTeam: h.name, awayTeam: a.name,
+        odds: no, fraction: frac,
+        sharpOdds: o._sharp as any,
+        sosRatings: sosRatings || undefined,
+        options: { league } as any,
+      });
+      return result;
+    }
+
+    // ── Classic Ensemble Engine (ensemble-v1) ──────────────────────
+    const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
     const enh = calcMatchEnhanced(
       h.xg_h8, h.xga_h8 || 0, h.games || 8, h.form,
       a.xg_a8, a.xga_a8 || 0, a.games || 8, a.form,
@@ -218,9 +255,6 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       undefined, undefined, undefined, undefined, // SoS, names, absences
       { league }  // enables NegBin overdispersion + dynamic rho
     );
-    const o = oddsData[idx] || {};
-    const no: Record<string, number> = {};
-    for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
     const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac);
     const topScores: { s: string; p: number }[] = [];
@@ -265,7 +299,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   const matches: RawMatch[] = data?.matches || [];
   const processed: ProcessedMatch[] = useMemo(() =>
     matches.map((m: RawMatch, i: number) => ({ ...m, idx: i, calc: calcMatch(m, i) })),
-    [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded]
+    [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded, engine, sosRatings]
   );
   const valueMatches = useMemo(() => processed.filter((m: ProcessedMatch) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: ProcessedMatch) =>

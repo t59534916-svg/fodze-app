@@ -12,7 +12,8 @@
     "spieltag": "node scripts/spieltag.mjs",
     "backfill": "node scripts/backfill-xg.mjs",
     "export-xg": "node scripts/export-xg.mjs",
-    "fetch-results": "node scripts/fetch-results.mjs"
+    "fetch-results": "node scripts/fetch-results.mjs",
+    "update-xg": "node scripts/update-matchday.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",

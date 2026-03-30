@@ -24,19 +24,18 @@ export async function POST(req: NextRequest) {
           role: "user",
           content: `Find ALL matches for the next upcoming matchday in ${league}.
 
-Search sofascore.com, fotmob.com, understat.com for fixtures and xG statistics.
-Search transfermarkt.de for injuries and suspensions.
+IMPORTANT: You are ONLY responsible for UNSTRUCTURED TEXT data:
+- Fixtures (which teams play, kickoff times)
+- Injuries and suspensions (from transfermarkt.de, kicker.de)
+- Yellow card risks (players on 4 yellows)
+- Match context (derby, new manager, relegation battle, etc.)
+- Referee and their card average
+- Tags: DERBY, ROTATION, SANDWICH, NEUER-TRAINER (if applicable)
 
-CRITICAL – xG data format:
-- xg_h8 = SUM of xG scored by home team in their last 8 HOME games (NOT average, NOT all games, ONLY home games)
-- xga_h8 = SUM of xGA conceded by home team in their last 8 HOME games
-- xg_a8 = SUM of xG scored by away team in their last 8 AWAY games
-- xga_a8 = SUM of xGA conceded by away team in their last 8 AWAY games
-- Expected range: 5.0–20.0 (these are SUMS over 8 games, NOT per-game averages of 0.8–2.5)
+You are NOT responsible for xG data. Leave xg_h8, xga_h8, xg_a8, xga_a8 as 0.
+xG data is loaded separately from Supabase (deterministic pipeline, not LLM).
 
-Also provide: form (W/D/L), injuries, suspensions, yellow card risks, context, referee.
-
-DO NOT include betting odds.
+DO NOT include betting odds. DO NOT try to compute or estimate xG values.
 
 RESPOND ONLY AS JSON:
 {
@@ -45,15 +44,15 @@ RESPOND ONLY AS JSON:
   "date": "YYYY-MM-DD",
   "matches": [
     {
-      "home": {"name": "Team A", "xg_h8": 12.5, "xga_h8": 7.2, "games": 8, "form": "W W D L W", "injuries": "Player (injury)", "yellow_risk": "Player on 4 yellows", "notes": ""},
-      "away": {"name": "Team B", "xg_a8": 9.0, "xga_a8": 11.5, "games": 8, "form": "L W W D W", "injuries": "", "yellow_risk": "", "notes": ""},
+      "home": {"name": "Team A", "xg_h8": 0, "xga_h8": 0, "games": 8, "form": "W W D L W", "injuries": "Player (injury)", "yellow_risk": "Player on 4 yellows", "notes": ""},
+      "away": {"name": "Team B", "xg_a8": 0, "xga_a8": 0, "games": 8, "form": "L W W D W", "injuries": "", "yellow_risk": "", "notes": ""},
       "tags": ["DERBY"],
       "context": "Brief context",
       "referee": "Name, avg X cards/game",
       "kickoff": "15:30"
     }
   ],
-  "data_confidence": "HIGH/MEDIUM/LOW",
+  "data_confidence": "MEDIUM",
   "sources": ["source1", "source2"]
 }`
         }],

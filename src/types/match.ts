@@ -120,6 +120,10 @@ export interface BetCalc {
   // Extended (from EnhancedBetCalc in engine)
   pModel_low?: number;
   pModel_high?: number;
+  // Value Cap Guardrail (Poisson-ML engine)
+  valueTrap?: boolean;
+  valueTrapEdge?: number;
+  valueTrapReason?: string;
 }
 
 // ─── Engine Output: Top Score ────────────────────────────────────────
@@ -289,6 +293,7 @@ export interface ProfileData {
   risk_profile: "K" | "M" | "A";
   bankroll: number;
   display_name: string;
+  prediction_engine?: string;
 }
 
 // ─── League ──────────────────────────────────────────────────────────

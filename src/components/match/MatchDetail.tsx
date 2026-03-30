@@ -152,15 +152,23 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 10, color: "#c4a26570", letterSpacing: 0.5, marginBottom: 6, fontWeight: 600 }}>ALLE MÄRKTE</div>
           {calc.bets.map((b: BetCalc) => (
-            <div key={b.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #c4a26508", fontSize: 11 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                {b.isValue && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#6aad55" }} />}
-                <span style={{ color: "#ede4d4", fontWeight: 500 }}>{b.label}</span>
+            <div key={b.label}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #c4a26508", fontSize: 11 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  {b.valueTrap && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#c47070" }} />}
+                  {b.isValue && !b.valueTrap && <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#6aad55" }} />}
+                  <span style={{ color: b.valueTrap ? "#c47070" : "#ede4d4", fontWeight: 500 }}>{b.label}</span>
+                </div>
+                <span style={{ fontWeight: 600, color: b.valueTrap ? "#c47070" : b.isValue ? "#6aad55" : b.edge >= 0 ? "#c4a26570" : "#c47070" }}>{pe(b.edge)}</span>
+                <span style={{ color: b.isValue ? "#d4b86a" : "#c4a26530" }}>
+                  {b.isValue && br > 0 ? `€${(b.kelly * br).toFixed(0)}` : "—"}
+                </span>
               </div>
-              <span style={{ fontWeight: 600, color: b.isValue ? "#6aad55" : b.edge >= 0 ? "#c4a26570" : "#c47070" }}>{pe(b.edge)}</span>
-              <span style={{ color: b.isValue ? "#d4b86a" : "#c4a26530" }}>
-                {b.isValue && br > 0 ? `€${(b.kelly * br).toFixed(0)}` : "—"}
-              </span>
+              {b.valueTrap && (
+                <div style={{ fontSize: 9, color: "#c47070", padding: "2px 0 4px 9px", lineHeight: 1.3 }}>
+                  VALUE TRAP — {b.valueTrapReason}
+                </div>
+              )}
             </div>
           ))}
         </div>

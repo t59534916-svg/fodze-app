@@ -865,6 +865,7 @@ export function calcMatchEnhanced(
 export interface BetCalc {
   label:string;pModel:number;pMarket:number;quote:number;
   edge:number;ev:number;kelly:number;isValue:boolean;
+  valueTrap?:boolean;valueTrapEdge?:number;valueTrapReason?:string;
 }
 
 export interface EnhancedBetCalc extends BetCalc {

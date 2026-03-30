@@ -1,1 +1,1 @@
-{"method": "identity", "_note": "Platt scaling hurts DC predictions (0.6047 → 0.7401). Using identity (no calibration) as raw DC is better calibrated than Platt on this data."}
+{"method": "platt", "platt_params": {"H": {"a": 0.7207, "b": -0.0111}, "D": {"a": 0.9634, "b": 0.0934}, "A": {"a": 0.7521, "b": -0.3495}, "O25": {"a": 0.9342, "b": -0.2783}}}

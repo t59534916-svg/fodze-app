@@ -2,14 +2,18 @@
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App. 4-Modell Ensemble (Dixon-Coles + Elo + Logistic EWMA + Market) mit Bayesian Bootstrap Confidence. Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
+Quantitative Fußball-Wettanalyse App mit zwei Prediction Engines:
+- **Standard**: 4-Modell Ensemble (Dixon-Coles + Elo + Logistic EWMA + Market) mit Bayesian Bootstrap Confidence
+- **@annafrick13**: ML-Poisson Engine — Poisson GLM prädiktiert λH/λA → Dixon-Coles 15×15 Matrix → alle Märkte aus einer Quelle
+
+Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
 
 ## Projekt starten
 
 ```bash
 npm install
 npm run dev       # http://localhost:3000
-npm run test      # 23 Tests (Engine + Zod Schemas)
+npm run test      # 35 Tests (Engine + Poisson + Zod Schemas)
 npm run build     # Production Build
 ```
 
@@ -21,8 +25,9 @@ Supabase (DB + Auth)
 Next.js 14 App Router
   ├── Contexts: AppContext (User/Liga) → MatchdayContext (Matches/Odds)
   ├── Pages: / → /matchday → /matchday/combos → /anna → /simulator → /performance
-  ├── API: /api/anna (Groq/Claude Streaming), /api/matchday (Claude + Web Search)
-  └── Engine: src/lib/dixon-coles.ts (46KB, Prediction Core)
+  ├── API: /api/anna (Groq/Claude Streaming), /api/matchday (Claude — nur Text, kein xG)
+  ├── Engines: dixon-coles.ts (Standard) + poisson-ml-engine.ts (@annafrick13)
+  └── Engine Registry: engine-registry.ts (Multi-Engine Dispatch)
 ```
 
 ## Wichtige Dateien
@@ -38,6 +43,9 @@ Next.js 14 App Router
 | `src/lib/anna-prompt.ts` | System-Prompt für Anna | Bei Prompt-Tuning |
 | `src/styles/tokens.ts` | Design Tokens (Source of Truth) | Bei Design-Änderungen |
 | `src/types/match.ts` | TypeScript Interfaces | Bei neuen Datenstrukturen |
+| `src/lib/poisson-ml-engine.ts` | @annafrick13 Prediction Engine | Bei ML-Engine-Änderungen |
+| `src/lib/poisson-regression.ts` | Poisson GLM Runtime (λ predict) | Bei Feature-Änderungen |
+| `src/lib/engine-registry.ts` | Engine-Definitionen + Dispatch | Bei neuen Engines |
 
 ## Konventionen
 
@@ -55,7 +63,7 @@ Next.js 14 App Router
 - Seitenspezifische in `src/components/match/`, `anna/`, `home/`, `matchday/`
 
 ### State
-- **AppContext**: User, Liga, Profil, Bankroll — global
+- **AppContext**: User, Liga, Profil, Bankroll, Engine-Auswahl — global
 - **MatchdayContext**: Matchday-Daten, Odds, berechnete Matches — überlebt Navigation
 - **sessionStorage**: Combo-Auswahl — überlebt Seitenwechsel
 - **Lokaler State**: UI-State (selectedMatch, showTips, tab)
@@ -109,6 +117,45 @@ Tests decken ab:
 - Dixon-Coles λ-Berechnung + Score-Matrix
 - Kelly-Criterion Staking
 - Home-Factor Lookup
+- Poisson GLM λ-Prediction (9 Features, Clamping, Dimension Guard)
+- Feature-Sync TS↔Python (Rest Days, SoS, Derby)
+
+## Prediction Engines
+
+### Standard (ensemble-v1)
+4-Modell Ensemble: Dixon-Coles (5%) + Elo (12%) + Logistic (64%) + Market (20%). Blended 1X2-Wahrscheinlichkeiten. O25 aus Matrix, 1X2 aus Ensemble.
+
+### @annafrick13 (poisson-ml)
+ML-Poisson GLM → Dixon-Coles Matrix → ALLE Märkte aus einer Quelle.
+
+**Pipeline:** Supabase xG History → EWMA → SoS-Adjust → Player Absences → Rest Days → 9 Features → Poisson GLM → λH, λA → ρ + NegBin → 15×15 Matrix
+
+**Features (9):**
+| # | Name | Beschreibung |
+|---|------|-------------|
+| 0 | xg_diff | Home xG/g - Away xG/g (SoS-adjusted) |
+| 1 | xga_diff | Home xGA/g - Away xGA/g (SoS-adjusted) |
+| 2 | elo_diff | (Home Elo - Away Elo) / 400 |
+| 3 | total_xg | Home xG/g + Away xG/g |
+| 4 | home_factor | Liga/Team Heimfaktor |
+| 5 | league_avg | Liga-Durchschnitt Tore/Spiel |
+| 6 | rest_days_diff | (Rest Home - Rest Away) / 7 |
+| 7 | sos_strength | SoS-Korrektur Differenz |
+| 8 | is_derby | Binär (aus 25 Derby-Paarungen) |
+
+**Guardrails:**
+- Kein LLM-Daten Fallback (ohne Supabase History → null)
+- Kein ML-Modell geladen → null (kein Fallback auf xG-Formel)
+- Feature-Dimension Guard (9≠9 → null statt NaN)
+- Value Cap: Edge >8% vs Pinnacle = Value Trap (kelly=0)
+- Keine Post-ML Tag-Corrections (DERBY ist trainiertes Feature)
+
+**Training:**
+```bash
+source tools/venv/bin/activate
+python3 tools/retrain_all.py    # Trainiert Standard + @annafrick13
+```
+Output: `public/ensemble-model.json` (Elo + Logistic + Poisson Koeffizienten)
 
 ## CI/CD
 
@@ -154,9 +201,13 @@ RLS aktiv: User sehen alles, ändern nur eigene Daten.
 
 ```bash
 npm run spieltag     # Interaktiver 6-Schritt Admin-Wizard (Prompts → Paste → Validate → Seed)
+npm run update-xg    # Deterministisch: Understat scrape → Supabase upsert (kein LLM)
 npm run backfill     # Historisches xG Backfill via Browser-Scripts auf Understat
 npm run export-xg    # Supabase team_xg_history → lokale JSON-Backups (backups/)
 ```
+
+### Deterministische xG-Pipeline (@annafrick13)
+`npm run update-xg -- --league bundesliga --season 2025` scraped Understat deterministisch (HTML Parse, kein LLM), berechnet xG-Summen im Code, und upserted per-Match History nach Supabase. Der LLM-Prompt (`/api/matchday`) liefert nur noch unstrukturierten Text (Injuries, Context, Referee).
 
 ### Backfill-Methode
 Understat blockiert automatisiertes Scraping (SPA). Stattdessen:
