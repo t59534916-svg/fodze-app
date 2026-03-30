@@ -9,6 +9,7 @@ import {
   validateXGData, calcMatchEnhanced, isCalibrationActive,
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
+import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
 import type { MatchdayData, RawMatch, OddsData, OddsSnapshot, MatchCalc, ProcessedMatch, ComboLeg, BetCalc } from "@/types/match";
@@ -228,7 +229,24 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const matchHf = getHomeFactor(h.name, ld.hf);
 
-    // ── Poisson-ML Engine ──────────────────────────────────────────
+    // ── Poisson-ML Engine v2 (LightGBM Tweedie) ────────────────────
+    if (engine === "poisson-ml-v2") {
+      const result = calcMatchPoissonMLv2({
+        xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
+        xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
+        leagueAvg: ld.avg, homeFactor: matchHf, league,
+        tags: match.tags || [],
+        hHistory: h.xg_h_history, aHistory: a.xg_a_history,
+        homeTeam: h.name, awayTeam: a.name,
+        odds: no, fraction: frac,
+        sharpOdds: o._sharp as any,
+        sosRatings: sosRatings || undefined,
+        options: { league } as any,
+      });
+      return result;
+    }
+
+    // ── Poisson-ML Engine v1 (GLM) ───────────────────────────────────
     if (engine === "poisson-ml") {
       const result = calcMatchPoissonML({
         xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,

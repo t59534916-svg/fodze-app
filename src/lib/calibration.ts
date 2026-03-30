@@ -174,3 +174,36 @@ export function calibrateOU25(rawO25: number): { O25: number; U25: number } {
   const calO25 = calibrateProb(rawO25, "O25");
   return { O25: calO25, U25: 1 - calO25 };
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Dual-Track Calibration — @annafrick13 v2.0
+//
+// Track A: Raw matrix probabilities (market coherence, UI display)
+// Track B: Isotonic-calibrated (Kelly sizing, edge check vs Pinnacle)
+//
+// Edge is computed from Track B: calibrated_prob - pinnacle_vigfree_prob
+// Only Track B is used for Kelly fraction and Goldilocks guard.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface DualTrackResult {
+  trackA: { H: number; D: number; A: number };  // Raw matrix probs
+  trackB: { H: number; D: number; A: number };  // Isotonic-calibrated
+}
+
+export function dualTrackCalibrate(
+  rawH: number,
+  rawD: number,
+  rawA: number,
+  league?: string
+): DualTrackResult {
+  // Track A: raw matrix probabilities (used for market derivation, display)
+  const trackA = { H: rawH, D: rawD, A: rawA };
+
+  // Track B: pass through isotonic calibration (used for Kelly + edge)
+  if (!CALIBRATION_ACTIVE) {
+    return { trackA, trackB: { ...trackA } };
+  }
+
+  const trackB = calibrate1X2(rawH, rawD, rawA);
+  return { trackA, trackB };
+}

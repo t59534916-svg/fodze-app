@@ -112,6 +112,8 @@ export interface TeamXGMatch {
   match_date: string;
   xg: number;
   xga: number;
+  npxg: number | null;   // Non-penalty xG (v2.0)
+  npxga: number | null;  // Non-penalty xGA (v2.0)
   goals_for: number;
   goals_against: number;
 }
@@ -129,7 +131,7 @@ export async function loadTeamXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, goals_for, goals_against")
+    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, goals_for, goals_against")
     .eq("team", team)
     .eq("league", league)
     .eq("venue", venue)
@@ -150,7 +152,7 @@ export async function loadLeagueXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, goals_for, goals_against")
+    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, goals_for, goals_against")
     .eq("league", league)
     .eq("venue", "home") // One row per match (home perspective)
     .gte("match_date", seasonStartDate)
@@ -163,11 +165,14 @@ export async function loadLeagueXGHistory(
  * Convert Supabase TeamXGMatch rows to engine-compatible XGHistoryEntry format.
  * This bridges the Understat data to calcMatchEnhanced()'s hHistory/aHistory params.
  */
-export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{ xg: number; xga: number; date: string }> {
+export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{ xg: number; xga: number; npxg?: number; npxga?: number; date: string; opponent?: string }> {
   return matches.map((m) => ({
     xg: m.xg,
     xga: m.xga,
+    npxg: m.npxg ?? undefined,
+    npxga: m.npxga ?? undefined,
     date: m.match_date,
+    opponent: m.opponent || undefined,
   }));
 }
 

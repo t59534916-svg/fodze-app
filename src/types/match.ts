@@ -7,6 +7,8 @@
 export interface XGHistoryEntry {
   xg: number;
   xga: number;
+  npxg?: number;   // Non-penalty xG scored
+  npxga?: number;  // Non-penalty xG conceded
   date?: string;
   result?: string;
   opponent?: string;

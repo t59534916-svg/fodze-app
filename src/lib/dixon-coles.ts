@@ -580,7 +580,10 @@ const PRIOR_K = 6;
 const DECAY_XI = 0.025; // Dixon-Coles decay parameter (per week)
 
 export interface XGHistoryEntry {
-  xg: number; xga: number; date?: string; weeks_ago?: number;
+  xg: number; xga: number;
+  npxg?: number; npxga?: number;  // Non-penalty xG (v2.0)
+  date?: string; weeks_ago?: number;
+  opponent?: string; result?: string;
 }
 
 /**

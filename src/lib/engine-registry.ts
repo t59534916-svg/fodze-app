@@ -5,7 +5,7 @@
 // Each engine produces the same MatchCalc output interface.
 // ═══════════════════════════════════════════════════════════════════════
 
-export type PredictionEngine = "ensemble-v1" | "poisson-ml";
+export type PredictionEngine = "ensemble-v1" | "poisson-ml" | "poisson-ml-v2";
 
 export interface EngineInfo {
   id: PredictionEngine;
@@ -23,6 +23,11 @@ export const ENGINES: EngineInfo[] = [
     id: "poisson-ml",
     name: "@annafrick13",
     description: "ML-gesteuerte λ → Dixon-Coles Matrix",
+  },
+  {
+    id: "poisson-ml-v2",
+    name: "@annafrick13 v2",
+    description: "LightGBM Tweedie → Monotone Constraints → Dixon-Coles Matrix",
   },
 ];
 

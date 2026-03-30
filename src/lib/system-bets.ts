@@ -478,3 +478,286 @@ export function calcCorrelationImpact(legs: ComboLeg[], comboQuote: number): Cor
     warning,
   };
 }
+
+// ═════════════════════════════════════════════════════════════════════
+// P3: SAME-GAME MULTI (SGM / BETBUILDER) — EXAKTE MATRIX-WAHRSCHEINLICHKEITEN
+// ═════════════════════════════════════════════════════════════════════
+// Die 15×15 Dixon-Coles Matrix ist die EINZIGE korrekte Quelle für SGM-Preise.
+// Bookmaker berechnen SGM-Quoten mit versteckter Korrelations-Marge (~12-20%).
+// Wir summieren exakt die Zellen die ALLE Bedingungen gleichzeitig erfüllen.
+// Keine Korrelations-Schätzung nötig — die Matrix HAT die Korrelation.
+
+export type SGMCondition =
+  | { type: "home_win" }
+  | { type: "away_win" }
+  | { type: "draw" }
+  | { type: "over"; goals: number }     // total goals > X
+  | { type: "under"; goals: number }    // total goals ≤ X
+  | { type: "btts_yes" }               // both teams score
+  | { type: "btts_no" }
+  | { type: "home_over"; goals: number } // home goals > X
+  | { type: "home_under"; goals: number }
+  | { type: "away_over"; goals: number }
+  | { type: "away_under"; goals: number }
+  | { type: "clean_sheet_home" }        // away = 0
+  | { type: "clean_sheet_away" }        // home = 0
+  | { type: "exact_score"; home: number; away: number }
+  | { type: "home_goals_exact"; goals: number }
+  | { type: "away_goals_exact"; goals: number };
+
+function cellMatchesCondition(h: number, a: number, cond: SGMCondition): boolean {
+  switch (cond.type) {
+    case "home_win": return h > a;
+    case "away_win": return a > h;
+    case "draw": return h === a;
+    case "over": return h + a > cond.goals;
+    case "under": return h + a <= cond.goals;
+    case "btts_yes": return h >= 1 && a >= 1;
+    case "btts_no": return h === 0 || a === 0;
+    case "home_over": return h > cond.goals;
+    case "home_under": return h <= cond.goals;
+    case "away_over": return a > cond.goals;
+    case "away_under": return a <= cond.goals;
+    case "clean_sheet_home": return a === 0;
+    case "clean_sheet_away": return h === 0;
+    case "exact_score": return h === cond.home && a === cond.away;
+    case "home_goals_exact": return h === cond.goals;
+    case "away_goals_exact": return a === cond.goals;
+  }
+}
+
+/**
+ * Berechne die EXAKTE Joint-Wahrscheinlichkeit für beliebige SGM-Kombination.
+ * Summiert alle Matrix-Zellen die ALLE Bedingungen gleichzeitig erfüllen.
+ *
+ * Beispiel: "Heim + Ü2.5 + BTTS"
+ *   → Zellen wo h>a UND h+a>2.5 UND h≥1 UND a≥1
+ *   → z.B. [2:1], [3:1], [3:2], [2:2] sind NICHT enthalten (2:2 = Draw)
+ *   → Exakte Summe = wahre Wahrscheinlichkeit MIT Korrelation
+ */
+export function calcSGMProbability(
+  matrix: number[][],
+  conditions: SGMCondition[]
+): number {
+  let pJoint = 0;
+  const size = matrix.length;
+  for (let h = 0; h < size; h++) {
+    for (let a = 0; a < size; a++) {
+      if (conditions.every(c => cellMatchesCondition(h, a, c))) {
+        pJoint += matrix[h][a];
+      }
+    }
+  }
+  return pJoint;
+}
+
+export interface SGMResult {
+  pModel: number;          // Exakte Joint-P aus Matrix
+  pBookmaker: number;      // Implizite P aus Buchmacher-Quote
+  comboQuote: number;      // Buchmacher-SGM-Quote
+  fairQuote: number;       // 1 / pModel (faire Quote)
+  edge: number;            // pModel - pBookmaker
+  ev: number;              // pModel * comboQuote - 1
+  kelly: number;           // Fractional Kelly für SGM
+  hiddenMargin: number;    // Wie viel der Bookie auf Korrelation aufschlägt
+  conditions: SGMCondition[];
+}
+
+/**
+ * Bewerte eine Same-Game-Multi gegen Buchmacher-Quote.
+ * Nutzt die 15×15 Matrix für exakte Joint-P (keine Korrelations-Hacks).
+ */
+export function calcSGM(
+  matrix: number[][],
+  conditions: SGMCondition[],
+  bookmakerQuote: number,
+  fraction: number = 0.15  // Kelly-Fraktion für SGMs (konservativer als Singles)
+): SGMResult {
+  const pModel = calcSGMProbability(matrix, conditions);
+  const pBookmaker = bookmakerQuote > 0 ? 1 / bookmakerQuote : 0;
+  const fairQuote = pModel > 0 ? 1 / pModel : Infinity;
+  const edge = pModel - pBookmaker;
+  const ev = pModel * bookmakerQuote - 1;
+
+  // Fractional Kelly für SGMs — konservativer als Singles weil SGM-Quoten
+  // strukturell höhere Varianz haben (weniger liquid, mehr Marge)
+  const kelly = bookmakerQuote > 1 && ev > 0
+    ? Math.max(0, Math.min((pModel * bookmakerQuote - 1) / (bookmakerQuote - 1) * fraction, 0.02))
+    : 0;
+
+  // Hidden margin: Buchmacher setzt die Quote so dass pBookmaker > pModel (wenn er recht hat)
+  // aber bei SGMs ist die Marge oft 12-20% ÜBER dem normalen Vig
+  const naiveP = conditions.length > 0 ? 1 : 0;  // placeholder
+  const hiddenMargin = pModel > 0 ? (pBookmaker - pModel) / pModel : 0;
+
+  return {
+    pModel, pBookmaker, comboQuote: bookmakerQuote, fairQuote,
+    edge, ev, kelly, hiddenMargin, conditions,
+  };
+}
+
+/**
+ * Generiere alle sinnvollen SGM-Kombis für ein Match und finde Value.
+ * Die Matrix sagt uns wo der Bookie falsch liegt.
+ */
+export function findSGMValue(
+  matrix: number[][],
+  sgmOdds: Record<string, number>,  // z.B. {"Heim+Ü2.5": 2.40, "Heim+BTTS": 3.10}
+  minEdge: number = 0.03
+): SGMResult[] {
+  const presets: { label: string; conditions: SGMCondition[] }[] = [
+    { label: "Heim + Ü2.5", conditions: [{ type: "home_win" }, { type: "over", goals: 2.5 }] },
+    { label: "Heim + U2.5", conditions: [{ type: "home_win" }, { type: "under", goals: 2.5 }] },
+    { label: "Gast + Ü2.5", conditions: [{ type: "away_win" }, { type: "over", goals: 2.5 }] },
+    { label: "Gast + U2.5", conditions: [{ type: "away_win" }, { type: "under", goals: 2.5 }] },
+    { label: "Remis + U2.5", conditions: [{ type: "draw" }, { type: "under", goals: 2.5 }] },
+    { label: "Heim + BTTS", conditions: [{ type: "home_win" }, { type: "btts_yes" }] },
+    { label: "Gast + BTTS", conditions: [{ type: "away_win" }, { type: "btts_yes" }] },
+    { label: "Heim + Ü2.5 + BTTS", conditions: [{ type: "home_win" }, { type: "over", goals: 2.5 }, { type: "btts_yes" }] },
+    { label: "Gast + Ü2.5 + BTTS", conditions: [{ type: "away_win" }, { type: "over", goals: 2.5 }, { type: "btts_yes" }] },
+    { label: "Heim + CS", conditions: [{ type: "home_win" }, { type: "clean_sheet_home" }] },
+    { label: "Gast + CS", conditions: [{ type: "away_win" }, { type: "clean_sheet_away" }] },
+    { label: "Heim + Ü3.5", conditions: [{ type: "home_win" }, { type: "over", goals: 3.5 }] },
+    { label: "Ü2.5 + BTTS", conditions: [{ type: "over", goals: 2.5 }, { type: "btts_yes" }] },
+    { label: "U2.5 + BTTS nein", conditions: [{ type: "under", goals: 2.5 }, { type: "btts_no" }] },
+  ];
+
+  const results: SGMResult[] = [];
+  for (const preset of presets) {
+    const quote = sgmOdds[preset.label];
+    if (!quote || quote <= 1) continue;
+
+    const sgm = calcSGM(matrix, preset.conditions, quote);
+    if (sgm.edge >= minEdge) {
+      results.push(sgm);
+    }
+  }
+
+  return results.sort((a, b) => b.ev - a.ev);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// P4: CROSS-GAME AKKUMULATOR MIT DUAL-TRACK CALIBRATION
+// ═════════════════════════════════════════════════════════════════════
+// Für Cross-Game Kombis (verschiedene Spiele) nutzen wir Track B
+// (isotonisch kalibrierte Wahrscheinlichkeiten) für die Edge-Berechnung.
+// Track A (Matrix-Roh) bleibt für die Marktableitung.
+//
+// Warum Track B: Ein lineares Modell das 3% overconfident ist auf einem
+// Einzelspiel wird bei einem 4er-Akku 3%^4 ≈ 12% overconfident — genug
+// um +EV in -EV zu verwandeln. Track B zwingt die Probs in die
+// historische empirische Realität.
+
+export interface AccumulatorLeg {
+  matchId: string;
+  label: string;
+  match: string;
+  pTrackA: number;          // Raw matrix probability (for display)
+  pTrackB: number;          // Isotonic-calibrated probability (for Kelly/edge)
+  quote: number;            // Bookmaker odds
+}
+
+export interface AccumulatorResult {
+  legs: AccumulatorLeg[];
+  // Track A (raw matrix — für Display)
+  pModel_trackA: number;
+  // Track B (kalibriert — für Sizing)
+  pModel_trackB: number;
+  comboQuote: number;
+  ev_trackA: number;
+  ev_trackB: number;        // DAS ist der echte EV
+  edge_trackB: number;      // DAS ist die echte Edge
+  kelly: number;            // Fractional Kelly basierend auf Track B
+  isValue: boolean;
+  warning: string | null;
+}
+
+/**
+ * Berechne einen Cross-Game Akkumulator mit Dual-Track Calibration.
+ *
+ * Track A: Rohwahrscheinlichkeiten aus der Matrix (für Anzeige, Markt-Kohärenz)
+ * Track B: Isotonisch kalibriert (für Kelly-Sizing, Edge-Berechnung)
+ *
+ * Die Edge wird NUR aus Track B berechnet — historisch geerdet, nicht overconfident.
+ * Kelly wird auf Track B appliziert mit einem Multi-Bet Dampener (÷ nLegs).
+ */
+export function calcAccumulator(
+  legs: AccumulatorLeg[],
+  kellyBaseFraction: number = 0.25  // Basis-Kelly für Singles
+): AccumulatorResult {
+  if (legs.length === 0) {
+    return {
+      legs, pModel_trackA: 0, pModel_trackB: 0, comboQuote: 0,
+      ev_trackA: 0, ev_trackB: 0, edge_trackB: 0, kelly: 0,
+      isValue: false, warning: null,
+    };
+  }
+
+  // Kompoundierte Wahrscheinlichkeiten
+  const pModel_trackA = legs.reduce((p, l) => p * l.pTrackA, 1);
+  const pModel_trackB = legs.reduce((p, l) => p * l.pTrackB, 1);
+  const comboQuote = legs.reduce((q, l) => q * l.quote, 1);
+
+  // EV aus beiden Tracks
+  const ev_trackA = pModel_trackA * comboQuote - 1;
+  const ev_trackB = pModel_trackB * comboQuote - 1;
+  const edge_trackB = pModel_trackB - (1 / comboQuote);
+
+  // ═══ FRACTIONAL KELLY DAMPENER FÜR MULTIS ═══
+  // Standard Kelly: k = (p*q - 1) / (q - 1)
+  // Für Akkus dividieren wir durch die Anzahl der Legs.
+  // 2er-Akku: Kelly / 2, 3er: Kelly / 3, etc.
+  // Grund: Varianz wächst geometrisch mit jedem Leg.
+  // Ein 4er-Akku mit gleicher Kelly-Fraction wie ein Single
+  // hat ~16× höhere Varianz → Ruin-Risiko steigt exponentiell.
+  const nLegs = legs.length;
+  const kellyDivisor = nLegs;  // Konservativ: Kelly / nLegs
+  const adjustedFraction = kellyBaseFraction / kellyDivisor;
+
+  const kelly = comboQuote > 1 && ev_trackB > 0
+    ? Math.max(0, Math.min(
+        (pModel_trackB * comboQuote - 1) / (comboQuote - 1) * adjustedFraction,
+        0.03 / nLegs  // Hard cap sinkt auch mit Legs
+      ))
+    : 0;
+
+  // Warnungen
+  let warning: string | null = null;
+  if (ev_trackA > 0 && ev_trackB <= 0) {
+    warning = `Track A zeigt +EV (${(ev_trackA * 100).toFixed(1)}%), aber Track B (kalibriert) sagt -EV (${(ev_trackB * 100).toFixed(1)}%). Das Modell ist wahrscheinlich overconfident — NICHT wetten.`;
+  } else if (nLegs >= 5) {
+    warning = `${nLegs}-Leg Akku: Varianz extrem hoch. Selbst mit +EV ist der Erwartungswert der Volatilität dominant. Systemwette erwägen.`;
+  }
+
+  const isValue = ev_trackB > 0 && edge_trackB > 0.02;
+
+  return {
+    legs, pModel_trackA, pModel_trackB, comboQuote,
+    ev_trackA, ev_trackB, edge_trackB, kelly,
+    isValue, warning,
+  };
+}
+
+/**
+ * Optimale Kombi-Größe finden: Teste 2er bis Ner Akkus,
+ * finde den Sweet Spot wo EV positiv und Kelly sinnvoll ist.
+ */
+export function findOptimalAccuSize(
+  legs: AccumulatorLeg[]
+): { size: number; result: AccumulatorResult }[] {
+  const results: { size: number; result: AccumulatorResult }[] = [];
+
+  // Sortiere Legs nach Track B Edge (beste zuerst)
+  const sorted = [...legs].sort((a, b) =>
+    (b.pTrackB * b.quote - 1) - (a.pTrackB * a.quote - 1)
+  );
+
+  // Teste aufsteigende Akkumulatorgröße (greedy: nehme immer die besten Legs)
+  for (let size = 2; size <= Math.min(sorted.length, 8); size++) {
+    const subset = sorted.slice(0, size);
+    const result = calcAccumulator(subset);
+    results.push({ size, result });
+  }
+
+  return results;
+}

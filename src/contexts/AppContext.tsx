@@ -4,6 +4,7 @@ import { createClient, loadProfile, updateProfile, loadUserBets } from "@/lib/su
 import { LEAGUES, loadCalibrationCurves, isCalibrationActive } from "@/lib/dixon-coles";
 import { loadEnsembleModel } from "@/lib/ensemble";
 import { loadPoissonModel } from "@/lib/poisson-regression";
+import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
 import { type PredictionEngine, DEFAULT_ENGINE, isValidEngine, ENGINES } from "@/lib/engine-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
@@ -66,6 +67,14 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     fetch("/ensemble-model.json")
       .then(res => { if (!res.ok) throw new Error(); return res.json(); })
       .then(model => { loadEnsembleModel(model); loadPoissonModel(model); })
+      .catch(() => {});
+
+    // Load LightGBM v2 model
+    fetch("/lgbm-model-v2.json")
+      .then(res => { if (!res.ok) throw new Error(); return res.json(); })
+      .then(model => {
+        if (loadLGBMModel(model)) validateGoldenTests();
+      })
       .catch(() => {});
   }, []);
 
