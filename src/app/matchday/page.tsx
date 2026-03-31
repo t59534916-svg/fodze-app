@@ -86,9 +86,9 @@ export default function MatchdayPage() {
           return (
             <button key={eng.id} onClick={() => setEngine(eng.id)}
               style={{
-                flex: 1, padding: "6px 10px", border: "none", cursor: "pointer",
+                flex: 1, padding: "10px 10px", border: "none", cursor: "pointer", minHeight: 44,
                 background: active ? "#d4b86a18" : "transparent",
-                color: active ? "#d4b86a" : "#c4a26550",
+                color: active ? "#d4b86a" : "#a89070",
                 fontSize: 11, fontWeight: active ? 700 : 400,
                 letterSpacing: active ? "0.3px" : "0",
                 transition: "all 0.2s",
@@ -104,7 +104,7 @@ export default function MatchdayPage() {
       {/* Budget Bar */}
       {br > 0 && (
         <div style={{ ...S.card, padding: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9, color: "#c4a26570" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 9, color: "#a89070" }}>
             <span>Einsatz €{totalStake.toFixed(0)}</span>
             <span style={{ color: "#6aad55" }}>Frei €{Math.max(0, br - totalStake).toFixed(0)}</span>
             <span style={{ color: totalStake / br > 0.15 ? "#c47070" : "#c4a265" }}>{pc(totalStake / br)}</span>
@@ -129,9 +129,9 @@ export default function MatchdayPage() {
             </div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button onClick={e => { e.stopPropagation(); setTipSort("ev"); }}
-                style={{ ...S.outlineBtn, fontSize: 9, padding: "2px 6px", background: tipSort === "ev" ? "#6aad5520" : "transparent", color: tipSort === "ev" ? "#6aad55" : "#c4a26570" }}>EV</button>
+                style={{ ...S.outlineBtn, fontSize: 9, padding: "2px 6px", background: tipSort === "ev" ? "#6aad5520" : "transparent", color: tipSort === "ev" ? "#6aad55" : "#a89070" }}>EV</button>
               <button onClick={e => { e.stopPropagation(); setTipSort("conf"); }}
-                style={{ ...S.outlineBtn, fontSize: 9, padding: "2px 6px", background: tipSort === "conf" ? "#d4b86a20" : "transparent", color: tipSort === "conf" ? "#d4b86a" : "#c4a26570" }}>Konfidenz</button>
+                style={{ ...S.outlineBtn, fontSize: 9, padding: "2px 6px", background: tipSort === "conf" ? "#d4b86a20" : "transparent", color: tipSort === "conf" ? "#d4b86a" : "#a89070" }}>Konfidenz</button>
               <span style={{ color: "#c4a26535", fontSize: 14 }} aria-hidden="true">{showTips ? "▾" : "▸"}</span>
             </div>
           </button>
@@ -152,7 +152,7 @@ export default function MatchdayPage() {
                         <Kit team={tip.away} size={12} />
                         <span style={{ color: "#ede4d4" }}>{tip.away?.split(" ").pop()}</span>
                       </div>
-                      <div style={{ fontSize: 10, color: "#c4a26570", marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: "#a89070", marginTop: 2 }}>
                         {tip.label} · Edge {pe(tip.edge)} · Quote {tip.quote.toFixed(2)}
                       </div>
                     </div>
@@ -169,6 +169,16 @@ export default function MatchdayPage() {
       )}
 
       {/* Match List */}
+      {processed.length === 0 && (
+        <div style={{ ...S.card, textAlign: "center", padding: "32px 16px" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }} aria-hidden="true">&#9917;</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#d4b86a", marginBottom: 8 }}>Keine Spieltagsdaten</div>
+          <div style={{ fontSize: 12, color: "#a89070", lineHeight: 1.5 }}>
+            Fuer diese Liga wurde noch kein Spieltag eingetragen.
+            <br />Nutze den Admin-Wizard (<code style={{ color: "#d4b86a" }}>npm run spieltag</code>) um Daten zu laden.
+          </div>
+        </div>
+      )}
       <div style={S.card}>
         {processed.map((m: any, i: number) => {
           const isOpen = selectedMatch === i;

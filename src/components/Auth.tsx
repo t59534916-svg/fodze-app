@@ -74,20 +74,21 @@ export default function Auth() {
             background: "linear-gradient(135deg, #a68940, #e8d5a0, #f5e6b8, #d4b86a, #a68940)",
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
           }}>FODZE</h1>
-          <p style={{ fontSize: 10, color: "#c4a26550", letterSpacing: 3, margin: "4px 0 0" }}>DIXON-COLES · VALUE BETTING</p>
+          <p style={{ fontSize: 10, color: "#8a7560", letterSpacing: 3, margin: "4px 0 0" }}>DIXON-COLES · VALUE BETTING</p>
         </div>
 
         {/* Login / Sign-Up Toggle */}
-        <div style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #c4a26520", marginBottom: 16 }}>
+        <div role="tablist" style={{ display: "flex", borderRadius: 8, overflow: "hidden", border: "1px solid #c4a26520", marginBottom: 16 }}>
           {(["login", "signup"] as const).map(m => (
-            <button key={m} onClick={() => { setMode(m); setError(null); setSuccess(null); }}
+            <button key={m} role="tab" aria-selected={mode === m}
+              onClick={() => { setMode(m); setError(null); setSuccess(null); }}
               style={{
-                flex: 1, padding: "10px 4px", fontSize: 12, fontWeight: 600, border: "none",
-                cursor: "pointer", letterSpacing: 0.5,
+                flex: 1, padding: "14px 4px", fontSize: 12, fontWeight: 600, border: "none",
+                cursor: "pointer", letterSpacing: 0.5, minHeight: 48,
                 background: mode === m ? "linear-gradient(110deg, #a68940, #d4b86a, #f5e6b8, #d4b86a, #a68940)" : "#c4a26508",
                 backgroundSize: mode === m ? "200% 100%" : undefined,
                 animation: mode === m ? "goldShimmer 3s ease-in-out infinite" : undefined,
-                color: mode === m ? "#1a0f0a" : "#c4a26560",
+                color: mode === m ? "#1a0f0a" : "#a89070",
               }}>
               {m === "login" ? "EINLOGGEN" : "REGISTRIEREN"}
             </button>
@@ -96,23 +97,27 @@ export default function Auth() {
 
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div>
-            <label style={{ display: "block", fontSize: 11, color: "#c4a26560", marginBottom: 4, letterSpacing: 0.5 }}>E-Mail</label>
+            <label style={{ display: "block", fontSize: 11, color: "#a89070", marginBottom: 4, letterSpacing: 0.5 }}>E-Mail</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" required />
           </div>
           <div>
-            <label style={{ display: "block", fontSize: 11, color: "#c4a26560", marginBottom: 4, letterSpacing: 0.5 }}>Passwort</label>
+            <label style={{ display: "block", fontSize: 11, color: "#a89070", marginBottom: 4, letterSpacing: 0.5 }}>Passwort</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={mode === "signup" ? "Mind. 6 Zeichen" : "Passwort"} required minLength={6} />
           </div>
 
-          {error && <div style={{ padding: "8px 12px", borderRadius: 8, background: "#8c4a4a18", border: "1px solid #c4707030", color: "#c47070", fontSize: 12 }}>{error}</div>}
-          {success && <div style={{ padding: "8px 12px", borderRadius: 8, background: "#5a8c4a15", border: "1px solid #6aad5530", color: "#6aad55", fontSize: 12 }}>{success}</div>}
+          {error && <div role="alert" style={{ padding: "10px 12px", borderRadius: 8, background: "#8c4a4a20", border: "1px solid #e0707040", color: "#e07070", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true">&#9888;</span> {error}
+          </div>}
+          {success && <div role="status" style={{ padding: "10px 12px", borderRadius: 8, background: "#5a8c4a18", border: "1px solid #6aad5540", color: "#6aad55", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true">&#10003;</span> {success}
+          </div>}
 
           <button type="submit" disabled={loading} style={{ ...goldBtnAnimated, opacity: loading ? 0.6 : 1, marginTop: 4 }}>
             {loading ? "..." : mode === "login" ? "EINLOGGEN" : "KONTO ERSTELLEN"}
           </button>
         </form>
 
-        <p style={{ textAlign: "center", fontSize: 9, color: "#c4a26530", marginTop: 28, letterSpacing: 0.5 }}>
+        <p style={{ textAlign: "center", fontSize: 9, color: "#8a7560", marginTop: 28, letterSpacing: 0.5 }}>
           Sportwetten = Glücksspiel · spielen-mit-verantwortung.de
         </p>
       </div>
