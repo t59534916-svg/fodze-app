@@ -73,17 +73,114 @@ export function createLeg(
   return { id, label, match, pModel, quote, isBanker, ev, edge, evMultiplier };
 }
 
+// ─── Mutual Exclusion Guard ─────────────────────────────────────────
+// Verhindert unmögliche Kombis: Heim + Unentschieden + Auswärts aus dem
+// gleichen Spiel sind sich gegenseitig ausschließende Ereignisse.
+// P(Heim UND Auswärts) = 0 — die Kombi kann niemals gewinnen.
+
+const MUTUALLY_EXCLUSIVE_GROUPS: string[][] = [
+  ["Heim", "Unent.", "Ausw."],       // 1X2
+  ["Ü1.5", "U1.5"],                  // Over/Under 1.5
+  ["Ü2.5", "U2.5"],                  // Over/Under 2.5
+  ["Ü3.5", "U3.5"],                  // Over/Under 3.5
+  ["BTTS Ja", "BTTS Nein"],          // Both teams to score
+  ["CS Heim", "BTTS Ja"],            // Clean sheet home vs BTTS
+  ["CS Gast", "BTTS Ja"],            // Clean sheet away vs BTTS
+];
+
+export interface ComboConflict {
+  leg1: string;  // Label of first conflicting leg
+  leg2: string;  // Label of second conflicting leg
+  match: string; // Match name
+  reason: string;
+}
+
+/**
+ * Prüfe ob eine Kombination unmögliche (sich ausschließende) Legs enthält.
+ * z.B. "Bayern Sieg" + "Bayern Unentschieden" im gleichen Spiel = P = 0.
+ */
+export function findComboConflicts(legs: ComboLeg[]): ComboConflict[] {
+  const conflicts: ComboConflict[] = [];
+
+  // Group legs by match
+  const byMatch: Record<string, ComboLeg[]> = {};
+  for (const leg of legs) {
+    if (!byMatch[leg.match]) byMatch[leg.match] = [];
+    byMatch[leg.match].push(leg);
+  }
+
+  // Check each match for mutually exclusive legs
+  for (const [match, matchLegs] of Object.entries(byMatch)) {
+    if (matchLegs.length < 2) continue;
+
+    for (let i = 0; i < matchLegs.length; i++) {
+      for (let j = i + 1; j < matchLegs.length; j++) {
+        const a = matchLegs[i].label;
+        const b = matchLegs[j].label;
+
+        // Extract the bet type (remove team name suffix)
+        const typeA = a.split(" ").slice(0, -1).join(" ") || a;
+        const typeB = b.split(" ").slice(0, -1).join(" ") || b;
+
+        for (const group of MUTUALLY_EXCLUSIVE_GROUPS) {
+          const aInGroup = group.some(g => a.includes(g) || typeA.includes(g));
+          const bInGroup = group.some(g => b.includes(g) || typeB.includes(g));
+
+          if (aInGroup && bInGroup && a !== b) {
+            // Check they're actually different outcomes in the same group
+            const aMatch = group.find(g => a.includes(g) || typeA.includes(g));
+            const bMatch = group.find(g => b.includes(g) || typeB.includes(g));
+            if (aMatch !== bMatch) {
+              conflicts.push({
+                leg1: a,
+                leg2: b,
+                match,
+                reason: `"${a}" und "${b}" schließen sich gegenseitig aus — diese Kombi kann nicht gewinnen.`,
+              });
+            }
+          }
+        }
+
+        // Additional logic: same market type from same match
+        // e.g., "Heim" and "Ausw." or "Heim" and "Unent."
+        const RESULT_LABELS = ["Heim", "Unent.", "Ausw."];
+        const aIsResult = RESULT_LABELS.some(r => a.startsWith(r));
+        const bIsResult = RESULT_LABELS.some(r => b.startsWith(r));
+        if (aIsResult && bIsResult && a !== b) {
+          const already = conflicts.some(c => c.leg1 === a && c.leg2 === b && c.match === match);
+          if (!already) {
+            conflicts.push({
+              leg1: a, leg2: b, match,
+              reason: `"${a}" und "${b}" aus dem gleichen Spiel — nur ein Ergebnis möglich.`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return conflicts;
+}
+
 // ─── Einfache Kombi-Berechnung ──────────────────────────────────────
 
 export function calcCombo(legs: ComboLeg[]): {
   pModel: number; quote: number; ev: number; edge: number; kelly: number;
+  conflicts: ComboConflict[];
 } {
+  // Check for impossible combinations FIRST
+  const conflicts = findComboConflicts(legs);
+  if (conflicts.length > 0) {
+    const quote = legs.reduce((q, l) => q * l.quote, 1);
+    return { pModel: 0, quote, ev: -1, edge: -1, kelly: 0, conflicts };
+  }
+
   const pModel = legs.reduce((p, l) => p * l.pModel, 1);
   const quote = legs.reduce((q, l) => q * l.quote, 1);
   const ev = pModel * quote - 1;
   const edge = pModel - (1 / quote);
   const kelly = quote > 1 ? Math.max(0, Math.min((pModel * quote - 1) / (quote - 1) * 0.20, 0.03)) : 0;
-  return { pModel, quote, ev, edge, kelly };
+  return { pModel, quote, ev, edge, kelly, conflicts: [] };
 }
 
 // ─── Impact-Analyse: Was passiert wenn ein Leg hinzugefügt wird? ────
