@@ -42,10 +42,36 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           outline: 2px solid #d4b86a;
           outline-offset: 2px;
         }
+        /* WCAG 2.3.3: Respect reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+          }
+        }
+        /* Skip navigation link (keyboard users) */
+        .skip-nav {
+          position: absolute;
+          top: -100px;
+          left: 16px;
+          z-index: 9999;
+          padding: 12px 24px;
+          background: #d4b86a;
+          color: #1a0f0a;
+          font-weight: 700;
+          border-radius: 6px;
+          text-decoration: none;
+          font-size: 14px;
+        }
+        .skip-nav:focus {
+          top: 16px;
+        }
       `}</style>
       <div className="app-shell">
+        <a href="#main-content" className="skip-nav">Zum Inhalt springen</a>
         <Corners />
-        <main style={{ position: "relative", zIndex: 3 }}>
+        <main id="main-content" style={{ position: "relative", zIndex: 3 }}>
           {children}
         </main>
         <Navbar />

@@ -75,6 +75,7 @@ export function button(variant: ButtonVariant = "gold"): CSSProperties {
     transition: `all ${transition.fast}`,
     border: "none",
     textDecoration: "none",
+    minHeight: 44, // WCAG 2.5.5 touch target minimum
   };
 
   switch (variant) {
@@ -97,7 +98,8 @@ export function button(variant: ButtonVariant = "gold"): CSSProperties {
         ...base,
         background: "transparent",
         color: color.textMuted,
-        padding: `${space[2]}px ${space[3]}px`,
+        padding: `${space[3]}px ${space[4]}px`, // 8px 12px → min 44px touch target
+        minHeight: 44, // WCAG 2.5.5 touch target
       };
   }
 }

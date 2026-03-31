@@ -4,31 +4,31 @@ import Link from "next/link";
 import Logo from "@/components/shared/Logo";
 
 const IconHome = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#c4a26550"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
   </svg>
 );
 
 const IconAnalyse = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#c4a26550"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" />
   </svg>
 );
 
 const IconKombis = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#c4a26550"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
   </svg>
 );
 
 const IconSimulator = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#c4a26550"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
   </svg>
 );
 
 const IconStats = ({ active }: { active: boolean }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#c4a26550"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" />
   </svg>
 );
@@ -81,8 +81,9 @@ export default function Navbar() {
           return (
             <Link key={href} href={href} aria-current={active ? "page" : undefined} style={{
               display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
-              padding: "8px 0", fontSize: 10, fontWeight: active ? 600 : 500,
-              letterSpacing: "0.3px", color: active ? "#d4b86a" : "#c4a26550",
+              padding: "6px 0", fontSize: 10, fontWeight: active ? 600 : 500,
+              letterSpacing: "0.3px", color: active ? "#d4b86a" : "#8a7560",
+              minHeight: 60, // WCAG 2.5.5: full nav height as touch target
               textDecoration: "none", flex: 1, position: "relative", transition: "color 0.2s ease",
             }}>
               {active && (
@@ -113,7 +114,7 @@ export default function Navbar() {
               display: "flex", alignItems: "center", gap: 12,
               padding: "10px 12px", marginBottom: 4, borderRadius: 8,
               fontSize: 13, fontWeight: active ? 600 : 400,
-              color: active ? "#d4b86a" : "#c4a26560",
+              color: active ? "#d4b86a" : "#8a7560",
               background: active ? "#c4a26510" : "transparent",
               textDecoration: "none", transition: "all 0.2s ease",
               borderLeft: active ? "3px solid #d4b86a" : "3px solid transparent",

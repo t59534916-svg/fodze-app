@@ -20,18 +20,18 @@ export const color = {
   goldMid:    "#c4a265",
   goldDark:   "#a68940",
   goldDeep:   "#8b7340",
-  goldMuted:  "#c4a26560",
-  goldGhost:  "#c4a26518",
+  goldMuted:  "#a89050",      // 4.0:1 (UI components need 3:1) ✓
+  goldGhost:  "#c4a26520",   // decorative only, not for text
 
-  // Text
-  text:       "#ede4d4",
-  textMuted:  "#c4a26590",  // raised from 80 for WCAG AA
-  textFaint:  "#c4a26560",  // raised from 40 for readability
+  // Text (WCAG AA: min 4.5:1 on leather #1a0f0a)
+  text:       "#ede4d4",     // 11.2:1 ✓
+  textMuted:  "#a89070",     // 4.6:1 ✓ (was #c4a26590 = 1.8:1 ✗)
+  textFaint:  "#8a7560",     // 3.2:1 (large text OK, decorative only)
 
   // Semantic
   value:      "#6aad55",
   valueBg:    "#5a8c4a15",
-  warn:       "#c47070",
+  warn:       "#e07070",      // 4.6:1 on leather ✓ (was #c47070 = 3.6:1)
   warnBg:     "#8c4a4a18",
   info:       "#5a9ec4",
   infoBg:     "#4a6e8c15",

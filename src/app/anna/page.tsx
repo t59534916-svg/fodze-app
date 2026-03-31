@@ -395,21 +395,27 @@ export default function AnnaPage() {
           padding: "20px 16px 16px", borderBottom: "1px solid #c4a26515",
           background: "linear-gradient(to bottom, #1a0f0a, transparent)",
         }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={currentAvatar}
-            alt="Anna"
+          <button
             onClick={cycleAvatar}
+            aria-label={`Anna Avatar — ${availableAvatars.length > 1 ? "Tippen zum Wechseln" : ""}`}
             style={{
-              width: 240, height: 240, borderRadius: "50%", objectFit: "cover",
-              border: "3px solid #d4b86a50",
-              boxShadow: "0 0 30px rgba(212,184,106,0.2)",
-              cursor: availableAvatars.length > 1 ? "pointer" : "default",
-              transition: "transform 0.2s ease, box-shadow 0.2s ease",
+              background: "none", border: "none", padding: 0, cursor: availableAvatars.length > 1 ? "pointer" : "default",
             }}
-            onMouseEnter={e => { if (availableAvatars.length > 1) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 0 36px rgba(212,184,106,0.35)"; } }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(212,184,106,0.2)"; }}
-          />
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={currentAvatar}
+              alt="Anna, KI-Wettberaterin"
+              style={{
+                width: 240, height: 240, borderRadius: "50%", objectFit: "cover",
+                border: "3px solid #d4b86a50",
+                boxShadow: "0 0 30px rgba(212,184,106,0.2)",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+              }}
+              onMouseEnter={e => { if (availableAvatars.length > 1) { e.currentTarget.style.transform = "scale(1.03)"; e.currentTarget.style.boxShadow = "0 0 36px rgba(212,184,106,0.35)"; } }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 0 30px rgba(212,184,106,0.2)"; }}
+            />
+          </button>
           <div style={{ textAlign: "center" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#d4b86a", letterSpacing: 0.5 }}>Anna</div>
@@ -466,6 +472,7 @@ export default function AnnaPage() {
             <div style={{ display: "flex", gap: 8 }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                aria-label="Nachricht an Anna eingeben"
                 placeholder="Frage Anna..."
                 rows={1}
                 style={{

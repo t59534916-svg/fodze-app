@@ -70,8 +70,9 @@ export default function MatchdayPage() {
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {br > 0 && (
             <div style={{ border: "1px solid #c4a26520", borderRadius: 6, padding: "3px 8px" }}>
-              <span style={{ fontSize: 8, color: "#c4a26560" }}>BDG </span>
-              <input type="number" value={dayBudget} onChange={e => setDayBudget(e.target.value)} placeholder={String(bankroll || "—")}
+              <label htmlFor="day-budget" style={{ fontSize: 8, color: "#8a7560" }}>BDG </label>
+              <input id="day-budget" type="number" value={dayBudget} onChange={e => setDayBudget(e.target.value)} placeholder={String(bankroll || "—")}
+                aria-label="Tagesbudget in Euro"
                 style={{ background: "transparent", border: "none", width: 48, fontSize: 12, fontWeight: 600, color: "#d4b86a", padding: 0, textAlign: "right" }} />
             </div>
           )}
