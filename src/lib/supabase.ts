@@ -169,7 +169,13 @@ export async function loadLeagueXGHistory(
  * Convert Supabase TeamXGMatch rows to engine-compatible XGHistoryEntry format.
  * This bridges the Understat data to calcMatchEnhanced()'s hHistory/aHistory params.
  */
-export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{ xg: number; xga: number; npxg?: number; npxga?: number; date: string; opponent?: string }> {
+export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{
+  xg: number; xga: number;
+  npxg?: number; npxga?: number;
+  ppda_att?: number; ppda_def?: number;
+  deep?: number; deep_allowed?: number;
+  date: string; opponent?: string;
+}> {
   return matches.map((m) => ({
     xg: m.xg,
     xga: m.xga,

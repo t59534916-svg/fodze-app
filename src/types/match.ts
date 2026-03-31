@@ -7,8 +7,12 @@
 export interface XGHistoryEntry {
   xg: number;
   xga: number;
-  npxg?: number;   // Non-penalty xG scored
-  npxga?: number;  // Non-penalty xG conceded
+  npxg?: number;          // Non-penalty xG scored (v2.0)
+  npxga?: number;         // Non-penalty xG conceded (v2.0)
+  ppda_att?: number;      // Pressing: passes attempted (v2.1)
+  ppda_def?: number;      // Pressing: defensive actions (v2.1)
+  deep?: number;          // Deep completions (v2.1)
+  deep_allowed?: number;  // Deep completions conceded (v2.1)
   date?: string;
   result?: string;
   opponent?: string;

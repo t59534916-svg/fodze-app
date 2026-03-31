@@ -62,7 +62,7 @@ const MOCK_MODEL = {
     "npxg_diff_ewma", "npxga_diff_ewma", "elo_diff", "total_npxg",
     "home_factor", "league_avg", "rest_days_diff", "sos_strength",
     "is_derby", "npxg_momentum", "npxg_volatility", "h2h_npxg_diff",
-    "motivation_diff",
+    "ppda_ratio_diff", "deep_completions_diff",
   ],
   golden_tests: [],
   meta: {},
@@ -102,7 +102,7 @@ describe("LightGBM Runtime", () => {
 
     it("returns correct feature names", () => {
       loadLGBMModel(MOCK_MODEL as any);
-      expect(getLGBMFeatureNames()).toHaveLength(13);
+      expect(getLGBMFeatureNames()).toHaveLength(14);
       expect(getLGBMFeatureNames()[0]).toBe("npxg_diff_ewma");
     });
   });
@@ -113,8 +113,7 @@ describe("LightGBM Runtime", () => {
     });
 
     it("produces plausible lambdas", () => {
-      // Features: [0.5, 0.1, 0.3, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 0]
-      const features = [0.5, 0.1, 0.3, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 0];
+      const features = [0.5, 0.1, 0.3, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 1.0, 0.5];
       const pred = lgbmPredict(features);
       expect(pred).not.toBeNull();
       expect(pred!.lambdaH).toBeGreaterThan(0.3);
@@ -125,9 +124,9 @@ describe("LightGBM Runtime", () => {
 
     it("home advantage: positive elo_diff → higher lambdaH", () => {
       // Strong home team: elo_diff = +0.5 (200 Elo advantage)
-      const strong = [0.5, 0.1, 0.5, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 0];
+      const strong = [0.5, 0.1, 0.5, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 1.0, 0.5];
       // Weak home team: elo_diff = -0.5
-      const weak = [0.5, 0.1, -0.5, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 0];
+      const weak = [0.5, 0.1, -0.5, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 1.0, 0.5];
 
       const predStrong = lgbmPredict(strong);
       const predWeak = lgbmPredict(weak);
@@ -145,14 +144,14 @@ describe("LightGBM Runtime", () => {
     });
 
     it("rejects NaN features", () => {
-      const withNaN = [NaN, 0.1, 0.3, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 0];
+      const withNaN = [NaN, 0.1, 0.3, 2.6, 1.28, 1.38, 0, 0, 0, 0, 0.5, 0, 1.0, 0.5];
       const pred = lgbmPredict(withNaN);
       expect(pred).toBeNull();
     });
 
     it("clamps extreme predictions to [0.3, 4.5]", () => {
       // With mock model and extreme features, output should still be clamped
-      const extreme = [5, 5, 5, 10, 2, 2, 5, 5, 1, 5, 5, 5, 5];
+      const extreme = [5, 5, 5, 10, 2, 2, 5, 5, 1, 5, 5, 5, 5, 5];
       const pred = lgbmPredict(extreme);
       expect(pred).not.toBeNull();
       expect(pred!.lambdaH).toBeLessThanOrEqual(4.5);

@@ -2,9 +2,10 @@
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App mit zwei Prediction Engines:
+Quantitative Fußball-Wettanalyse App mit drei Prediction Engines:
 - **Standard**: 4-Modell Ensemble (Dixon-Coles + Elo + Logistic EWMA + Market) mit Bayesian Bootstrap Confidence
-- **@annafrick13**: ML-Poisson Engine — Poisson GLM prädiktiert λH/λA → Dixon-Coles 15×15 Matrix → alle Märkte aus einer Quelle
+- **@annafrick13 v1**: ML-Poisson Engine — Poisson GLM prädiktiert λH/λA → Dixon-Coles 15×15 Matrix → alle Märkte aus einer Quelle
+- **@annafrick13 v2**: LightGBM Tweedie → 14 npxG-Features + Monotonic Constraints → Dixon-Coles Matrix → Dual-Track Calibration → Goldilocks Guard (Brier 0.5808)
 
 Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
 
@@ -26,7 +27,7 @@ Next.js 14 App Router
   ├── Contexts: AppContext (User/Liga) → MatchdayContext (Matches/Odds)
   ├── Pages: / → /matchday → /matchday/combos → /anna → /simulator → /performance
   ├── API: /api/anna (Groq/Claude Streaming), /api/matchday (Claude — nur Text, kein xG)
-  ├── Engines: dixon-coles.ts (Standard) + poisson-ml-engine.ts (@annafrick13)
+  ├── Engines: dixon-coles.ts (Standard) + poisson-ml-engine.ts (v1) + poisson-ml-engine-v2.ts (v2)
   └── Engine Registry: engine-registry.ts (Multi-Engine Dispatch)
 ```
 
@@ -43,9 +44,14 @@ Next.js 14 App Router
 | `src/lib/anna-prompt.ts` | System-Prompt für Anna | Bei Prompt-Tuning |
 | `src/styles/tokens.ts` | Design Tokens (Source of Truth) | Bei Design-Änderungen |
 | `src/types/match.ts` | TypeScript Interfaces | Bei neuen Datenstrukturen |
-| `src/lib/poisson-ml-engine.ts` | @annafrick13 Prediction Engine | Bei ML-Engine-Änderungen |
-| `src/lib/poisson-regression.ts` | Poisson GLM Runtime (λ predict) | Bei Feature-Änderungen |
+| `src/lib/poisson-ml-engine.ts` | @annafrick13 v1 (Poisson GLM) | Bei v1-Engine-Änderungen |
+| `src/lib/poisson-ml-engine-v2.ts` | @annafrick13 v2 (LightGBM Tweedie) | Bei v2-Engine-Änderungen |
+| `src/lib/lgbm-runtime.ts` | LightGBM Tree-Traversierung (Browser) | Bei Modell-Format-Änderungen |
+| `src/lib/poisson-regression.ts` | Poisson GLM Runtime (v1 λ predict) | Bei v1 Feature-Änderungen |
+| `src/lib/calibration.ts` | Isotonic Calibration + Dual-Track | Bei Kalibrierungs-Änderungen |
+| `src/lib/system-bets.ts` | Kombi-Engine (SGM + Akku + Kelly) | Bei Multi-Bet-Änderungen |
 | `src/lib/engine-registry.ts` | Engine-Definitionen + Dispatch | Bei neuen Engines |
+| `public/lgbm-model-v2.json` | Trainiertes LightGBM Modell (v2) | Nach Retraining |
 
 ## Konventionen
 
@@ -125,37 +131,58 @@ Tests decken ab:
 ### Standard (ensemble-v1)
 4-Modell Ensemble: Dixon-Coles (5%) + Elo (12%) + Logistic (64%) + Market (20%). Blended 1X2-Wahrscheinlichkeiten. O25 aus Matrix, 1X2 aus Ensemble.
 
-### @annafrick13 (poisson-ml)
+### @annafrick13 v1 (poisson-ml)
 ML-Poisson GLM → Dixon-Coles Matrix → ALLE Märkte aus einer Quelle.
 
-**Pipeline:** Supabase xG History → EWMA → SoS-Adjust → Player Absences → Rest Days → 9 Features → Poisson GLM → λH, λA → ρ + NegBin → 15×15 Matrix
+**Pipeline:** Supabase xG History → EWMA → SoS-Adjust → 9 Features → Poisson GLM → λH, λA → 15×15 Matrix
 
-**Features (9):**
-| # | Name | Beschreibung |
-|---|------|-------------|
-| 0 | xg_diff | Home xG/g - Away xG/g (SoS-adjusted) |
-| 1 | xga_diff | Home xGA/g - Away xGA/g (SoS-adjusted) |
-| 2 | elo_diff | (Home Elo - Away Elo) / 400 |
-| 3 | total_xg | Home xG/g + Away xG/g |
-| 4 | home_factor | Liga/Team Heimfaktor |
-| 5 | league_avg | Liga-Durchschnitt Tore/Spiel |
-| 6 | rest_days_diff | (Rest Home - Rest Away) / 7 |
-| 7 | sos_strength | SoS-Korrektur Differenz |
-| 8 | is_derby | Binär (aus 25 Derby-Paarungen) |
+**Training:** `python3 tools/retrain_all.py` → `public/ensemble-model.json`
+
+### @annafrick13 v2 (poisson-ml-v2)
+LightGBM Tweedie → Monotonic Constraints → Dixon-Coles Matrix → Dual-Track Calibration.
+
+**Pipeline:** Understat npxG → EWMA → SoS → 14 Features → LightGBM Tweedie (Optuna) → λH, λA → optimiertes ρ → 15×15 Matrix → Track A (Display) + Track B (Kelly)
+
+**Features (14):**
+| # | Name | Beschreibung | Mono H/A |
+|---|------|-------------|----------|
+| 0 | npxg_diff_ewma | Non-Penalty xG Differenz (EWMA) | +1 / -1 |
+| 1 | npxga_diff_ewma | Defensive npxG Differenz | -1 / +1 |
+| 2 | elo_diff | (Elo H - Elo A) / 400 | +1 / -1 |
+| 3 | total_npxg | Kombinierte Angriffsstaerke | — |
+| 4 | home_factor | Liga/Team Heimfaktor | +1 / -1 |
+| 5 | league_avg | Liga-Durchschnitt Tore/Spiel | — |
+| 6 | rest_days_diff | (Rest Home - Rest Away) / 7 | +1 / -1 |
+| 7 | sos_strength | SoS-Korrektur Differenz | — |
+| 8 | is_derby | Binaer (25 Derby-Paarungen) | — |
+| 9 | npxg_momentum | Akute Form vs. Saison-Baseline | +1 / -1 |
+| 10 | npxg_volatility | Konsistenz (Std 8-Spiele) | — |
+| 11 | h2h_npxg_diff | Letzte 5 H2H-Begegnungen | — |
+| 12 | ppda_ratio_diff | Pressing-Intensitaet (EWMA) | — |
+| 13 | deep_completions_diff | Final-Third Qualitaet (EWMA) | +1 / -1 |
 
 **Guardrails:**
-- Kein LLM-Daten Fallback (ohne Supabase History → null)
-- Kein ML-Modell geladen → null (kein Fallback auf xG-Formel)
-- Feature-Dimension Guard (9≠9 → null statt NaN)
-- Value Cap: Edge >8% vs Pinnacle = Value Trap (kelly=0)
-- Keine Post-ML Tag-Corrections (DERBY ist trainiertes Feature)
+- Monotonic Constraints (physisch unmoeglich unreale Extreme zu produzieren)
+- Lambda Clamping [0.3, 4.5]
+- Goldilocks Edge Guard: 2.5% - 7.5% (< = Rauschen, > = fehlende Info)
+- Dual-Track Divergenz-Warnung (Track A +EV, Track B -EV = overconfident)
+- Volatilitaets-Dampener in Kombiwetten (Kelly -15% bis -45%)
+- Feature-Dimension Guard (14≠14 → null)
+- Kein LLM-Daten Fallback (ohne History → null)
 
 **Training:**
 ```bash
 source tools/venv/bin/activate
-python3 tools/retrain_all.py    # Trainiert Standard + @annafrick13
+DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
 ```
-Output: `public/ensemble-model.json` (Elo + Logistic + Poisson Koeffizienten)
+Output: `public/lgbm-model-v2.json` (Tree-Struktur + Golden Tests, ~300 KB)
+
+**Matchday Predictions:**
+```bash
+python3 tools/matchday-predict.py --analyse          # Naechster Spieltag
+python3 tools/matchday-predict.py --all-leagues --json  # JSON Export
+python3 tools/matchday-enrich.py --all-leagues          # + Wetter + Schiedsrichter
+```
 
 ## CI/CD
 
