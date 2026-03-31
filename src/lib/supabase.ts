@@ -135,7 +135,7 @@ export async function loadTeamXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, ppda_att, ppda_def, deep, deep_allowed, goals_for, goals_against")
+    .select("*")
     .eq("team", team)
     .eq("league", league)
     .eq("venue", venue)
@@ -156,7 +156,7 @@ export async function loadLeagueXGHistory(
 ): Promise<TeamXGMatch[]> {
   const { data, error } = await supabase
     .from("team_xg_history")
-    .select("team, opponent, venue, match_date, xg, xga, npxg, npxga, ppda_att, ppda_def, deep, deep_allowed, goals_for, goals_against")
+    .select("*")
     .eq("league", league)
     .eq("venue", "home") // One row per match (home perspective)
     .gte("match_date", seasonStartDate)
