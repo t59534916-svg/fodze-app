@@ -24,7 +24,6 @@ export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> 
   liga3:         { name: "3. Liga",           hf: 1.22, avg: 1.40 },
   cl:            { name: "Champions League",  hf: 1.15, avg: 1.28 },
   el:            { name: "Europa League",     hf: 1.15, avg: 1.25 },
-  pokal:         { name: "DFB-Pokal",         hf: 1.10, avg: 1.30 },
 };
 
 // ─── Team-spezifische Heimfaktoren (3. Liga) ──────────────────────
@@ -289,7 +288,7 @@ export function getGoalBothHalves(lamH:number,lamA:number,rho=RHO):{yes:number;n
 // ─── Yellow Card Prediction (Poisson from referee average) ────────────
 const LEAGUE_AVG_CARDS: Record<string,number> = {
   bundesliga: 3.8, epl: 3.2, la_liga: 4.5, serie_a: 4.2, ligue_1: 3.6,
-  bundesliga2: 3.9, liga3: 3.7, championship: 3.4, eredivisie: 3.5, cl: 3.3, el: 3.4, pokal: 3.6,
+  bundesliga2: 3.9, liga3: 3.7, championship: 3.4, eredivisie: 3.5, cl: 3.3, el: 3.4,
 };
 export function predictYellowCards(refereeStr?: string, leagueKey?: string): { expected: number; over25: number; over35: number; over45: number; over55: number } {
   let avg = LEAGUE_AVG_CARDS[leagueKey || "bundesliga"] || 3.8;

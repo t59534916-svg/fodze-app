@@ -5,7 +5,7 @@ import { LEAGUES } from "@/lib/dixon-coles";
 const FLAG: Record<string, string> = {
   bundesliga: "🇩🇪", bundesliga2: "🇩🇪", liga3: "🇩🇪", epl: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   la_liga: "🇪🇸", serie_a: "🇮🇹", ligue_1: "🇫🇷", championship: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
-  eredivisie: "🇳🇱", cl: "🏆", el: "🏆", pokal: "🏆",
+  eredivisie: "🇳🇱", cl: "🏆", el: "🏆",
 };
 
 export default function LeagueChips({ selected, onToggle, onConfirm }: {

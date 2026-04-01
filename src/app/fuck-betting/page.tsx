@@ -1,0 +1,476 @@
+"use client";
+import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useApp } from "@/contexts/AppContext";
+import AppShell from "@/components/layout/AppShell";
+import Kit from "@/components/shared/Kit";
+import {
+  LEAGUES, getHomeFactor, buildMatrix, deriveAllMarkets,
+  getCorrectScores, getAsianHandicap, getHtFt, getGoalBothHalves,
+  predictYellowCards, getHT1X2, getHTCorrectScores,
+  getFirstGoalTime, getWinningMargin, calcLambdas,
+} from "@/lib/dixon-coles";
+import type { MatchdayData, RawMatch } from "@/types/match";
+
+// ─── Types ─────────────────────────────────────────────────────────
+
+interface MatchReport {
+  home: string;
+  away: string;
+  league: string;
+  leagueName: string;
+  kickoff: string;
+  lambdaH: number;
+  lambdaA: number;
+  matrix: number[][];
+  // Full Time
+  ft1X2: { H: number; D: number; A: number };
+  dc: { "1X": number; "X2": number; "12": number };
+  goalsOU: { O15: number; O25: number; O35: number; O45: number; O55: number };
+  btts: { yes: number; no: number };
+  correctScores: { score: string; p: number }[];
+  winningMargin: Record<string, number>;
+  asianHandicap: Record<string, { P_Win: number; P_Push: number; P_Loss: number; Fair_Odds: number }>;
+  // Half Time
+  ht1X2: { H: number; D: number; A: number };
+  htCorrectScores: { score: string; p: number }[];
+  htft: Record<string, number>;
+  goalBothHalves: { yes: number; no: number };
+  // Goals per team
+  homeGoals: { O05: number; O15: number; O25: number };
+  awayGoals: { O05: number; O15: number; O25: number };
+  // Yellow Cards
+  yellowCards: { expected: number; over25: number; over35: number; over45: number; over55: number };
+  // Timing
+  firstGoalBefore30: number;
+  firstGoalBefore60: number;
+  // Brief analysis
+  analysis: string;
+}
+
+const pc = (v: number) => (v * 100).toFixed(1) + "%";
+const toOdds = (p: number) => p > 0.01 ? (1 / p).toFixed(2) : "—";
+
+// ─── Generate analysis text ───────────────────────────────────────
+
+function generateAnalysis(r: MatchReport): string {
+  const { ft1X2, goalsOU, lambdaH, lambdaA, btts, ht1X2, correctScores } = r;
+  const parts: string[] = [];
+
+  // Favorite
+  if (ft1X2.H > 0.5) parts.push(`${r.home} klarer Favorit (${pc(ft1X2.H)})`);
+  else if (ft1X2.A > 0.5) parts.push(`${r.away} klarer Favorit (${pc(ft1X2.A)})`);
+  else if (ft1X2.H > ft1X2.A + 0.1) parts.push(`${r.home} leichter Favorit`);
+  else if (ft1X2.A > ft1X2.H + 0.1) parts.push(`${r.away} leichter Favorit`);
+  else parts.push("Ausgeglichene Partie");
+
+  // Expected goals
+  const totalXG = lambdaH + lambdaA;
+  if (totalXG > 3.2) parts.push(`Torreiches Spiel erwartet (${lambdaH.toFixed(1)} + ${lambdaA.toFixed(1)} = ${totalXG.toFixed(1)} xG)`);
+  else if (totalXG < 2.2) parts.push(`Torarmes Spiel erwartet (${totalXG.toFixed(1)} xG)`);
+  else parts.push(`${totalXG.toFixed(1)} Tore erwartet`);
+
+  // O2.5
+  if (goalsOU.O25 > 0.6) parts.push(`Über 2.5 Tore wahrscheinlich (${pc(goalsOU.O25)})`);
+  else if (goalsOU.O25 < 0.4) parts.push(`Unter 2.5 Tore wahrscheinlich (${pc(1 - goalsOU.O25)})`);
+
+  // BTTS
+  if (btts.yes > 0.6) parts.push(`Beide treffen (${pc(btts.yes)})`);
+
+  // HT
+  if (ht1X2.D > 0.45) parts.push(`Halbzeit-Unentschieden häufig (${pc(ht1X2.D)})`);
+
+  // Most likely score
+  if (correctScores.length > 0) {
+    parts.push(`Wahrscheinlichstes Ergebnis: ${correctScores[0].score} (${pc(correctScores[0].p)})`);
+  }
+
+  return parts.join(". ") + ".";
+}
+
+// ─── Styles ────────────────────────────────────────────────────────
+
+const S = {
+  card: { background: "#c4a26508", border: "1px solid #c4a26518", borderRadius: 10, padding: 12, marginBottom: 8 } as React.CSSProperties,
+  sectionLabel: { fontSize: 9, fontWeight: 700, color: "#a89070", letterSpacing: "0.1em", textTransform: "uppercase" as const, marginBottom: 6 } as React.CSSProperties,
+  row: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", fontSize: 12 } as React.CSSProperties,
+  label: { color: "#a89070", fontSize: 11 } as React.CSSProperties,
+  val: { color: "#ede4d4", fontWeight: 600, fontSize: 12, fontFamily: "monospace" } as React.CSSProperties,
+  valHigh: { color: "#6aad55", fontWeight: 700, fontSize: 12, fontFamily: "monospace" } as React.CSSProperties,
+  bar: (w: number, color: string) => ({ width: `${Math.max(w * 100, 2)}%`, height: 5, borderRadius: 3, background: color, transition: "width 0.3s" }) as React.CSSProperties,
+  tag: (c: string) => ({ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: c + "15", color: c, fontWeight: 600 }) as React.CSSProperties,
+};
+
+// ─── Prob Row ──────────────────────────────────────────────────────
+
+function PRow({ label, p, highlight }: { label: string; p: number; highlight?: boolean }) {
+  return (
+    <div style={S.row}>
+      <span style={S.label}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ width: 50, height: 5, borderRadius: 3, background: "#c4a26510", overflow: "hidden" }}>
+          <div style={S.bar(p, highlight ? "#6aad55" : "#d4b86a")} />
+        </div>
+        <span style={highlight ? S.valHigh : S.val}>{pc(p)}</span>
+        <span style={{ fontSize: 9, color: "#c4a26540" }}>{toOdds(p)}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Match Report Card ─────────────────────────────────────────────
+
+function MatchReportCard({ report }: { report: MatchReport }) {
+  const [expanded, setExpanded] = useState(false);
+  const r = report;
+
+  return (
+    <div style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+      {/* Header */}
+      <button onClick={() => setExpanded(!expanded)} style={{
+        width: "100%", padding: "12px 14px", border: "none", background: "transparent",
+        cursor: "pointer", textAlign: "left" as const,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+            <Kit team={r.home} size={16} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.home}</span>
+            <span style={{ fontSize: 10, color: "#c4a26540" }}>vs</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.away}</span>
+            <Kit team={r.away} size={16} />
+          </div>
+          <span style={{ color: "#c4a26535", fontSize: 14 }}>{expanded ? "▾" : "▸"}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
+          <span style={S.tag("#d4b86a")}>{r.leagueName}</span>
+          {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{r.kickoff}</span>}
+          <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>
+            {r.lambdaH.toFixed(2)} : {r.lambdaA.toFixed(2)} xG
+          </span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: "0 14px 14px" }}>
+          {/* Analysis */}
+          <div style={{ background: "#c4a26508", borderRadius: 8, padding: 10, marginBottom: 10, border: "1px solid #c4a26510" }}>
+            <div style={{ fontSize: 11, color: "#ede4d4", lineHeight: 1.5 }}>{r.analysis}</div>
+          </div>
+
+          {/* ── 1X2 Full Time ── */}
+          <div style={S.sectionLabel}>Ergebnis (Vollzeit)</div>
+          <PRow label="Heim" p={r.ft1X2.H} highlight={r.ft1X2.H > 0.45} />
+          <PRow label="Unentschieden" p={r.ft1X2.D} />
+          <PRow label="Auswärts" p={r.ft1X2.A} highlight={r.ft1X2.A > 0.45} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Double Chance ── */}
+          <div style={S.sectionLabel}>Doppelte Chance</div>
+          <PRow label="1X (Heim o. Unent.)" p={r.dc["1X"]} />
+          <PRow label="X2 (Unent. o. Ausw.)" p={r.dc["X2"]} />
+          <PRow label="12 (Heim o. Ausw.)" p={r.dc["12"]} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Goals Over/Under Full Time ── */}
+          <div style={S.sectionLabel}>Tore Über/Unter (Vollzeit)</div>
+          <PRow label="Über 1.5" p={r.goalsOU.O15} highlight={r.goalsOU.O15 > 0.7} />
+          <PRow label="Über 2.5" p={r.goalsOU.O25} highlight={r.goalsOU.O25 > 0.55} />
+          <PRow label="Über 3.5" p={r.goalsOU.O35} />
+          <PRow label="Über 4.5" p={r.goalsOU.O45} />
+          <PRow label="Über 5.5" p={r.goalsOU.O55} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── BTTS ── */}
+          <div style={S.sectionLabel}>Beide Teams treffen</div>
+          <PRow label="Ja" p={r.btts.yes} highlight={r.btts.yes > 0.55} />
+          <PRow label="Nein" p={r.btts.no} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Team Goals ── */}
+          <div style={S.sectionLabel}>Tore pro Team</div>
+          <PRow label={`${r.home} Über 0.5`} p={r.homeGoals.O05} />
+          <PRow label={`${r.home} Über 1.5`} p={r.homeGoals.O15} />
+          <PRow label={`${r.home} Über 2.5`} p={r.homeGoals.O25} />
+          <PRow label={`${r.away} Über 0.5`} p={r.awayGoals.O05} />
+          <PRow label={`${r.away} Über 1.5`} p={r.awayGoals.O15} />
+          <PRow label={`${r.away} Über 2.5`} p={r.awayGoals.O25} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── HT 1X2 ── */}
+          <div style={S.sectionLabel}>Halbzeit-Ergebnis</div>
+          <PRow label="Heim" p={r.ht1X2.H} />
+          <PRow label="Unentschieden" p={r.ht1X2.D} highlight={r.ht1X2.D > 0.4} />
+          <PRow label="Auswärts" p={r.ht1X2.A} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── HT Correct Scores ── */}
+          <div style={S.sectionLabel}>Halbzeit Genauer Spielstand</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+            {r.htCorrectScores.slice(0, 8).map(cs => (
+              <div key={cs.score} style={{
+                background: "#c4a26508", borderRadius: 6, padding: "4px 6px", textAlign: "center",
+                border: "1px solid #c4a26510",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#d4b86a" }}>{cs.score}</div>
+                <div style={{ fontSize: 9, color: "#a89070" }}>{pc(cs.p)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── HT/FT ── */}
+          <div style={S.sectionLabel}>Halbzeit / Endstand</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+            {Object.entries(r.htft).sort((a, b) => b[1] - a[1]).slice(0, 9).map(([key, p]) => (
+              <div key={key} style={{
+                background: p > 0.15 ? "#6aad5510" : "#c4a26508", borderRadius: 6, padding: "4px 6px", textAlign: "center",
+                border: p > 0.15 ? "1px solid #6aad5520" : "1px solid #c4a26510",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: p > 0.15 ? "#6aad55" : "#ede4d4" }}>{key}</div>
+                <div style={{ fontSize: 9, color: "#a89070" }}>{pc(p)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Goal In Both Halves ── */}
+          <div style={S.sectionLabel}>Tor in beiden Halbzeiten</div>
+          <PRow label="Ja" p={r.goalBothHalves.yes} />
+          <PRow label="Nein" p={r.goalBothHalves.no} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Correct Score FT ── */}
+          <div style={S.sectionLabel}>Genauer Spielstand (Vollzeit)</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+            {r.correctScores.slice(0, 12).map(cs => (
+              <div key={cs.score} style={{
+                background: cs.p > 0.08 ? "#d4b86a10" : "#c4a26508", borderRadius: 6, padding: "4px 6px", textAlign: "center",
+                border: cs.p > 0.08 ? "1px solid #d4b86a25" : "1px solid #c4a26510",
+              }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: cs.p > 0.08 ? "#d4b86a" : "#ede4d4" }}>{cs.score}</div>
+                <div style={{ fontSize: 9, color: "#a89070" }}>{pc(cs.p)} <span style={{ color: "#c4a26530" }}>{toOdds(cs.p)}</span></div>
+              </div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Winning Margin ── */}
+          <div style={S.sectionLabel}>Siegtordifferenz</div>
+          {Object.entries(r.winningMargin).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([margin, p]) => (
+            <PRow key={margin} label={margin} p={p} />
+          ))}
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Asian Handicap ── */}
+          <div style={S.sectionLabel}>Handicap (Heim)</div>
+          {["-1.5", "-1", "-0.5", "0", "+0.5", "+1", "+1.5"].map(line => {
+            const ah = r.asianHandicap[line];
+            if (!ah) return null;
+            return <PRow key={line} label={`HC ${line}`} p={ah.P_Win} highlight={ah.P_Win > 0.55} />;
+          })}
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── Yellow Cards ── */}
+          <div style={S.sectionLabel}>Gelbe Karten</div>
+          <div style={S.row}>
+            <span style={S.label}>Erwartete Karten</span>
+            <span style={S.val}>{r.yellowCards.expected.toFixed(1)}</span>
+          </div>
+          <PRow label="Über 2.5" p={r.yellowCards.over25} />
+          <PRow label="Über 3.5" p={r.yellowCards.over35} />
+          <PRow label="Über 4.5" p={r.yellowCards.over45} />
+          <PRow label="Über 5.5" p={r.yellowCards.over55} />
+          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+
+          {/* ── First Goal Timing ── */}
+          <div style={S.sectionLabel}>Erstes Tor</div>
+          <PRow label="Vor Minute 30" p={r.firstGoalBefore30} />
+          <PRow label="Vor Minute 60" p={r.firstGoalBefore60} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Page ──────────────────────────────────────────────────────────
+
+export default function FuckBettingPage() {
+  const router = useRouter();
+  const { supabase, leagueStatus } = useApp();
+  const [allData, setAllData] = useState<{ league: string; data: MatchdayData }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load all leagues with data
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const { loadLatestMatchday } = await import("@/lib/supabase");
+      const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
+      const results = await Promise.all(leagueKeys.map(async (key) => {
+        const md = await loadLatestMatchday(supabase, key);
+        return md ? { league: key, data: md.data as MatchdayData } : null;
+      }));
+      setAllData(results.filter((r): r is NonNullable<typeof r> => r !== null));
+      setLoading(false);
+    })();
+  }, [supabase, leagueStatus]);
+
+  // Build reports for all matches
+  const reports = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const result: MatchReport[] = [];
+
+    for (const { league, data } of allData) {
+      if (!data?.matches) continue;
+      const ld = LEAGUES[league];
+      if (!ld) continue;
+
+      for (const match of data.matches) {
+        const h = match.home;
+        const a = match.away;
+        if (!h?.xg_h8 || !a?.xg_a8) continue;
+
+        // Compute lambdas
+        const hf = getHomeFactor(h.name, ld.hf);
+        const { lambdaH, lambdaA } = calcLambdas(
+          h.xg_h8, h.xga_h8 || 0,
+          a.xg_a8, a.xga_a8 || 0,
+          h.games || 8, a.games || 8,
+          ld.avg, hf
+        );
+
+        // Build matrix
+        const mx = buildMatrix(lambdaH, lambdaA);
+        const mk = deriveAllMarkets(mx);
+        const cs = getCorrectScores(mx, 12);
+        const ah = getAsianHandicap(mx, "H");
+        const htft = getHtFt(lambdaH, lambdaA);
+        const gbh = getGoalBothHalves(lambdaH, lambdaA);
+        const yc = predictYellowCards(undefined, league);
+        const ht1x2 = getHT1X2(lambdaH, lambdaA);
+        const htCS = getHTCorrectScores(lambdaH, lambdaA);
+        const wm = getWinningMargin(mx);
+
+        const report: MatchReport = {
+          home: h.name,
+          away: a.name,
+          league,
+          leagueName: ld.name,
+          kickoff: match.kickoff || "",
+          lambdaH,
+          lambdaA,
+          matrix: mx,
+          ft1X2: { H: mk.H, D: mk.D, A: mk.A },
+          dc: { "1X": mk.DC_1X, "X2": mk.DC_X2, "12": mk.DC_12 },
+          goalsOU: { O15: mk.O15, O25: mk.O25, O35: mk.O35, O45: mk.O45, O55: mk.O55 },
+          btts: { yes: mk.BY, no: mk.BN },
+          correctScores: cs,
+          winningMargin: wm,
+          asianHandicap: ah,
+          ht1X2: ht1x2,
+          htCorrectScores: htCS,
+          htft,
+          goalBothHalves: gbh,
+          homeGoals: { O05: mk.HO05, O15: mk.HO15, O25: mk.HO25 },
+          awayGoals: { O05: mk.AO05, O15: mk.AO15, O25: mk.AO25 },
+          yellowCards: yc,
+          firstGoalBefore30: getFirstGoalTime(lambdaH, lambdaA, 30),
+          firstGoalBefore60: getFirstGoalTime(lambdaH, lambdaA, 60),
+          analysis: "",
+        };
+        report.analysis = generateAnalysis(report);
+
+        result.push(report);
+      }
+    }
+
+    // Sort: nearest future date first, then past
+    result.sort((a, b) => {
+      const da = a.kickoff || "9999";
+      const db = b.kickoff || "9999";
+      const aFuture = da >= today;
+      const bFuture = db >= today;
+      if (aFuture && !bFuture) return -1;
+      if (!aFuture && bFuture) return 1;
+      if (aFuture && bFuture) return da.localeCompare(db);
+      return db.localeCompare(da);
+    });
+
+    return result;
+  }, [allData]);
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const map = new Map<string, MatchReport[]>();
+    for (const r of reports) {
+      const date = r.kickoff?.slice(0, 10) || "Unbekannt";
+      if (!map.has(date)) map.set(date, []);
+      map.get(date)!.push(r);
+    }
+    return Array.from(map.entries());
+  }, [reports]);
+
+  function formatDateLabel(iso: string): string {
+    if (iso === "Unbekannt") return iso;
+    try {
+      const d = new Date(iso + "T12:00:00");
+      const days = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+      return `${days[d.getDay()]}, ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+    } catch { return iso; }
+  }
+
+  return (
+    <AppShell>
+      {/* Header */}
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={() => router.push("/")} style={{
+          background: "transparent", border: "none", color: "#a89070", fontSize: 12,
+          cursor: "pointer", padding: "4px 0", marginBottom: 8,
+        }}>
+          ← Zurück
+        </button>
+        <h1 style={{
+          fontSize: 22, fontWeight: 700, color: "#e07070", margin: 0, letterSpacing: 1,
+          fontFamily: "Georgia, serif",
+        }}>
+          Fuck Betting
+        </h1>
+        <p style={{ fontSize: 11, color: "#a89070", margin: "4px 0 0" }}>
+          Vollständige Wahrscheinlichkeitsanalyse aller Spiele. Ohne Wettquoten. Nur Mathematik.
+        </p>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#a89070" }}>
+          <div style={{ fontSize: 14, marginBottom: 8 }}>Lade Daten aller Ligen...</div>
+          <div style={{ fontSize: 10 }}>Dixon-Coles Matrix wird berechnet</div>
+        </div>
+      ) : reports.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "#a89070" }}>
+          <div style={{ fontSize: 14 }}>Keine Spieldaten verfügbar</div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>Erst Ligen auf der Startseite laden</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 10, color: "#a89070", marginBottom: 12 }}>
+            {reports.length} Spiele aus {new Set(reports.map(r => r.league)).size} Ligen
+          </div>
+
+          {grouped.map(([date, matches]) => (
+            <div key={date} style={{ marginBottom: 16 }}>
+              <div style={{
+                fontSize: 11, fontWeight: 700, color: "#d4b86a", letterSpacing: "0.05em",
+                padding: "6px 0", borderBottom: "1px solid #c4a26520", marginBottom: 8,
+              }}>
+                {formatDateLabel(date)}
+              </div>
+              {matches.map((r, i) => (
+                <MatchReportCard key={`${r.home}-${r.away}-${i}`} report={r} />
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+    </AppShell>
+  );
+}
