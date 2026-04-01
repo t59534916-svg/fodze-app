@@ -138,110 +138,130 @@ function generateAnalysis(r: MatchReport): string {
 
   // Engine info
   if (r.engine === "annafrick13-v2") {
-    lines.push(`Analyse via @annafrick13 v2 — LightGBM Tweedie mit 14 Features (npxG EWMA, Elo, Momentum, PPDA, Pressing). Erwartete Tore: ${r.lambdaH.toFixed(2)} : ${r.lambdaA.toFixed(2)}.`);
+    lines.push(`Analyse via @annafrick13 v2 (LightGBM Tweedie, 14 Features: npxG EWMA, Elo, Momentum, Pressing, PPDA, H2H). Erwartete Tore: ${r.home} ${r.lambdaH.toFixed(2)} — ${r.away} ${r.lambdaA.toFixed(2)}.`);
+  } else {
+    lines.push(`Analyse via Standard-Engine (Dixon-Coles). Erwartete Tore: ${r.home} ${r.lambdaH.toFixed(2)} — ${r.away} ${r.lambdaA.toFixed(2)}.`);
   }
 
   // Data quality warning
   if (r.dataQuality === "LOW") {
-    lines.push(`Hinweis: Für diese Partie liegen keine individuellen xG-Daten vor. Die Analyse basiert auf dem Liga-Durchschnitt (${r.lambdaH.toFixed(2)} : ${r.lambdaA.toFixed(2)} erw. Tore) und dem Heimvorteil. Die Wahrscheinlichkeiten sind daher deutlich weniger aussagekräftig als bei Spielen mit echten xG-Werten — Vorsicht bei der Interpretation.`);
+    lines.push(`⚠ Für diese Partie liegen keine individuellen xG-Daten vor. Die Analyse basiert auf dem Liga-Durchschnitt und dem Heimvorteil. Die Wahrscheinlichkeiten sind deutlich weniger aussagekräftig — Vorsicht bei der Interpretation.`);
   }
 
   // ── 1. Main verdict with reasoning ──
-  if (ft1X2.H > 0.5) {
+  const buildReasons = (favHome: boolean) => {
     const reasons: string[] = [];
-    if (r.xgPerGameH > 1.5) reasons.push(`stark offensiv zuhause (${r.xgPerGameH.toFixed(2)} xG/Spiel)`);
-    if (r.xgaPerGameA > 1.5) reasons.push(`${r.away} defensiv anfällig auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel kassiert)`);
-    if (formH.w >= 3 && formH.len >= 4) reasons.push(`${formH.w} von ${formH.len} Heimspielen gewonnen`);
-    if (formA.l >= 2) reasons.push(`${r.away} zuletzt ${formA.l} Niederlagen in ${formA.len} Auswärtsspielen`);
+    if (favHome) {
+      if (r.xgPerGameH > 1.5) reasons.push(`stark offensiv zuhause (${r.xgPerGameH.toFixed(2)} npxG/Spiel${r.engine === "annafrick13-v2" ? " EWMA" : ""})`);
+      if (r.xgaPerGameA > 1.5) reasons.push(`${r.away} defensiv anfällig auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel kassiert)`);
+      if (r.xgaPerGameH < 1.1) reasons.push(`${r.home} defensiv solide zuhause (nur ${r.xgaPerGameH.toFixed(2)} xGA/Spiel)`);
+      if (formH.w >= 3 && formH.len >= 4) reasons.push(`${formH.w} von ${formH.len} Heimspielen gewonnen`);
+      if (formA.l >= 2) reasons.push(`${r.away} zuletzt ${formA.l} Niederlage${formA.l > 1 ? "n" : ""} in ${formA.len} Auswärtsspielen`);
+    } else {
+      if (r.xgPerGameA > 1.3) reasons.push(`offensiv stark auswärts (${r.xgPerGameA.toFixed(2)} npxG/Spiel)`);
+      if (r.xgaPerGameH > 1.5) reasons.push(`${r.home} defensive Schwächen zuhause (${r.xgaPerGameH.toFixed(2)} xGA/Spiel kassiert)`);
+      if (r.xgaPerGameA < 1.0) reasons.push(`${r.away} defensiv kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel)`);
+      if (formA.w >= 3) reasons.push(`${formA.w} Siege in den letzten ${formA.len} Auswärtsspielen`);
+      if (formH.l >= 2) reasons.push(`${r.home} zuletzt ${formH.l} Heimniederlage${formH.l > 1 ? "n" : ""}`);
+    }
+    return reasons;
+  };
+
+  if (ft1X2.H > 0.5) {
+    const reasons = buildReasons(true);
     if (reasons.length === 0) reasons.push(`das xG-Profil spricht klar für die Heimmannschaft`);
     lines.push(`${r.home} geht als klarer Favorit ins Spiel (${pc(ft1X2.H)}), weil ${reasons.join(", ")}.`);
   } else if (ft1X2.A > 0.5) {
-    const reasons: string[] = [];
-    if (r.xgPerGameA > 1.3) reasons.push(`offensiv stark auswärts (${r.xgPerGameA.toFixed(2)} xG/Spiel)`);
-    if (r.xgaPerGameH > 1.5) reasons.push(`${r.home} defensive Schwächen zuhause (${r.xgaPerGameH.toFixed(2)} xGA/Spiel kassiert)`);
-    if (formA.w >= 3) reasons.push(`${formA.w} Siege in den letzten ${formA.len} Auswärtsspielen`);
-    if (formH.l >= 2) reasons.push(`${r.home} zuletzt ${formH.l} Heimniederlagen`);
+    const reasons = buildReasons(false);
     if (reasons.length === 0) reasons.push(`die xG-Daten deuten auf eine auswärtsstarke Mannschaft`);
     lines.push(`${r.away} ist trotz Auswärtsspiel Favorit (${pc(ft1X2.A)}), denn ${reasons.join(", ")}.`);
   } else if (ft1X2.H > ft1X2.A + 0.08) {
-    lines.push(`${r.home} mit leichtem Heimvorteil (${pc(ft1X2.H)} vs. ${pc(ft1X2.A)}). Der Unterschied ist aber gering — ${r.away} kann hier durchaus punkten.`);
-    if (r.xgPerGameH > r.xgPerGameA) {
-      lines.push(`${r.home} erzielt zuhause im Schnitt ${r.xgPerGameH.toFixed(2)} xG pro Spiel, ${r.away} kommt auswärts auf ${r.xgPerGameA.toFixed(2)}.`);
-    }
+    lines.push(`${r.home} mit leichtem Heimvorteil (${pc(ft1X2.H)} vs. ${pc(ft1X2.A)}). Der Unterschied ist gering — ${r.away} kann hier durchaus punkten.`);
+    lines.push(`${r.home} erzielt zuhause ${r.xgPerGameH.toFixed(2)} npxG/Spiel, ${r.away} kommt auswärts auf ${r.xgPerGameA.toFixed(2)}. Defensiv: ${r.home} kassiert ${r.xgaPerGameH.toFixed(2)}, ${r.away} kassiert ${r.xgaPerGameA.toFixed(2)} xGA/Spiel.`);
   } else if (ft1X2.A > ft1X2.H + 0.08) {
-    lines.push(`${r.away} leicht favorisiert (${pc(ft1X2.A)}), obwohl sie auswärts spielen. ${r.home} überzeugt zuhause nicht (${r.xgPerGameH.toFixed(2)} xG/Spiel).`);
+    lines.push(`${r.away} leicht favorisiert (${pc(ft1X2.A)}), obwohl sie auswärts spielen. ${r.home} kommt zuhause nur auf ${r.xgPerGameH.toFixed(2)} npxG/Spiel.`);
   } else {
-    lines.push(`Ein sehr ausgeglichenes Spiel — ${r.home} (${pc(ft1X2.H)}) und ${r.away} (${pc(ft1X2.A)}) sind nahezu gleichstark. Das Unentschieden hat mit ${pc(ft1X2.D)} eine realistische Chance.`);
+    lines.push(`Ein sehr ausgeglichenes Spiel — ${r.home} (${pc(ft1X2.H)}) und ${r.away} (${pc(ft1X2.A)}) nahezu gleichstark. Das Unentschieden hat mit ${pc(ft1X2.D)} eine realistische Chance.`);
+    lines.push(`Offensiv liefern sich beide ein Duell auf Augenhöhe: ${r.home} ${r.xgPerGameH.toFixed(2)} vs. ${r.away} ${r.xgPerGameA.toFixed(2)} npxG/Spiel.`);
   }
 
-  // ── 2. Form analysis ──
+  // ── 2. xG deep-dive (always show) ──
+  lines.push(`xG-Profil: ${r.home} erzielt ${r.xgPerGameH.toFixed(2)} und kassiert ${r.xgaPerGameH.toFixed(2)} xG/Spiel zuhause. ${r.away} erzielt ${r.xgPerGameA.toFixed(2)} und kassiert ${r.xgaPerGameA.toFixed(2)} auswärts.`);
+
+  // ── 3. Form analysis ──
   if (formH.len > 0 || formA.len > 0) {
     const formParts: string[] = [];
+    if (formH.len > 0) formParts.push(`${r.home} Heimform: ${formH.w}S ${formH.d}U ${formH.l}N (${formH.len} Sp.)`);
+    if (formA.len > 0) formParts.push(`${r.away} Auswärtsform: ${formA.w}S ${formA.d}U ${formA.l}N (${formA.len} Sp.)`);
     if (formH.streak.length > 1) {
       const n = parseInt(formH.streak);
       const type = formH.streak.endsWith("W") ? "Siege" : formH.streak.endsWith("L") ? "Niederlagen" : "Unentschieden";
-      if (n >= 3) formParts.push(`${r.home} mit ${n} ${type} in Serie zuhause`);
+      if (n >= 2) formParts.push(`${r.home} ${n} ${type} in Serie`);
     }
     if (formA.streak.length > 1) {
       const n = parseInt(formA.streak);
       const type = formA.streak.endsWith("W") ? "Siege" : formA.streak.endsWith("L") ? "Niederlagen" : "Unentschieden";
-      if (n >= 3) formParts.push(`${r.away} mit ${n} ${type} in Serie auswärts`);
+      if (n >= 2) formParts.push(`${r.away} ${n} ${type} in Serie`);
     }
     if (formParts.length > 0) lines.push(formParts.join(". ") + ".");
   }
 
-  // ── 3. xG-based goal expectation ──
+  // ── 4. Goal expectation ──
   if (totalXG > 3.2) {
-    lines.push(`Das Modell erwartet ein torreiches Spiel: ${r.home} generiert ${r.xgPerGameH.toFixed(2)} xG/Spiel zuhause, ${r.away} lässt auswärts ${r.xgaPerGameA.toFixed(2)} xG zu. Zusammen ergeben sich ${totalXG.toFixed(1)} erwartete Tore — Über 2.5 kommt auf ${pc(goalsOU.O25)}.`);
+    lines.push(`Torreiches Spiel erwartet (${totalXG.toFixed(1)} erw. Tore). ${r.home} generiert ${r.xgPerGameH.toFixed(2)} npxG/Spiel zuhause, ${r.away} kassiert auswärts ${r.xgaPerGameA.toFixed(2)}. Über 2.5 Tore: ${pc(goalsOU.O25)}, Über 3.5: ${pc(goalsOU.O35)}.`);
   } else if (totalXG < 2.2) {
     const lowReasons: string[] = [];
-    if (r.xgPerGameH < 1.2) lowReasons.push(`${r.home} offensiv schwach (${r.xgPerGameH.toFixed(2)} xG/Spiel)`);
-    if (r.xgPerGameA < 1.0) lowReasons.push(`${r.away} tut sich auswärts schwer (${r.xgPerGameA.toFixed(2)} xG/Spiel)`);
-    if (r.xgaPerGameH < 1.1) lowReasons.push(`${r.home} defensiv stabil zuhause`);
-    if (r.xgaPerGameA < 1.1) lowReasons.push(`${r.away} auch defensiv kompakt auswärts`);
-    lines.push(`Ein torarmes Spiel ist wahrscheinlich (${totalXG.toFixed(1)} erw. Tore)${lowReasons.length > 0 ? ": " + lowReasons.join(", ") : ""}. Unter 2.5 bei ${pc(1 - goalsOU.O25)}.`);
+    if (r.xgPerGameH < 1.2) lowReasons.push(`${r.home} offensiv limitiert (${r.xgPerGameH.toFixed(2)} npxG/Spiel)`);
+    if (r.xgPerGameA < 1.0) lowReasons.push(`${r.away} tut sich auswärts schwer (${r.xgPerGameA.toFixed(2)} npxG/Spiel)`);
+    if (r.xgaPerGameH < 1.1) lowReasons.push(`${r.home} defensiv stabil (${r.xgaPerGameH.toFixed(2)} xGA/Spiel)`);
+    if (r.xgaPerGameA < 1.1) lowReasons.push(`${r.away} kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel)`);
+    lines.push(`Torarmes Spiel wahrscheinlich (${totalXG.toFixed(1)} erw. Tore)${lowReasons.length > 0 ? ": " + lowReasons.join(", ") : ""}. Unter 2.5: ${pc(1 - goalsOU.O25)}.`);
   } else {
-    lines.push(`Mit ${totalXG.toFixed(1)} erwarteten Toren ein durchschnittliches Spiel in Sachen Torquote. Über 2.5 Tore bei ${pc(goalsOU.O25)}, Unter 2.5 bei ${pc(1 - goalsOU.O25)}.`);
+    lines.push(`Mit ${totalXG.toFixed(1)} erwarteten Toren ein durchschnittliches Spiel. Über 2.5: ${pc(goalsOU.O25)}, Unter 2.5: ${pc(1 - goalsOU.O25)}.`);
   }
 
-  // ── 4. BTTS analysis ──
+  // ── 5. BTTS analysis ──
   if (btts.yes > 0.6) {
-    lines.push(`Beide Teams dürften treffen (${pc(btts.yes)}): ${r.home} trifft in ${pc(r.homeGoals.O05)} der Heimspiele, ${r.away} in ${pc(r.awayGoals.O05)} auswärts.`);
+    lines.push(`Beide Teams dürften treffen (BTTS Ja: ${pc(btts.yes)}). ${r.home} trifft zuhause mit ${pc(r.homeGoals.O05)} Wahrscheinlichkeit, ${r.away} auswärts mit ${pc(r.awayGoals.O05)}.`);
   } else if (btts.yes < 0.4) {
     if (r.homeGoals.O05 > r.awayGoals.O05) {
-      lines.push(`${r.away} tut sich schwer, auswärts zu treffen — BTTS Nein bei ${pc(btts.no)}. Clean Sheet ${r.home} bei ${pc(1 - r.awayGoals.O05)}.`);
+      lines.push(`${r.away} dürfte Probleme haben auswärts zu treffen — BTTS Nein: ${pc(btts.no)}. Clean Sheet ${r.home}: ${pc(r.cleanSheetH)}.`);
     } else {
-      lines.push(`${r.home} könnte ohne Tor bleiben — BTTS Nein bei ${pc(btts.no)}.`);
+      lines.push(`${r.home} könnte torlos bleiben — BTTS Nein: ${pc(btts.no)}. Clean Sheet ${r.away}: ${pc(r.cleanSheetA)}.`);
     }
+  } else {
+    lines.push(`BTTS Ja bei ${pc(btts.yes)} — beide Teams haben realistische Torchancen.`);
   }
 
-  // ── 5. HT analysis ──
+  // ── 6. HT analysis ──
   if (ht1X2.D > 0.42) {
-    lines.push(`Die erste Halbzeit wird voraussichtlich torarm: HT-Unentschieden bei ${pc(ht1X2.D)}. Das 0:0 zur Pause ist der wahrscheinlichste HT-Stand (${pc(r.htCorrectScores[0]?.p || 0)}).`);
+    lines.push(`Erste Halbzeit voraussichtlich torarm: HT-Unentschieden bei ${pc(ht1X2.D)}. Das 0:0 zur Pause ist der wahrscheinlichste HT-Stand (${pc(r.htCorrectScores[0]?.p || 0)}).`);
   } else if (ft1X2.H > 0.5 && ht1X2.H > 0.3) {
-    lines.push(`${r.home} könnte schon zur Halbzeit führen (${pc(ht1X2.H)}).`);
+    lines.push(`${r.home} könnte schon zur Halbzeit führen (HT-Sieg: ${pc(ht1X2.H)}).`);
+  } else if (ft1X2.A > 0.5 && ht1X2.A > 0.25) {
+    lines.push(`${r.away} könnte schon zur Pause vorne liegen (HT-Sieg: ${pc(ht1X2.A)}).`);
   }
 
-  // ── 6. Correct Score insight ──
+  // ── 7. Correct Score insight ──
   if (correctScores.length >= 3) {
     const top3 = correctScores.slice(0, 3).map(cs => `${cs.score} (${pc(cs.p)})`).join(", ");
-    lines.push(`Die wahrscheinlichsten Endstände: ${top3}.`);
+    lines.push(`Wahrscheinlichste Endstände: ${top3}.`);
   }
 
-  // ── 7. Tags (derby, etc.) ──
+  // ── 8. Tags (derby, etc.) ──
   if (tags.includes("DERBY")) {
-    lines.push(`Als Derby-Begegnung typisch unberechenbar — Form-Tabellen spielen hier weniger eine Rolle, die Intensität steigt.`);
+    lines.push(`Derby-Begegnung — typisch unberechenbar, erhöhte Intensität. Die xG-basierte Analyse kann die emotionale Komponente nur begrenzt abbilden.`);
   }
   if (tags.includes("TOP_MATCH")) {
-    lines.push(`Spitzenspiel der Liga — beide Mannschaften auf hohem Niveau, enge Partie erwartet.`);
+    lines.push(`Spitzenspiel der Liga — beide auf hohem Niveau, enge Partie erwartet.`);
   }
 
-  // ── 8. Injuries / Context from AI ──
+  // ── 9. Injuries / Context from AI ──
   const injuryParts: string[] = [];
   if (h.injuries) injuryParts.push(`${r.home}: ${h.injuries}`);
   if (a.injuries) injuryParts.push(`${r.away}: ${a.injuries}`);
   if (injuryParts.length > 0) {
-    lines.push(`Verletzungen: ${injuryParts.join(" | ")}`);
+    lines.push(`Ausfälle: ${injuryParts.join(" | ")}`);
   }
 
   if (m.context) {
@@ -252,13 +272,18 @@ function generateAnalysis(r: MatchReport): string {
     lines.push(`Schiedsrichter: ${m.referee}.`);
   }
 
-  // ── 9. Key market summary ──
+  // ── 10. Key market summary ──
   const keyMarkets: string[] = [];
   if (goalsOU.O15 > 0.8) keyMarkets.push(`Ü1.5 sehr sicher (${pc(goalsOU.O15)})`);
-  if (r.asianHandicap["-1"]?.P_Win > 0.55 && ft1X2.H > 0.45) keyMarkets.push(`HC -1 Heim bei ${pc(r.asianHandicap["-1"].P_Win)}`);
-  if (r.goalBothHalves.yes > 0.5) keyMarkets.push(`Tor in beiden Halbzeiten bei ${pc(r.goalBothHalves.yes)}`);
+  if (goalsOU.O35 > 0.5) keyMarkets.push(`Ü3.5 wahrscheinlich (${pc(goalsOU.O35)})`);
+  if (r.asianHandicap["-1"]?.P_Win > 0.55 && ft1X2.H > 0.45) keyMarkets.push(`HC -1 Heim: ${pc(r.asianHandicap["-1"].P_Win)}`);
+  if (r.asianHandicap["+1"]?.P_Win > 0.55 && ft1X2.A > 0.35) keyMarkets.push(`HC +1 Gast: ${pc(r.asianHandicap["+1"].P_Win)}`);
+  if (r.goalBothHalves.yes > 0.5) keyMarkets.push(`Tor in beiden Halbzeiten: ${pc(r.goalBothHalves.yes)}`);
+  if (r.winToNilH > 0.25) keyMarkets.push(`${r.home} Win to Nil: ${pc(r.winToNilH)}`);
+  if (r.winToNilA > 0.2) keyMarkets.push(`${r.away} Win to Nil: ${pc(r.winToNilA)}`);
+  if (r.drawNoBetH > 0.65) keyMarkets.push(`DNB ${r.home}: ${pc(r.drawNoBetH)}`);
   if (keyMarkets.length > 0) {
-    lines.push(`Auffällige Märkte: ${keyMarkets.join(", ")}.`);
+    lines.push(`Auffällige Märkte: ${keyMarkets.join(" · ")}.`);
   }
 
   return lines.join("\n\n");
@@ -755,6 +780,30 @@ export default function FuckBettingPage() {
           lambdaA = std.lambdaA;
         }
 
+        // For v2: compute EWMA-based xG per game from history (more accurate than raw sums)
+        let xgPgH = xgH8 / hGames;
+        let xgaPgH = xgaH8 / hGames;
+        let xgPgA = xgA8 / aGames;
+        let xgaPgA = xgaA8 / aGames;
+        if (engine === "annafrick13-v2" && hHist?.length && aHist?.length) {
+          // EWMA from per-match history — same alpha as v2 engine
+          const ewma = (hist: typeof hHist, key: "xg" | "xga") => {
+            const alpha = 0.85;
+            let wSum = 0, wVal = 0;
+            for (let i = 0; i < hist.length; i++) {
+              const w = Math.pow(alpha, hist.length - 1 - i);
+              wSum += w;
+              const entry = hist[i];
+              wVal += w * ((key === "xg" ? (entry.npxg ?? entry.xg) : (entry.npxga ?? entry.xga)));
+            }
+            return wSum > 0 ? wVal / wSum : xgH8 / hGames;
+          };
+          xgPgH = ewma(hHist, "xg");
+          xgaPgH = ewma(hHist, "xga");
+          xgPgA = ewma(aHist, "xg");
+          xgaPgA = ewma(aHist, "xga");
+        }
+
         // Build matrix (use optimized rho for v2, default for standard)
         const mx = buildMatrix(lambdaH, lambdaA, effectiveRho);
         const mk = deriveAllMarkets(mx);
@@ -870,10 +919,10 @@ export default function FuckBettingPage() {
           dataQuality,
           engine,
           rawMatch: match,
-          xgPerGameH: xgH8 / hGames,
-          xgaPerGameH: xgaH8 / hGames,
-          xgPerGameA: xgA8 / aGames,
-          xgaPerGameA: xgaA8 / aGames,
+          xgPerGameH: xgPgH,
+          xgaPerGameH: xgaPgH,
+          xgPerGameA: xgPgA,
+          xgaPerGameA: xgaPgA,
           analysis: "",
         };
         report.analysis = generateAnalysis(report);
