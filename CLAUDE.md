@@ -362,10 +362,32 @@ Quellen: sofascore.com, transfermarkt.de, kicker.de
 Antworte als JSON.
 ```
 
-**Cross-Check:**
-- ✅ 3/3 AIs nennen es → **sicher**
-- ⚠️ 2/3 → **wahrscheinlich**
-- ❌ 1/3 → **fraglich**, weglassen
+**Cross-Check — WICHTIG: Bei Widersprüchen den Admin fragen!**
+
+Claude führt den Cross-Check durch und kategorisiert:
+- ✅ 3/3 AIs nennen es → **sicher** — direkt übernehmen
+- ⚠️ 2/3 → **wahrscheinlich** — übernehmen, aber im JSON als unsicher markieren
+- ❌ 1/3 → **fraglich** — weglassen
+- 🔴 **Widersprüche** → **ADMIN FRAGEN!**
+
+**Wann den Admin fragen (nicht still entscheiden):**
+- Tabellenpositionen weichen >3 Plätze ab zwischen den Quellen
+- Ein AI sagt "verletzt", ein anderes "fit" für denselben Spieler
+- Form-Serien widersprechen sich komplett (z.B. "3 Siege" vs "3 Niederlagen")
+- Trainerwechsel oder Sperren nur von 1 Quelle genannt, aber spielentscheidend
+- Taktische Infos (Rotation, Sandwich) widersprechen sich
+- Schiedsrichter-Zuordnung unterschiedlich
+
+**Format der Rückfrage an den Admin:**
+```
+⚠️ Widerspruch bei [SPIEL]:
+- Quelle A: [Info A]
+- Quelle B: [Info B]
+- Quelle C: [Info C]
+→ Was stimmt? Oder weglassen?
+```
+
+Claude fasst ALLE Widersprüche gesammelt zusammen (nicht einzeln fragen), damit der Admin einmal entscheiden kann.
 
 ### Schritt 4: JSON zusammenbauen
 
