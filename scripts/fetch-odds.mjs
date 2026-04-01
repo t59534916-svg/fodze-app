@@ -217,6 +217,52 @@ async function upsertToSupabase(league, odds) {
   }
 }
 
+// ─── Fixture extraction (zero extra API calls) ──────────────────
+// Uses the same events already fetched for odds
+
+async function upsertFixtures(league, events) {
+  if (DRY) {
+    console.log(`  [DRY] Would save ${events.length} fixtures for ${league}`);
+    for (const e of events.slice(0, 3)) {
+      console.log(`    ${e.home_team} vs ${e.away_team} @ ${e.commence_time}`);
+    }
+    return;
+  }
+
+  const rows = events.map(e => ({
+    league,
+    event_id: e.id,
+    home_team: e.home_team,
+    away_team: e.away_team,
+    commence_time: e.commence_time,
+    fetched_at: new Date().toISOString(),
+  }));
+
+  // Upsert — on conflict update team names and time (in case of rescheduling)
+  const resp = await fetch(`${SUPA_URL}/rest/v1/upcoming_fixtures`, {
+    method: "POST",
+    headers: {
+      apikey: SUPA_KEY,
+      Authorization: `Bearer ${SUPA_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text();
+    // Table may not exist yet — not fatal
+    if (txt.includes("relation") && txt.includes("does not exist")) {
+      console.log(`  ⚠ upcoming_fixtures table not found (run migration first)`);
+    } else {
+      console.error(`  ❌ Fixtures upsert error: ${resp.status} ${txt}`);
+    }
+  } else {
+    console.log(`  📅 ${rows.length} fixtures saved`);
+  }
+}
+
 async function main() {
   const leagues = singleLeague
     ? { [singleLeague]: LEAGUE_MAP[singleLeague] }
@@ -252,6 +298,9 @@ async function main() {
       if (processed.length > 3) console.log(`  ... +${processed.length - 3} more`);
 
       await upsertToSupabase(fodzeKey, processed);
+
+      // Also save fixtures (zero extra API calls — uses same events)
+      await upsertFixtures(fodzeKey, events);
     } catch (err) {
       console.error(`  ❌ Error: ${err.message}`);
     }

@@ -265,14 +265,18 @@ GitHub Actions (`.github/workflows/ci.yml`):
 
 ```sql
 -- Wichtigste Tabellen:
-matchdays        -- Spieltag-JSON pro Liga (JSONB)
-odds_snapshots   -- Quotenverlauf mit Timestamps
-bets             -- Platzierte Wetten + P&L
-profiles         -- Bankroll, Risikoprofil
-live_odds        -- Auto-Import via GitHub Actions Cron
-team_xg_history  -- 28.718 historische per-Match xG-Einträge (2017-2025)
-                 -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against
+matchdays          -- Spieltag-JSON pro Liga (JSONB)
+odds_snapshots     -- Quotenverlauf mit Timestamps
+bets               -- Platzierte Wetten + P&L
+profiles           -- Bankroll, Risikoprofil
+live_odds          -- Auto-Import via GitHub Actions Cron
+team_xg_history    -- 28.718 historische per-Match xG-Einträge (2017-2025)
+                   -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against
+upcoming_fixtures  -- Auto-Spielplan aus The-Odds-API (piggybacked auf fetch-odds.mjs)
+                   -- Felder: league, event_id, home_team, away_team, commence_time
 ```
+
+**Standings**: Keine eigene Tabelle — wird client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`). Zeigt W/U/N/Tore/Punkte/Position an.
 
 RLS aktiv: User sehen alles, ändern nur eigene Daten.
 
@@ -291,16 +295,26 @@ Ein neuer Spieltag durchläuft **6 Schritte**. Die Workflow-Seite `/workflow` ha
 6. Quoten eingeben    → Buchmacher-Quoten → Value Bets + Kelly
 ```
 
-### Schritt 1: Spielplan holen
+### Schritt 1: Spielplan holen (AUTOMATISCH)
 
-**Was:** Paarungen + Anstoßzeiten + Kontext (Derby? Abstieg? Sandwich?)
+**Was:** Paarungen + Anstoßzeiten werden automatisch aus The-Odds-API gezogen.
 
-**Wie:** Prompt an Claude/Gemini/ChatGPT:
+**Automatisch (empfohlen):**
+```bash
+# 1. fetch-odds.mjs speichert Fixtures automatisch mit (GitHub Actions Cron)
+# 2. Matchday-Skelett generieren:
+node scripts/generate-matchday.mjs --league bundesliga
+# → Erzeugt matchday-bundesliga-auto.json mit allen Paarungen + Anstoßzeiten
+```
+
+**Manuell (Fallback):** Prompt an Claude/Gemini/ChatGPT:
 ```
 Gib mir alle Spiele der [LIGA] am [SPIELTAG] [DATUM].
 Format: Heim vs Gast (HH:MM), Tabellenposition, Kontext.
 Quellen: kicker.de, sofascore.com
 ```
+
+**Tabelle:** Wird automatisch aus `team_xg_history` berechnet und in Anna's Analysen angezeigt (Position-Badges + klappbare Tabelle pro Liga).
 
 **Oder:** `npm run spieltag` (interaktiver Wizard)
 
@@ -469,7 +483,8 @@ Flags: `--dry` (nur validieren), `--label "Custom"`, `--date "YYYY-MM-DD"`
 | `backfill-xg.mjs` | `npm run backfill` | Historisches xG Backfill (Browser-Script) |
 | `export-xg.mjs` | `npm run export-xg` | Supabase → lokale JSON-Backups |
 | `fetch-results.mjs` | `npm run fetch-results` | Ergebnisse holen, Wetten abrechnen |
-| `fetch-odds.mjs` | `node scripts/fetch-odds.mjs` | Live-Quoten von The-Odds-API |
+| `fetch-odds.mjs` | `node scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API |
+| `generate-matchday.mjs` | `node scripts/generate-matchday.mjs --league bundesliga` | Fixtures → Matchday-JSON Skelett |
 | `value-alerts.mjs` | `node scripts/value-alerts.mjs` | Telegram-Alerts bei Edge ≥ 5% |
 | `seed-matchday.mjs` | `node scripts/seed-matchday.mjs` | JSON → Supabase einfügen |
 | `matchday-predict.py` | `python3 tools/matchday-predict.py` | LightGBM Prediction (alle Features) |
