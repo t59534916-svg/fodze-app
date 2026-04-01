@@ -72,6 +72,8 @@ interface MatchReport {
   // Form visual
   formH: string;
   formA: string;
+  // Data quality
+  dataQuality: "HIGH" | "LOW";
   // Raw match data for analysis
   rawMatch: RawMatch;
   xgPerGameH: number;  // xg_h8 / games
@@ -129,6 +131,11 @@ function generateAnalysis(r: MatchReport): string {
   const formH = parseForm(h.form);
   const formA = parseForm(a.form);
   const tags = m.tags || [];
+
+  // Data quality warning
+  if (r.dataQuality === "LOW") {
+    lines.push(`Hinweis: Für diese Partie liegen keine individuellen xG-Daten vor. Die Analyse basiert auf dem Liga-Durchschnitt (${r.lambdaH.toFixed(2)} : ${r.lambdaA.toFixed(2)} erw. Tore) und dem Heimvorteil. Die Wahrscheinlichkeiten sind daher deutlich weniger aussagekräftig als bei Spielen mit echten xG-Werten — Vorsicht bei der Interpretation.`);
+  }
 
   // ── 1. Main verdict with reasoning ──
   if (ft1X2.H > 0.5) {
@@ -301,8 +308,11 @@ function MatchReportCard({ report }: { report: MatchReport }) {
           </div>
           <span style={{ color: "#c4a26535", fontSize: 14 }}>{expanded ? "▾" : "▸"}</span>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center", flexWrap: "wrap" }}>
           <span style={S.tag("#d4b86a")}>{r.leagueName}</span>
+          {r.dataQuality === "LOW" && (
+            <span style={S.tag("#e07070")}>Ohne xG</span>
+          )}
           {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{formatKickoff(r.kickoff)}</span>}
           <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>
             {r.lambdaH.toFixed(2)} : {r.lambdaA.toFixed(2)} xG
@@ -312,6 +322,23 @@ function MatchReportCard({ report }: { report: MatchReport }) {
 
       {expanded && (
         <div style={{ padding: "0 14px 14px" }}>
+          {/* Data quality warning */}
+          {r.dataQuality === "LOW" && (
+            <div style={{
+              background: "#e0707010", border: "1px solid #e0707025", borderRadius: 8,
+              padding: "8px 10px", marginBottom: 8, display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span style={{ fontSize: 14 }}>&#9888;</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#e07070" }}>Verminderte Datenqualität</div>
+                <div style={{ fontSize: 9, color: "#a89070", marginTop: 1 }}>
+                  Keine xG-Daten verfügbar. Analyse basiert auf Liga-Durchschnittswerten und Heimvorteil.
+                  Wahrscheinlichkeiten sind weniger präzise.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Analysis */}
           <div style={{ background: "#c4a26508", borderRadius: 8, padding: 10, marginBottom: 10, border: "1px solid #c4a26510" }}>
             <div style={{ fontSize: 11, color: "#ede4d4", lineHeight: 1.6 }}>
@@ -632,12 +659,24 @@ export default function FuckBettingPage() {
       for (const match of data.matches) {
         const h = match.home;
         const a = match.away;
-        if (!h?.xg_h8 || !a?.xg_a8) continue;
+        if (!h?.name || !a?.name) continue;
+
+        // Determine data quality: HIGH if real xG data, LOW if using league-average fallback
+        const hasXG = !!(h.xg_h8 && h.xg_h8 > 0 && a.xg_a8 && a.xg_a8 > 0);
+        const dataQuality: "HIGH" | "LOW" = hasXG ? "HIGH" : "LOW";
+
+        // Fallback xG: use league average * 8 games (both teams = league average)
+        const fallbackXG = ld.avg * 8;
+        const xgH8 = hasXG ? h.xg_h8! : fallbackXG;
+        const xgaH8 = hasXG ? (h.xga_h8 || fallbackXG) : fallbackXG;
+        const xgA8 = hasXG ? a.xg_a8! : fallbackXG;
+        const xgaA8 = hasXG ? (a.xga_a8 || fallbackXG) : fallbackXG;
+        const hGames = h.games || 8;
+        const aGames = a.games || 8;
 
         // Resolve kickoff: full datetime > time-only + matchday date > matchday date
         let kickoff = match.kickoff || "";
         if (kickoff && !/^\d{4}-/.test(kickoff) && matchdayDate) {
-          // kickoff is time-only ("15:30") — prepend matchday date
           kickoff = `${matchdayDate} ${kickoff}`;
         } else if (!kickoff && matchdayDate) {
           kickoff = matchdayDate;
@@ -646,10 +685,8 @@ export default function FuckBettingPage() {
         // Compute lambdas
         const hf = getHomeFactor(h.name, ld.hf);
         const { lambdaH, lambdaA } = calcLambdas(
-          h.xg_h8, h.xga_h8 || 0,
-          a.xg_a8, a.xga_a8 || 0,
-          h.games || 8, a.games || 8,
-          ld.avg, hf
+          xgH8, xgaH8, xgA8, xgaA8,
+          hGames, aGames, ld.avg, hf
         );
 
         // Build matrix
@@ -764,11 +801,12 @@ export default function FuckBettingPage() {
           heatmap,
           formH: h.form || "",
           formA: a.form || "",
+          dataQuality,
           rawMatch: match,
-          xgPerGameH: (h.xg_h8 || 0) / (h.games || 8),
-          xgaPerGameH: (h.xga_h8 || 0) / (h.games || 8),
-          xgPerGameA: (a.xg_a8 || 0) / (a.games || 8),
-          xgaPerGameA: (a.xga_a8 || 0) / (a.games || 8),
+          xgPerGameH: xgH8 / hGames,
+          xgaPerGameH: xgaH8 / hGames,
+          xgPerGameA: xgA8 / aGames,
+          xgaPerGameA: xgaA8 / aGames,
           analysis: "",
         };
         report.analysis = generateAnalysis(report);
