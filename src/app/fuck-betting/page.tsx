@@ -44,6 +44,12 @@ interface MatchReport {
   // Timing
   firstGoalBefore30: number;
   firstGoalBefore60: number;
+  // Raw match data for analysis
+  rawMatch: RawMatch;
+  xgPerGameH: number;  // xg_h8 / games
+  xgaPerGameH: number; // xga_h8 / games
+  xgPerGameA: number;  // xg_a8 / games
+  xgaPerGameA: number; // xga_a8 / games
   // Brief analysis
   analysis: string;
 }
@@ -53,39 +59,152 @@ const toOdds = (p: number) => p > 0.01 ? (1 / p).toFixed(2) : "—";
 
 // ─── Generate analysis text ───────────────────────────────────────
 
+function parseForm(form: string | undefined): { w: number; d: number; l: number; streak: string; len: number } {
+  if (!form) return { w: 0, d: 0, l: 0, streak: "", len: 0 };
+  const results = form.trim().split(/\s+/).filter(r => ["W", "D", "L"].includes(r));
+  const w = results.filter(r => r === "W").length;
+  const d = results.filter(r => r === "D").length;
+  const l = results.filter(r => r === "L").length;
+  // Current streak
+  let streak = "";
+  if (results.length > 0) {
+    const last = results[results.length - 1];
+    let count = 0;
+    for (let i = results.length - 1; i >= 0; i--) {
+      if (results[i] === last) count++;
+      else break;
+    }
+    streak = `${count}${last}`;
+  }
+  return { w, d, l, streak, len: results.length };
+}
+
 function generateAnalysis(r: MatchReport): string {
-  const { ft1X2, goalsOU, lambdaH, lambdaA, btts, ht1X2, correctScores } = r;
-  const parts: string[] = [];
-
-  // Favorite
-  if (ft1X2.H > 0.5) parts.push(`${r.home} klarer Favorit (${pc(ft1X2.H)})`);
-  else if (ft1X2.A > 0.5) parts.push(`${r.away} klarer Favorit (${pc(ft1X2.A)})`);
-  else if (ft1X2.H > ft1X2.A + 0.1) parts.push(`${r.home} leichter Favorit`);
-  else if (ft1X2.A > ft1X2.H + 0.1) parts.push(`${r.away} leichter Favorit`);
-  else parts.push("Ausgeglichene Partie");
-
-  // Expected goals
+  const { ft1X2, goalsOU, lambdaH, lambdaA, btts, ht1X2, correctScores, rawMatch: m } = r;
+  const lines: string[] = [];
   const totalXG = lambdaH + lambdaA;
-  if (totalXG > 3.2) parts.push(`Torreiches Spiel erwartet (${lambdaH.toFixed(1)} + ${lambdaA.toFixed(1)} = ${totalXG.toFixed(1)} xG)`);
-  else if (totalXG < 2.2) parts.push(`Torarmes Spiel erwartet (${totalXG.toFixed(1)} xG)`);
-  else parts.push(`${totalXG.toFixed(1)} Tore erwartet`);
+  const h = m.home;
+  const a = m.away;
+  const formH = parseForm(h.form);
+  const formA = parseForm(a.form);
+  const tags = m.tags || [];
 
-  // O2.5
-  if (goalsOU.O25 > 0.6) parts.push(`Über 2.5 Tore wahrscheinlich (${pc(goalsOU.O25)})`);
-  else if (goalsOU.O25 < 0.4) parts.push(`Unter 2.5 Tore wahrscheinlich (${pc(1 - goalsOU.O25)})`);
-
-  // BTTS
-  if (btts.yes > 0.6) parts.push(`Beide treffen (${pc(btts.yes)})`);
-
-  // HT
-  if (ht1X2.D > 0.45) parts.push(`Halbzeit-Unentschieden häufig (${pc(ht1X2.D)})`);
-
-  // Most likely score
-  if (correctScores.length > 0) {
-    parts.push(`Wahrscheinlichstes Ergebnis: ${correctScores[0].score} (${pc(correctScores[0].p)})`);
+  // ── 1. Main verdict with reasoning ──
+  if (ft1X2.H > 0.5) {
+    const reasons: string[] = [];
+    if (r.xgPerGameH > 1.5) reasons.push(`stark offensiv zuhause (${r.xgPerGameH.toFixed(2)} xG/Spiel)`);
+    if (r.xgaPerGameA > 1.5) reasons.push(`${r.away} defensiv anfällig auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel kassiert)`);
+    if (formH.w >= 3 && formH.len >= 4) reasons.push(`${formH.w} von ${formH.len} Heimspielen gewonnen`);
+    if (formA.l >= 2) reasons.push(`${r.away} zuletzt ${formA.l} Niederlagen in ${formA.len} Auswärtsspielen`);
+    if (reasons.length === 0) reasons.push(`das xG-Profil spricht klar für die Heimmannschaft`);
+    lines.push(`${r.home} geht als klarer Favorit ins Spiel (${pc(ft1X2.H)}), weil ${reasons.join(", ")}.`);
+  } else if (ft1X2.A > 0.5) {
+    const reasons: string[] = [];
+    if (r.xgPerGameA > 1.3) reasons.push(`offensiv stark auswärts (${r.xgPerGameA.toFixed(2)} xG/Spiel)`);
+    if (r.xgaPerGameH > 1.5) reasons.push(`${r.home} defensive Schwächen zuhause (${r.xgaPerGameH.toFixed(2)} xGA/Spiel kassiert)`);
+    if (formA.w >= 3) reasons.push(`${formA.w} Siege in den letzten ${formA.len} Auswärtsspielen`);
+    if (formH.l >= 2) reasons.push(`${r.home} zuletzt ${formH.l} Heimniederlagen`);
+    if (reasons.length === 0) reasons.push(`die xG-Daten deuten auf eine auswärtsstarke Mannschaft`);
+    lines.push(`${r.away} ist trotz Auswärtsspiel Favorit (${pc(ft1X2.A)}), denn ${reasons.join(", ")}.`);
+  } else if (ft1X2.H > ft1X2.A + 0.08) {
+    lines.push(`${r.home} mit leichtem Heimvorteil (${pc(ft1X2.H)} vs. ${pc(ft1X2.A)}). Der Unterschied ist aber gering — ${r.away} kann hier durchaus punkten.`);
+    if (r.xgPerGameH > r.xgPerGameA) {
+      lines.push(`${r.home} erzielt zuhause im Schnitt ${r.xgPerGameH.toFixed(2)} xG pro Spiel, ${r.away} kommt auswärts auf ${r.xgPerGameA.toFixed(2)}.`);
+    }
+  } else if (ft1X2.A > ft1X2.H + 0.08) {
+    lines.push(`${r.away} leicht favorisiert (${pc(ft1X2.A)}), obwohl sie auswärts spielen. ${r.home} überzeugt zuhause nicht (${r.xgPerGameH.toFixed(2)} xG/Spiel).`);
+  } else {
+    lines.push(`Ein sehr ausgeglichenes Spiel — ${r.home} (${pc(ft1X2.H)}) und ${r.away} (${pc(ft1X2.A)}) sind nahezu gleichstark. Das Unentschieden hat mit ${pc(ft1X2.D)} eine realistische Chance.`);
   }
 
-  return parts.join(". ") + ".";
+  // ── 2. Form analysis ──
+  if (formH.len > 0 || formA.len > 0) {
+    const formParts: string[] = [];
+    if (formH.streak.length > 1) {
+      const n = parseInt(formH.streak);
+      const type = formH.streak.endsWith("W") ? "Siege" : formH.streak.endsWith("L") ? "Niederlagen" : "Unentschieden";
+      if (n >= 3) formParts.push(`${r.home} mit ${n} ${type} in Serie zuhause`);
+    }
+    if (formA.streak.length > 1) {
+      const n = parseInt(formA.streak);
+      const type = formA.streak.endsWith("W") ? "Siege" : formA.streak.endsWith("L") ? "Niederlagen" : "Unentschieden";
+      if (n >= 3) formParts.push(`${r.away} mit ${n} ${type} in Serie auswärts`);
+    }
+    if (formParts.length > 0) lines.push(formParts.join(". ") + ".");
+  }
+
+  // ── 3. xG-based goal expectation ──
+  if (totalXG > 3.2) {
+    lines.push(`Das Modell erwartet ein torreiches Spiel: ${r.home} generiert ${r.xgPerGameH.toFixed(2)} xG/Spiel zuhause, ${r.away} lässt auswärts ${r.xgaPerGameA.toFixed(2)} xG zu. Zusammen ergeben sich ${totalXG.toFixed(1)} erwartete Tore — Über 2.5 kommt auf ${pc(goalsOU.O25)}.`);
+  } else if (totalXG < 2.2) {
+    const lowReasons: string[] = [];
+    if (r.xgPerGameH < 1.2) lowReasons.push(`${r.home} offensiv schwach (${r.xgPerGameH.toFixed(2)} xG/Spiel)`);
+    if (r.xgPerGameA < 1.0) lowReasons.push(`${r.away} tut sich auswärts schwer (${r.xgPerGameA.toFixed(2)} xG/Spiel)`);
+    if (r.xgaPerGameH < 1.1) lowReasons.push(`${r.home} defensiv stabil zuhause`);
+    if (r.xgaPerGameA < 1.1) lowReasons.push(`${r.away} auch defensiv kompakt auswärts`);
+    lines.push(`Ein torarmes Spiel ist wahrscheinlich (${totalXG.toFixed(1)} erw. Tore)${lowReasons.length > 0 ? ": " + lowReasons.join(", ") : ""}. Unter 2.5 bei ${pc(1 - goalsOU.O25)}.`);
+  } else {
+    lines.push(`Mit ${totalXG.toFixed(1)} erwarteten Toren ein durchschnittliches Spiel in Sachen Torquote. Über 2.5 Tore bei ${pc(goalsOU.O25)}, Unter 2.5 bei ${pc(1 - goalsOU.O25)}.`);
+  }
+
+  // ── 4. BTTS analysis ──
+  if (btts.yes > 0.6) {
+    lines.push(`Beide Teams dürften treffen (${pc(btts.yes)}): ${r.home} trifft in ${pc(r.homeGoals.O05)} der Heimspiele, ${r.away} in ${pc(r.awayGoals.O05)} auswärts.`);
+  } else if (btts.yes < 0.4) {
+    if (r.homeGoals.O05 > r.awayGoals.O05) {
+      lines.push(`${r.away} tut sich schwer, auswärts zu treffen — BTTS Nein bei ${pc(btts.no)}. Clean Sheet ${r.home} bei ${pc(1 - r.awayGoals.O05)}.`);
+    } else {
+      lines.push(`${r.home} könnte ohne Tor bleiben — BTTS Nein bei ${pc(btts.no)}.`);
+    }
+  }
+
+  // ── 5. HT analysis ──
+  if (ht1X2.D > 0.42) {
+    lines.push(`Die erste Halbzeit wird voraussichtlich torarm: HT-Unentschieden bei ${pc(ht1X2.D)}. Das 0:0 zur Pause ist der wahrscheinlichste HT-Stand (${pc(r.htCorrectScores[0]?.p || 0)}).`);
+  } else if (ft1X2.H > 0.5 && ht1X2.H > 0.3) {
+    lines.push(`${r.home} könnte schon zur Halbzeit führen (${pc(ht1X2.H)}).`);
+  }
+
+  // ── 6. Correct Score insight ──
+  if (correctScores.length >= 3) {
+    const top3 = correctScores.slice(0, 3).map(cs => `${cs.score} (${pc(cs.p)})`).join(", ");
+    lines.push(`Die wahrscheinlichsten Endstände: ${top3}.`);
+  }
+
+  // ── 7. Tags (derby, etc.) ──
+  if (tags.includes("DERBY")) {
+    lines.push(`Als Derby-Begegnung typisch unberechenbar — Form-Tabellen spielen hier weniger eine Rolle, die Intensität steigt.`);
+  }
+  if (tags.includes("TOP_MATCH")) {
+    lines.push(`Spitzenspiel der Liga — beide Mannschaften auf hohem Niveau, enge Partie erwartet.`);
+  }
+
+  // ── 8. Injuries / Context from AI ──
+  const injuryParts: string[] = [];
+  if (h.injuries) injuryParts.push(`${r.home}: ${h.injuries}`);
+  if (a.injuries) injuryParts.push(`${r.away}: ${a.injuries}`);
+  if (injuryParts.length > 0) {
+    lines.push(`Verletzungen: ${injuryParts.join(" | ")}`);
+  }
+
+  if (m.context) {
+    lines.push(m.context);
+  }
+
+  if (m.referee) {
+    lines.push(`Schiedsrichter: ${m.referee}.`);
+  }
+
+  // ── 9. Key market summary ──
+  const keyMarkets: string[] = [];
+  if (goalsOU.O15 > 0.8) keyMarkets.push(`Ü1.5 sehr sicher (${pc(goalsOU.O15)})`);
+  if (r.asianHandicap["-1"]?.P_Win > 0.55 && ft1X2.H > 0.45) keyMarkets.push(`HC -1 Heim bei ${pc(r.asianHandicap["-1"].P_Win)}`);
+  if (r.goalBothHalves.yes > 0.5) keyMarkets.push(`Tor in beiden Halbzeiten bei ${pc(r.goalBothHalves.yes)}`);
+  if (keyMarkets.length > 0) {
+    lines.push(`Auffällige Märkte: ${keyMarkets.join(", ")}.`);
+  }
+
+  return lines.join("\n\n");
 }
 
 // ─── Styles ────────────────────────────────────────────────────────
@@ -154,7 +273,11 @@ function MatchReportCard({ report }: { report: MatchReport }) {
         <div style={{ padding: "0 14px 14px" }}>
           {/* Analysis */}
           <div style={{ background: "#c4a26508", borderRadius: 8, padding: 10, marginBottom: 10, border: "1px solid #c4a26510" }}>
-            <div style={{ fontSize: 11, color: "#ede4d4", lineHeight: 1.5 }}>{r.analysis}</div>
+            <div style={{ fontSize: 11, color: "#ede4d4", lineHeight: 1.6 }}>
+              {r.analysis.split("\n\n").map((paragraph, pi) => (
+                <p key={pi} style={{ margin: pi === 0 ? 0 : "6px 0 0" }}>{paragraph}</p>
+              ))}
+            </div>
           </div>
 
           {/* ── 1X2 Full Time ── */}
@@ -376,6 +499,11 @@ export default function FuckBettingPage() {
           yellowCards: yc,
           firstGoalBefore30: getFirstGoalTime(lambdaH, lambdaA, 30),
           firstGoalBefore60: getFirstGoalTime(lambdaH, lambdaA, 60),
+          rawMatch: match,
+          xgPerGameH: (h.xg_h8 || 0) / (h.games || 8),
+          xgaPerGameH: (h.xga_h8 || 0) / (h.games || 8),
+          xgPerGameA: (a.xg_a8 || 0) / (a.games || 8),
+          xgaPerGameA: (a.xga_a8 || 0) / (a.games || 8),
           analysis: "",
         };
         report.analysis = generateAnalysis(report);
