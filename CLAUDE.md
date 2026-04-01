@@ -276,21 +276,210 @@ team_xg_history  -- 28.718 historische per-Match xG-Einträge (2017-2025)
 
 RLS aktiv: User sehen alles, ändern nur eigene Daten.
 
-## Data Pipeline Scripts
+## Admin Workflow — Spieltag-Analyse Schritt für Schritt
 
-```bash
-npm run spieltag     # Interaktiver 6-Schritt Admin-Wizard (Prompts → Paste → Validate → Seed)
-npm run update-xg    # Deterministisch: Understat scrape → Supabase upsert (kein LLM)
-npm run backfill     # Historisches xG Backfill via Browser-Scripts auf Understat
-npm run export-xg    # Supabase team_xg_history → lokale JSON-Backups (backups/)
+### Übersicht
+
+Ein neuer Spieltag durchläuft **6 Schritte**. Die Workflow-Seite `/workflow` hat Prompts und Scripts zum Copy-Paste.
+
+```
+1. Spielplan holen    → AI: Paarungen, Anstoßzeiten, Kontext
+2. xG-Daten holen    → Understat Browser-Script (DETERMINISTISCH, kein AI)
+3. Verletzungen       → 3 AIs parallel befragen + Cross-Check
+4. JSON bauen         → Alle Daten im FODZE-Format zusammenführen
+5. In DB seeden       → JSON per Script/App nach Supabase
+6. Quoten eingeben    → Buchmacher-Quoten → Value Bets + Kelly
 ```
 
-### Deterministische xG-Pipeline (@annafrick13)
-`npm run update-xg -- --league bundesliga --season 2025` scraped Understat deterministisch (HTML Parse, kein LLM), berechnet xG-Summen im Code, und upserted per-Match History nach Supabase. Der LLM-Prompt (`/api/matchday`) liefert nur noch unstrukturierten Text (Injuries, Context, Referee).
+### Schritt 1: Spielplan holen
 
-### Backfill-Methode
+**Was:** Paarungen + Anstoßzeiten + Kontext (Derby? Abstieg? Sandwich?)
+
+**Wie:** Prompt an Claude/Gemini/ChatGPT:
+```
+Gib mir alle Spiele der [LIGA] am [SPIELTAG] [DATUM].
+Format: Heim vs Gast (HH:MM), Tabellenposition, Kontext.
+Quellen: kicker.de, sofascore.com
+```
+
+**Oder:** `npm run spieltag` (interaktiver Wizard)
+
+### Schritt 2: xG-Daten holen (DETERMINISTISCH)
+
+**KRITISCH: Kein AI! Nur Understat-Daten aus dem Browser.**
+
+1. Öffne `https://understat.com/league/Bundesliga` (oder EPL/La_liga/Serie_A/Ligue_1)
+2. F12 → Console → Script einfügen:
+
+```javascript
+// ═══ FODZE xG Fetcher v2 (with per-match history for EWMA) ═══
+const result = {};
+Object.keys(teamsData).forEach(id => {
+  const t = teamsData[id];
+  const home = t.history.filter(g => g.h_a === 'h');
+  const away = t.history.filter(g => g.h_a === 'a');
+  const hL8 = home.slice(-8), aL8 = away.slice(-8);
+  result[t.title] = {
+    xg_h8:  +hL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
+    xga_h8: +hL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
+    xg_a8:  +aL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
+    xga_a8: +aL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
+    xg_h_history: hL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
+    xg_a_history: aL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
+  };
+});
+copy(JSON.stringify(result, null, 2));
+console.log('✅ xG-Daten in Clipboard kopiert!');
+```
+
+3. Daten sind im Clipboard → in Schritt 4 einfügen
+
+**Validierung:** `xg_h8 / 8 ≈ 0.8–2.5` pro Spiel. Wenn < 5.0 → wahrscheinlich Durchschnitt statt Summe!
+
+**Für 2. Bundesliga / 3. Liga:** Kein Understat. Tore als Proxy: `xg_h8 = avg_goals * 8`.
+
+**Alternativ automatisiert:**
+```bash
+npm run update-xg -- --league bundesliga --season 2025
+```
+Scraped Understat per HTTP, berechnet xG-Summen, upserted per-Match History nach Supabase.
+
+### Schritt 3: Verletzungen & Kontext
+
+**Sende denselben Prompt an 3 AIs parallel** (Claude + Gemini + ChatGPT):
+
+```
+Du bist ein Fußball-Datenanalyst. Recherchiere für diese Spiele:
+[SPIELE HIER]
+
+Pro Spiel:
+1. VERLETZUNGEN & SPERREN (Name, Position, Grund)
+2. FORM (letzte 5 Spiele: W/D/L)
+3. SCHIEDSRICHTER (Name, Karten-Durchschnitt als Dezimalzahl!)
+4. KONTEXT (Derby? Abstiegskampf? CL-Sandwich?)
+
+Quellen: sofascore.com, transfermarkt.de, kicker.de
+Antworte als JSON.
+```
+
+**Cross-Check:**
+- ✅ 3/3 AIs nennen es → **sicher**
+- ⚠️ 2/3 → **wahrscheinlich**
+- ❌ 1/3 → **fraglich**, weglassen
+
+### Schritt 4: JSON zusammenbauen
+
+Alle Daten ins FODZE-Format. Template:
+
+```json
+{
+  "league": "Bundesliga",
+  "matchday": "Spieltag 28",
+  "date": "2026-04-04",
+  "matches": [
+    {
+      "home": {
+        "name": "VfB Stuttgart",
+        "xg_h8": 14.2,
+        "xga_h8": 8.5,
+        "games": 8,
+        "form": "W W D L W",
+        "injuries": "Undav (Muskel), Millot (Gelb-Rot-Sperre)",
+        "yellow_risk": "Karazor auf 4 Gelben"
+      },
+      "away": {
+        "name": "SC Freiburg",
+        "xg_a8": 10.8,
+        "xga_a8": 12.1,
+        "games": 8,
+        "form": "L W W D W",
+        "injuries": "",
+        "yellow_risk": ""
+      },
+      "tags": [],
+      "context": "Stuttgart braucht Punkte für CL-Platz",
+      "referee": "Stegemann, Ø 4.2 Karten/Spiel",
+      "kickoff": "2026-04-04 15:30"
+    }
+  ]
+}
+```
+
+**Kickoff-Format:** `"YYYY-MM-DD HH:MM"` (mit Datum!) oder `"HH:MM"` (dann wird `date` vom Spieltag prepended).
+
+**Häufige Fehler:**
+- ❌ `xg_h8: 1.5` — Durchschnitt statt Summe
+- ❌ `xg_h8: 0` — Fehlt komplett
+- ❌ Schiedsrichter ohne Dezimal: `"Ø 4"` statt `"Ø 4.2"`
+- ✅ `xg_h8: 14.2` → `14.2 / 8 = 1.78 pro Spiel` → plausibel
+
+### Schritt 5: In Supabase seeden
+
+**Option A — CLI (empfohlen):**
+```bash
+node scripts/seed-matchday.mjs --file spieltag.json --league bundesliga
+```
+Flags: `--dry` (nur validieren), `--label "Custom"`, `--date "YYYY-MM-DD"`
+
+**Option B — In der App:**
+1. Liga wählen → "Import (JSON)" → JSON pasten → "ANALYSIEREN" → "SPEICHERN"
+
+**Was passiert:** JSON wird in Supabase `matchdays`-Tabelle geschrieben. Die App lädt automatisch den neuesten Spieltag pro Liga.
+
+### Schritt 6: Quoten eingeben
+
+1. App öffnen → Spieltag-Seite → Spiel aufklappen
+2. Unter "DEINE QUOTEN": 1, X, 2, Ü2.5, U2.5, BTTS
+3. Grün = Value Bet (Edge positiv), Kelly wird automatisch berechnet
+
+**Edge-Grading:**
+- **A**: Edge ≥ 8% (starker Value)
+- **B**: Edge 5–8% (gut)
+- **C**: Edge 3–5% (marginal)
+- **D/F**: Edge < 3% (skip)
+
+## Alle Admin-Scripts
+
+| Script | Befehl | Was es tut |
+|--------|--------|-----------|
+| `spieltag.mjs` | `npm run spieltag` | Interaktiver 6-Schritt Wizard |
+| `update-matchday.mjs` | `npm run update-xg` | Understat scrape → Supabase upsert |
+| `backfill-xg.mjs` | `npm run backfill` | Historisches xG Backfill (Browser-Script) |
+| `export-xg.mjs` | `npm run export-xg` | Supabase → lokale JSON-Backups |
+| `fetch-results.mjs` | `npm run fetch-results` | Ergebnisse holen, Wetten abrechnen |
+| `fetch-odds.mjs` | `node scripts/fetch-odds.mjs` | Live-Quoten von The-Odds-API |
+| `value-alerts.mjs` | `node scripts/value-alerts.mjs` | Telegram-Alerts bei Edge ≥ 5% |
+| `seed-matchday.mjs` | `node scripts/seed-matchday.mjs` | JSON → Supabase einfügen |
+| `matchday-predict.py` | `python3 tools/matchday-predict.py` | LightGBM Prediction (alle Features) |
+| `matchday-enrich.py` | `python3 tools/matchday-enrich.py` | + Schiedsrichter + Wetter |
+| `retrain_v2.py` | `python3 tools/retrain_v2.py` | LightGBM Modell neu trainieren |
+
+## Python-Tools (Fortgeschritten)
+
+### matchday-predict.py — Vollständige Prediction-Pipeline
+```bash
+source tools/venv/bin/activate
+python3 tools/matchday-predict.py --analyse              # Nächster Spieltag
+python3 tools/matchday-predict.py --all-leagues --json    # JSON Export
+```
+Scraped Understat live → Elo berechnen → 14-Feature-Vektor → LightGBM → Dixon-Coles Matrix → Wahrscheinlichkeiten.
+
+### matchday-enrich.py — Anreicherung
+```bash
+python3 tools/matchday-enrich.py --all-leagues
+```
+Fügt Schiedsrichter (Transfermarkt) + Wetter (Open-Meteo) hinzu.
+
+### retrain_v2.py — Modell-Training
+```bash
+source tools/venv/bin/activate
+DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
+```
+Output: `public/lgbm-model-v2.json` (~300 KB). Monatlich oder nach Saisonwechsel.
+
+### Backfill-Methode (historische xG)
 Understat blockiert automatisiertes Scraping (SPA). Stattdessen:
-1. Script zeigt Browser-Console-Script pro Liga/Saison
-2. Admin öffnet Understat im Chrome, führt Script aus
-3. JSON wird ins Terminal eingefügt → validiert → nach Supabase geseeded
-4. Lokale Backups via `npm run export-xg`
+1. `npm run backfill` zeigt Browser-Console-Script pro Liga/Saison
+2. Admin öffnet Understat → führt Script aus → JSON ins Terminal
+3. Wird validiert und nach Supabase geseeded
+4. Backup: `npm run export-xg`
