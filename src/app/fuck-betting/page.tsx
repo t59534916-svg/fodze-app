@@ -15,6 +15,8 @@ import {
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
 import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
+import { resolveTeam } from "@/lib/team-resolver";
+import type { StandingsRow } from "@/lib/supabase";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -85,6 +87,11 @@ interface MatchReport {
   xgaPerGameH: number; // xga_h8 / games
   xgPerGameA: number;  // xg_a8 / games
   xgaPerGameA: number; // xga_a8 / games
+  // Table position
+  homePos: number | null;
+  awayPos: number | null;
+  homePoints: number | null;
+  awayPoints: number | null;
   // Confidence score 0-100
   confidence: number;
   // Brief analysis
@@ -93,6 +100,14 @@ interface MatchReport {
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const toOdds = (p: number) => p > 0.01 ? (1 / p).toFixed(2) : "—";
+
+function posColor(pos: number, leagueSize: number = 18): string {
+  if (pos <= 4) return "#6aad55";           // CL grün
+  if (pos <= 6) return "#5a9ec4";           // EL blau
+  if (pos === 7) return "#d4b86a";          // Conference gold
+  if (pos > leagueSize - 3) return "#e07070"; // Abstieg rot
+  return "#a89070";                          // Mittelfeld
+}
 
 function formatKickoff(ko: string): string {
   if (!ko) return "";
@@ -174,11 +189,18 @@ function generateAnalysis(r: MatchReport): string {
   const formA = parseForm(a.form);
   const tags = m.tags || [];
 
-  // Engine info
+  // Engine + table position info
+  const posInfo = (pos: number | null, pts: number | null, name: string) => {
+    if (!pos || !pts) return name;
+    return `${name} (${pos}., ${pts}P)`;
+  };
+  const hInfo = posInfo(r.homePos, r.homePoints, r.home);
+  const aInfo = posInfo(r.awayPos, r.awayPoints, r.away);
+
   if (r.engine === "annafrick13-v2") {
-    lines.push(`Analyse via @annafrick13 v2 (LightGBM Tweedie, 14 Features: npxG EWMA, Elo, Momentum, Pressing, PPDA, H2H). Erwartete Tore: ${r.home} ${r.lambdaH.toFixed(2)} — ${r.away} ${r.lambdaA.toFixed(2)}.`);
+    lines.push(`Analyse via @annafrick13 v2 (LightGBM Tweedie, 14 Features). ${hInfo} empfängt ${aInfo}. Erwartete Tore: ${r.lambdaH.toFixed(2)} — ${r.lambdaA.toFixed(2)}.`);
   } else {
-    lines.push(`Analyse via Standard-Engine (Dixon-Coles). Erwartete Tore: ${r.home} ${r.lambdaH.toFixed(2)} — ${r.away} ${r.lambdaA.toFixed(2)}.`);
+    lines.push(`Analyse via Standard-Engine (Dixon-Coles). ${hInfo} empfängt ${aInfo}. Erwartete Tore: ${r.lambdaH.toFixed(2)} — ${r.lambdaA.toFixed(2)}.`);
   }
 
   // Data quality warning
@@ -386,10 +408,12 @@ function MatchReportCard({ report }: { report: MatchReport }) {
         cursor: "pointer", textAlign: "left" as const,
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, flexWrap: "wrap" }}>
             <Kit team={r.home} size={16} />
+            {r.homePos && <span style={{ fontSize: 9, fontWeight: 700, color: posColor(r.homePos), background: posColor(r.homePos) + "15", padding: "1px 4px", borderRadius: 3, minWidth: 16, textAlign: "center" }}>{r.homePos}.</span>}
             <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.home}</span>
             <span style={{ fontSize: 10, color: "#c4a26540" }}>vs</span>
+            {r.awayPos && <span style={{ fontSize: 9, fontWeight: 700, color: posColor(r.awayPos), background: posColor(r.awayPos) + "15", padding: "1px 4px", borderRadius: 3, minWidth: 16, textAlign: "center" }}>{r.awayPos}.</span>}
             <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.away}</span>
             <Kit team={r.away} size={16} />
           </div>
@@ -733,19 +757,80 @@ function MatchReportCard({ report }: { report: MatchReport }) {
   );
 }
 
+// ─── Standings Table ──────────────────────────────────────────────
+
+function StandingsTable({ rows, leagueName }: { rows: StandingsRow[]; leagueName: string }) {
+  const [open, setOpen] = useState(false);
+  if (!rows.length) return null;
+  const leagueSize = rows.length;
+  return (
+    <div style={{ ...S.card, padding: 0, overflow: "hidden", marginBottom: 8 }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: "100%", padding: "8px 12px", border: "none", background: "transparent",
+        cursor: "pointer", textAlign: "left" as const, display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#d4b86a", letterSpacing: "0.05em" }}>
+          Tabelle {leagueName}
+        </span>
+        <span style={{ color: "#c4a26535", fontSize: 12 }}>{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "0 8px 8px", overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #c4a26520" }}>
+                {["#", "", "Team", "Sp", "S", "U", "N", "T", "GT", "TD", "Pkt"].map(h => (
+                  <th key={h} style={{ padding: "3px 4px", color: "#a89070", fontWeight: 600, textAlign: h === "Team" || h === "" ? "left" : "center", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const pc2 = posColor(r.pos, leagueSize);
+                const isZone = r.pos <= 4 || r.pos > leagueSize - 3;
+                return (
+                  <tr key={r.team} style={{ borderBottom: "1px solid #c4a26508", background: isZone ? pc2 + "08" : "transparent" }}>
+                    <td style={{ padding: "3px 4px", fontWeight: 700, color: pc2, textAlign: "center" }}>{r.pos}</td>
+                    <td style={{ padding: "3px 2px" }}><Kit team={r.fodzeName} size={12} /></td>
+                    <td style={{ padding: "3px 4px", color: "#ede4d4", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 120 }}>{r.fodzeName}</td>
+                    <td style={{ padding: "3px 4px", color: "#a89070", textAlign: "center" }}>{r.played}</td>
+                    <td style={{ padding: "3px 4px", color: "#6aad55", textAlign: "center" }}>{r.won}</td>
+                    <td style={{ padding: "3px 4px", color: "#d4b86a", textAlign: "center" }}>{r.drawn}</td>
+                    <td style={{ padding: "3px 4px", color: "#e07070", textAlign: "center" }}>{r.lost}</td>
+                    <td style={{ padding: "3px 4px", color: "#a89070", textAlign: "center" }}>{r.gf}</td>
+                    <td style={{ padding: "3px 4px", color: "#a89070", textAlign: "center" }}>{r.ga}</td>
+                    <td style={{ padding: "3px 4px", color: r.gd > 0 ? "#6aad55" : r.gd < 0 ? "#e07070" : "#a89070", textAlign: "center", fontWeight: 600 }}>{r.gd > 0 ? "+" : ""}{r.gd}</td>
+                    <td style={{ padding: "3px 4px", color: "#ede4d4", fontWeight: 700, textAlign: "center" }}>{r.points}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ display: "flex", gap: 12, marginTop: 6, fontSize: 8, color: "#a89070" }}>
+            <span><span style={{ color: "#6aad55" }}>●</span> CL</span>
+            <span><span style={{ color: "#5a9ec4" }}>●</span> EL</span>
+            <span><span style={{ color: "#e07070" }}>●</span> Abstieg</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ──────────────────────────────────────────────────────────
 
 export default function FuckBettingPage() {
   const router = useRouter();
   const { supabase, leagueStatus } = useApp();
   const [allData, setAllData] = useState<{ league: string; data: MatchdayData }[]>([]);
+  const [standings, setStandings] = useState<Map<string, StandingsRow[]>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // Load all leagues with data + enrich with xG history for @annafrick13 v2
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries } = await import("@/lib/supabase");
+      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries, loadLeagueStandings } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
       const results = await Promise.all(leagueKeys.map(async (key) => {
         const md = await loadLatestMatchday(supabase, key);
@@ -774,10 +859,39 @@ export default function FuckBettingPage() {
 
         return { league: key, data };
       }));
-      setAllData(results.filter((r): r is NonNullable<typeof r> => r !== null));
+      const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      setAllData(validResults);
+
+      // Load standings for each league in parallel
+      const standingsMap = new Map<string, StandingsRow[]>();
+      await Promise.all(validResults.map(async ({ league }) => {
+        if (!standingsMap.has(league)) {
+          const rows = await loadLeagueStandings(supabase, league);
+          standingsMap.set(league, rows);
+        }
+      }));
+      setStandings(standingsMap);
       setLoading(false);
     })();
   }, [supabase, leagueStatus]);
+
+  // Helper: find team position in standings (try FODZE name, then Understat name)
+  const findPos = (teamName: string, leagueStandings: StandingsRow[] | undefined): StandingsRow | null => {
+    if (!leagueStandings) return null;
+    // Try FODZE name match
+    let row = leagueStandings.find(s => s.fodzeName === teamName);
+    if (row) return row;
+    // Try Understat name match
+    const resolved = resolveTeam(teamName);
+    if (resolved) {
+      row = leagueStandings.find(s => s.team === resolved.csv || s.team === (resolved.understat || ""));
+      if (row) return row;
+    }
+    // Substring fallback
+    const lower = teamName.toLowerCase();
+    row = leagueStandings.find(s => s.team.toLowerCase().includes(lower) || lower.includes(s.team.toLowerCase()));
+    return row || null;
+  };
 
   // Build reports for all matches
   const reports = useMemo(() => {
@@ -999,9 +1113,21 @@ export default function FuckBettingPage() {
           xgaPerGameH: xgaPgH,
           xgPerGameA: xgPgA,
           xgaPerGameA: xgaPgA,
+          homePos: null,
+          awayPos: null,
+          homePoints: null,
+          awayPoints: null,
           confidence: 0,
           analysis: "",
         };
+
+        // Lookup table positions
+        const leagueStandings = standings.get(league);
+        const hRow = findPos(h.name, leagueStandings);
+        const aRow = findPos(a.name, leagueStandings);
+        if (hRow) { report.homePos = hRow.pos; report.homePoints = hRow.points; }
+        if (aRow) { report.awayPos = aRow.pos; report.awayPoints = aRow.points; }
+
         report.confidence = computeConfidence(report);
         report.analysis = generateAnalysis(report);
 
@@ -1022,17 +1148,16 @@ export default function FuckBettingPage() {
     });
 
     return result;
-  }, [allData]);
+  }, [allData, standings]);
 
-  // Group by date
-  const grouped = useMemo(() => {
-    const map = new Map<string, MatchReport[]>();
+  // Group by league, then by date within each league
+  const groupedByLeague = useMemo(() => {
+    const leagueMap = new Map<string, MatchReport[]>();
     for (const r of reports) {
-      const date = r.kickoff?.slice(0, 10) || "Unbekannt";
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(r);
+      if (!leagueMap.has(r.league)) leagueMap.set(r.league, []);
+      leagueMap.get(r.league)!.push(r);
     }
-    return Array.from(map.entries());
+    return Array.from(leagueMap.entries());
   }, [reports]);
 
   function formatDateLabel(iso: string): string {
@@ -1087,19 +1212,47 @@ export default function FuckBettingPage() {
             {reports.length} Spiele aus {new Set(reports.map(r => r.league)).size} Ligen
           </div>
 
-          {grouped.map(([date, matches]) => (
-            <div key={date} style={{ marginBottom: 16 }}>
-              <div style={{
-                fontSize: 11, fontWeight: 700, color: "#d4b86a", letterSpacing: "0.05em",
-                padding: "6px 0", borderBottom: "1px solid #c4a26520", marginBottom: 8,
-              }}>
-                {formatDateLabel(date)}
+          {groupedByLeague.map(([league, matches]) => {
+            const leagueStandings = standings.get(league);
+            const ld = LEAGUES[league];
+            // Sub-group by date within league
+            const byDate = new Map<string, MatchReport[]>();
+            for (const r of matches) {
+              const date = r.kickoff?.slice(0, 10) || "Unbekannt";
+              if (!byDate.has(date)) byDate.set(date, []);
+              byDate.get(date)!.push(r);
+            }
+            return (
+              <div key={league} style={{ marginBottom: 20 }}>
+                <div style={{
+                  fontSize: 13, fontWeight: 700, color: "#d4b86a", letterSpacing: "0.05em",
+                  padding: "8px 0 6px", borderBottom: "2px solid #c4a26530", marginBottom: 8,
+                }}>
+                  {ld?.name || league}
+                </div>
+
+                {/* Standings Table (collapsible) */}
+                {leagueStandings && leagueStandings.length > 0 && (
+                  <StandingsTable rows={leagueStandings} leagueName={ld?.name || league} />
+                )}
+
+                {/* Matches grouped by date */}
+                {Array.from(byDate.entries()).map(([date, dateMatches]) => (
+                  <div key={date}>
+                    <div style={{
+                      fontSize: 10, fontWeight: 600, color: "#a89070", letterSpacing: "0.05em",
+                      padding: "4px 0", marginBottom: 4, marginTop: 4,
+                    }}>
+                      {formatDateLabel(date)}
+                    </div>
+                    {dateMatches.map((r, i) => (
+                      <MatchReportCard key={`${r.home}-${r.away}-${i}`} report={r} />
+                    ))}
+                  </div>
+                ))}
               </div>
-              {matches.map((r, i) => (
-                <MatchReportCard key={`${r.home}-${r.away}-${i}`} report={r} />
-              ))}
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </AppShell>

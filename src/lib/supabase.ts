@@ -1,6 +1,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OddsData, PlacedBet } from "@/types/match";
+import { resolveTeam } from "@/lib/team-resolver";
 
 export function createClient() {
   return createBrowserClient(
@@ -188,6 +189,94 @@ export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));
+}
+
+// ─── League Standings (computed from team_xg_history) ─────────────
+
+export interface StandingsRow {
+  team: string;       // Understat name
+  fodzeName: string;  // FODZE display name
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  points: number;
+  pos: number;
+}
+
+/**
+ * Compute league standings from team_xg_history match data.
+ * Uses home-venue rows (one per match) to derive both teams' results.
+ */
+export function computeStandings(matches: TeamXGMatch[]): StandingsRow[] {
+  const stats = new Map<string, { w: number; d: number; l: number; gf: number; ga: number }>();
+
+  const ensure = (t: string) => {
+    if (!stats.has(t)) stats.set(t, { w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+    return stats.get(t)!;
+  };
+
+  for (const m of matches) {
+    if (m.goals_for == null || m.goals_against == null) continue;
+    const gH = m.goals_for;
+    const gA = m.goals_against;
+
+    // Home team
+    const home = ensure(m.team);
+    home.gf += gH;
+    home.ga += gA;
+    if (gH > gA) home.w++;
+    else if (gH === gA) home.d++;
+    else home.l++;
+
+    // Away team (opponent)
+    if (m.opponent) {
+      const away = ensure(m.opponent);
+      away.gf += gA;
+      away.ga += gH;
+      if (gA > gH) away.w++;
+      else if (gA === gH) away.d++;
+      else away.l++;
+    }
+  }
+
+  const rows: StandingsRow[] = Array.from(stats.entries()).map(([team, s]) => {
+    const resolved = resolveTeam(team);
+    return {
+      team,
+      fodzeName: resolved?.fodze || team,
+      played: s.w + s.d + s.l,
+      won: s.w,
+      drawn: s.d,
+      lost: s.l,
+      gf: s.gf,
+      ga: s.ga,
+      gd: s.gf - s.ga,
+      points: s.w * 3 + s.d,
+      pos: 0,
+    };
+  });
+
+  // Sort: points DESC → gd DESC → gf DESC
+  rows.sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+  rows.forEach((r, i) => r.pos = i + 1);
+
+  return rows;
+}
+
+/**
+ * Load league standings by fetching all season matches and computing W/D/L.
+ */
+export async function loadLeagueStandings(
+  supabase: SupabaseClient,
+  league: string,
+  seasonStartDate: string = "2025-07-01"
+): Promise<StandingsRow[]> {
+  const matches = await loadLeagueXGHistory(supabase, league, seasonStartDate);
+  return computeStandings(matches);
 }
 
 export async function loadLiveOdds(supabase: SupabaseClient, league: string): Promise<LiveOdds[]> {
