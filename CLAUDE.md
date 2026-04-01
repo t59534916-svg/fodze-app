@@ -25,7 +25,7 @@ Supabase (DB + Auth)
   ↕
 Next.js 14 App Router
   ├── Contexts: AppContext (User/Liga) → MatchdayContext (Matches/Odds)
-  ├── Pages: / → /matchday → /matchday/combos → /anna → /simulator → /performance
+  ├── Pages: / → /matchday → /matchday/combos → /anna → /anna-analysen → /simulator → /performance
   ├── API: /api/anna (Groq/Claude Streaming), /api/matchday (Claude — nur Text, kein xG)
   ├── Engines: dixon-coles.ts (Standard) + poisson-ml-engine.ts (v1) + poisson-ml-engine-v2.ts (v2)
   └── Engine Registry: engine-registry.ts (Multi-Engine Dispatch)
@@ -52,6 +52,9 @@ Next.js 14 App Router
 | `src/lib/system-bets.ts` | Kombi-Engine (SGM + Akku + Kelly) | Bei Multi-Bet-Änderungen |
 | `src/lib/engine-registry.ts` | Engine-Definitionen + Dispatch | Bei neuen Engines |
 | `public/lgbm-model-v2.json` | Trainiertes LightGBM Modell (v2) | Nach Retraining |
+| `src/app/fuck-betting/page.tsx` | Anna's Analysen — quotenfreier Vollreport | Bei Report-Erweiterungen |
+| `src/lib/team-colors.ts` | Trikot-Farben (BL, BL2, 3.Liga, EPL, Champ, LaLiga, SerieA) | Bei Team-Änderungen |
+| `src/lib/team-resolver.ts` | FODZE↔CSV↔Understat Team-Name-Mapping | Bei neuen Teams/Ligen |
 
 ## Konventionen
 
@@ -117,7 +120,7 @@ npx vitest run --reporter=verbose  # Detailliert
 ```
 
 Tests decken ab:
-- LEAGUES Konfiguration (12 Ligen)
+- LEAGUES Konfiguration (11 Ligen)
 - xG-Daten Validierung
 - Vig-Removal (Overround-Berechnung)
 - Dixon-Coles λ-Berechnung + Score-Matrix
@@ -184,6 +187,52 @@ python3 tools/matchday-predict.py --all-leagues --json  # JSON Export
 python3 tools/matchday-enrich.py --all-leagues          # + Wetter + Schiedsrichter
 ```
 
+## Anna's Analysen (/fuck-betting)
+
+Quotenfreier Vollreport über ALLE geladenen Ligen. Erreichbar über den "Anna's Analysen" Tile auf der Startseite.
+
+**Engine-Hierarchie:**
+1. **@annafrick13 v2** — wenn LightGBM-Modell geladen UND per-Match xG-History vorhanden
+2. **Standard** (`calcLambdas`) — wenn v2 `null` zurückgibt oder kein Modell/History
+3. **Liga-Durchschnitt** — wenn gar keine xG-Daten (z.B. 3. Liga), mit "Ohne xG"-Warnung
+
+**Datenfluss:**
+```
+Supabase matchdays → loadLatestMatchday() pro Liga
+  → loadTeamXGHistory() für EWMA-Features (v2)
+  → calcMatchPoissonMLv2() || calcLambdas() → buildMatrix()
+  → deriveAllMarkets() + alle Spezial-Märkte → MatchReport
+```
+
+**Report-Sektionen (30+):**
+1X2, Double Chance, DNB, Goals O/U 1.5-5.5, BTTS, Clean Sheet, Win to Nil,
+Team Goals, Exact Team Goals, Odd/Even, Race to 2 Goals, HT 1X2, HT Goals O/U,
+HT Correct Scores, HT/FT, 2nd Half Markets, Goal in Both Halves, Score Matrix
+Heatmap (7x7), Correct Score FT, Winning Margin, Asian Handicap, Yellow Cards,
+First Goal Timing, xG Comparison Bar, Form Visual
+
+**Badges im Match-Header:**
+- `@annafrick13` (grün) — v2 Engine aktiv
+- `Ohne xG` (rot) — keine xG-Daten, Liga-Durchschnitt als Fallback
+
+## Team-Daten System
+
+### Team Colors (`src/lib/team-colors.ts`)
+`[primary, secondary]` Hex-Paare für Trikot-SVG. Abgedeckte Ligen:
+Bundesliga, 2. Bundesliga, 3. Liga, Premier League, Championship (25/26),
+La Liga, Serie A. Alias-Einträge für Kurzformen (z.B. "QPR", "West Brom").
+
+### Team Resolver (`src/lib/team-resolver.ts`)
+Mapped zwischen drei Namensräumen:
+- **FODZE**: "FC Bayern München" (App-intern)
+- **CSV**: "Bayern Munich" (football-data.co.uk, Elo)
+- **Understat**: "Bayern Munich" (Supabase xG History)
+
+Resolution: exact FODZE → exact CSV → exact Understat → case-insensitive → substring.
+
+### Team Scraper Map (`src/lib/scrapers/team-map.ts`)
+Zusätzliches Mapping für Scraper-Kontexte (Understat HTML → FODZE Name).
+
 ## CI/CD
 
 GitHub Actions (`.github/workflows/ci.yml`):
@@ -208,6 +257,9 @@ GitHub Actions (`.github/workflows/ci.yml`):
 - `MatchCalc.enh` nutzt `Record<string, any> &` Intersection — ein Kompromiss weil `Markets` (Engine-intern) und `MarketProbs` (types/match.ts) strukturell identisch aber nominell verschieden sind
 - Standalone-Seiten (Simulator, SGP, Season-Sim) haben eigene Inline-Engines die nicht den zentralen dixon-coles.ts nutzen
 - Kein E2E Testing — nur Unit-Tests für die Engine
+- Anna's Analysen nutzt v2 ohne SoS-Ratings und Absences (diese kommen nur über MatchdayContext-Flow)
+- Team-Resolver: Teams die in mehreren Ligen spielen (Auf-/Abstieg) haben den letzten Eintrag als Default-Liga
+- **WICHTIG**: Vercel Hobby Plan — KEIN `Co-Authored-By` in Commits! Blockiert Deployment.
 
 ## Datenbank
 
