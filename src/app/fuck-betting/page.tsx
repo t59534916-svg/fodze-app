@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import Kit from "@/components/shared/Kit";
+import { TEAM_COLORS } from "@/lib/team-colors";
 import {
   LEAGUES, getHomeFactor, buildMatrix, deriveAllMarkets, queryMatrix,
   getCorrectScores, getAsianHandicap, getHtFt, getGoalBothHalves,
@@ -84,6 +85,8 @@ interface MatchReport {
   xgaPerGameH: number; // xga_h8 / games
   xgPerGameA: number;  // xg_a8 / games
   xgaPerGameA: number; // xga_a8 / games
+  // Confidence score 0-100
+  confidence: number;
   // Brief analysis
   analysis: string;
 }
@@ -124,6 +127,41 @@ function parseForm(form: string | undefined): { w: number; d: number; l: number;
     streak = `${count}${last}`;
   }
   return { w, d, l, streak, len: results.length };
+}
+
+function computeConfidence(r: MatchReport): number {
+  let score = 0;
+
+  // 1. Engine quality (0-30)
+  if (r.engine === "annafrick13-v2") score += 30;
+  else score += 15;
+
+  // 2. Data quality (0-25)
+  if (r.dataQuality === "HIGH") score += 25;
+  else score += 5;
+
+  // 3. xG history depth — more history = more reliable (0-15)
+  const hHist = r.rawMatch.home?.xg_h_history?.length || 0;
+  const aHist = r.rawMatch.away?.xg_a_history?.length || 0;
+  const histDepth = Math.min(hHist, aHist);
+  score += Math.min(histDepth / 8 * 15, 15);
+
+  // 4. Form data available (0-10)
+  if (r.formH && r.formH.trim().length > 0) score += 5;
+  if (r.formA && r.formA.trim().length > 0) score += 5;
+
+  // 5. Lambda plausibility — extreme values lower confidence (0-10)
+  const totalLambda = r.lambdaH + r.lambdaA;
+  if (totalLambda >= 1.5 && totalLambda <= 5.0) score += 10;
+  else if (totalLambda >= 1.0 && totalLambda <= 6.0) score += 5;
+
+  // 6. Prediction clarity — strong favorite = more confident (0-10)
+  const maxProb = Math.max(r.ft1X2.H, r.ft1X2.D, r.ft1X2.A);
+  if (maxProb > 0.6) score += 10;
+  else if (maxProb > 0.45) score += 6;
+  else score += 3; // Very balanced = harder to predict
+
+  return Math.min(Math.round(score), 100);
 }
 
 function generateAnalysis(r: MatchReport): string {
@@ -286,6 +324,21 @@ function generateAnalysis(r: MatchReport): string {
     lines.push(`Auffällige Märkte: ${keyMarkets.join(" · ")}.`);
   }
 
+  // ── 11. Confidence assessment ──
+  const conf = r.confidence;
+  const confLabel = conf >= 85 ? "Sehr hoch" : conf >= 70 ? "Hoch" : conf >= 50 ? "Mittel" : conf >= 35 ? "Niedrig" : "Sehr niedrig";
+  const confReasons: string[] = [];
+  if (r.engine === "annafrick13-v2") confReasons.push("LightGBM v2 Engine");
+  else confReasons.push("Standard-Engine");
+  if (r.dataQuality === "HIGH") confReasons.push("vollständige xG-Daten");
+  else confReasons.push("eingeschränkte Datenlage");
+  const hHist = r.rawMatch.home?.xg_h_history?.length || 0;
+  const aHist = r.rawMatch.away?.xg_a_history?.length || 0;
+  if (Math.min(hHist, aHist) >= 8) confReasons.push("8+ Spiele History");
+  else if (Math.min(hHist, aHist) >= 5) confReasons.push(`nur ${Math.min(hHist, aHist)} Spiele History`);
+  else confReasons.push("wenig historische Daten");
+  lines.push(`Konfidenz: ${conf}% (${confLabel}) — ${confReasons.join(", ")}.`);
+
   return lines.join("\n\n");
 }
 
@@ -350,6 +403,9 @@ function MatchReportCard({ report }: { report: MatchReport }) {
           {r.dataQuality === "LOW" && (
             <span style={S.tag("#e07070")}>Ohne xG</span>
           )}
+          <span style={S.tag(r.confidence >= 75 ? "#6aad55" : r.confidence >= 50 ? "#d4b86a" : "#e07070")}>
+            {r.confidence}% Konfidenz
+          </span>
           {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{formatKickoff(r.kickoff)}</span>}
           <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>
             {r.lambdaH.toFixed(2)} : {r.lambdaA.toFixed(2)} xG
@@ -385,24 +441,44 @@ function MatchReportCard({ report }: { report: MatchReport }) {
             </div>
           </div>
 
-          {/* ── xG Comparison Bar ── */}
-          <div style={S.sectionLabel}>xG-Vergleich (pro Spiel)</div>
-          <div style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
-            <span style={{ fontSize: 10, color: "#a89070", width: 60, textAlign: "right" }}>{r.home.split(" ").pop()}</span>
-            <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#c4a26510", overflow: "hidden", display: "flex" }}>
-              <div style={{ width: `${(r.xgPerGameH / (r.xgPerGameH + r.xgPerGameA)) * 100}%`, background: "#d4b86a", borderRadius: 4 }} />
-            </div>
-            <span style={{ fontSize: 10, color: "#a89070", width: 60 }}>{r.away.split(" ").pop()}</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#a89070", marginBottom: 2 }}>
-            <span>{r.xgPerGameH.toFixed(2)} xG</span>
-            <span>{r.xgPerGameA.toFixed(2)} xG</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#c4a26550" }}>
-            <span>{r.xgaPerGameH.toFixed(2)} xGA</span>
-            <span>{r.xgaPerGameA.toFixed(2)} xGA</span>
-          </div>
-          <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+          {/* ── xG Comparison Bars (Team Colors) ── */}
+          {(() => {
+            const [hPrimary] = TEAM_COLORS[r.home] || ["#d4b86a", "#fff"];
+            const [aPrimary] = TEAM_COLORS[r.away] || ["#a89070", "#fff"];
+            const maxXG = Math.max(r.xgPerGameH, r.xgPerGameA, r.xgaPerGameH, r.xgaPerGameA, 0.5);
+            return (<>
+              <div style={S.sectionLabel}>xG-Vergleich (pro Spiel)</div>
+              {/* xG Offensive */}
+              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, letterSpacing: "0.05em" }}>OFFENSIV (xG erzielt)</div>
+              {[
+                { name: r.home, val: r.xgPerGameH, color: hPrimary },
+                { name: r.away, val: r.xgPerGameA, color: aPrimary },
+              ].map(({ name, val, color }) => (
+                <div key={name + "xg"} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 10, color: "#a89070", width: 70, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name.split(" ").pop()}</span>
+                  <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#c4a26510", overflow: "hidden" }}>
+                    <div style={{ width: `${(val / maxXG) * 100}%`, height: "100%", borderRadius: 4, background: color, opacity: 0.85, transition: "width 0.3s" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: "#ede4d4", fontWeight: 600, fontFamily: "monospace", width: 36, textAlign: "right" }}>{val.toFixed(2)}</span>
+                </div>
+              ))}
+              {/* xGA Defensive */}
+              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, marginTop: 6, letterSpacing: "0.05em" }}>DEFENSIV (xGA kassiert)</div>
+              {[
+                { name: r.home, val: r.xgaPerGameH, color: hPrimary },
+                { name: r.away, val: r.xgaPerGameA, color: aPrimary },
+              ].map(({ name, val, color }) => (
+                <div key={name + "xga"} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <span style={{ fontSize: 10, color: "#a89070", width: 70, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name.split(" ").pop()}</span>
+                  <div style={{ flex: 1, height: 8, borderRadius: 4, background: "#c4a26510", overflow: "hidden" }}>
+                    <div style={{ width: `${(val / maxXG) * 100}%`, height: "100%", borderRadius: 4, background: color, opacity: 0.45, transition: "width 0.3s" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: "#c4a26570", fontFamily: "monospace", width: 36, textAlign: "right" }}>{val.toFixed(2)}</span>
+                </div>
+              ))}
+              <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
+            </>);
+          })()}
 
           {/* ── Form Visual ── */}
           {(r.formH || r.formA) && (<>
@@ -923,8 +999,10 @@ export default function FuckBettingPage() {
           xgaPerGameH: xgaPgH,
           xgPerGameA: xgPgA,
           xgaPerGameA: xgaPgA,
+          confidence: 0,
           analysis: "",
         };
+        report.confidence = computeConfidence(report);
         report.analysis = generateAnalysis(report);
 
         result.push(report);
