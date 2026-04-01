@@ -238,14 +238,19 @@ async function upsertFixtures(league, events) {
     fetched_at: new Date().toISOString(),
   }));
 
-  // Upsert — on conflict update team names and time (in case of rescheduling)
+  // Delete old fixtures for this league, then insert fresh (same pattern as odds)
+  await fetch(`${SUPA_URL}/rest/v1/upcoming_fixtures?league=eq.${league}`, {
+    method: "DELETE",
+    headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
+  });
+
   const resp = await fetch(`${SUPA_URL}/rest/v1/upcoming_fixtures`, {
     method: "POST",
     headers: {
       apikey: SUPA_KEY,
       Authorization: `Bearer ${SUPA_KEY}`,
       "Content-Type": "application/json",
-      Prefer: "resolution=merge-duplicates,return=minimal",
+      Prefer: "return=minimal",
     },
     body: JSON.stringify(rows),
   });
