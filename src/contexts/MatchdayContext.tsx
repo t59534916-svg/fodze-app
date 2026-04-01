@@ -348,14 +348,19 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   }, [processed]);
 
   const topTips = useMemo(() => {
-    const tips: TopTip[] = [];
+    // Collect best bet per match (no contradictions like Ü2.5 + U2.5 from same game)
+    const bestPerMatch = new Map<number, TopTip>();
     for (const m of processed) {
       if (!m.calc?.bets) continue;
       for (const b of m.calc.bets) {
         if (!b.isValue || b.edge <= 0) continue;
-        tips.push({ ...b, home: m.home?.name, away: m.away?.name, matchIdx: m.idx, kickoff: m.kickoff });
+        const existing = bestPerMatch.get(m.idx);
+        if (!existing || (b.ev || b.edge) > (existing.ev || existing.edge)) {
+          bestPerMatch.set(m.idx, { ...b, home: m.home?.name, away: m.away?.name, matchIdx: m.idx, kickoff: m.kickoff });
+        }
       }
     }
+    const tips = Array.from(bestPerMatch.values());
     tips.sort((a, b) => (b.ev || b.edge) - (a.ev || a.edge));
     return tips.slice(0, 5);
   }, [processed]);
