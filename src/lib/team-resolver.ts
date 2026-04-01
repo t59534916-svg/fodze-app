@@ -71,6 +71,33 @@ const TEAM_REGISTRY: TeamIdentity[] = [
   { fodze: "Southampton", csv: "Southampton", understat: "Southampton", league: "epl" },
   { fodze: "Ipswich Town", csv: "Ipswich", league: "epl" },
 
+  // Championship
+  { fodze: "Sheffield United", csv: "Sheffield United", league: "championship" },
+  { fodze: "Leeds United", csv: "Leeds", league: "championship" },
+  { fodze: "Burnley", csv: "Burnley", league: "championship" },
+  { fodze: "Sunderland", csv: "Sunderland", league: "championship" },
+  { fodze: "Norwich City", csv: "Norwich", league: "championship" },
+  { fodze: "West Bromwich Albion", csv: "West Brom", league: "championship" },
+  { fodze: "Coventry City", csv: "Coventry", league: "championship" },
+  { fodze: "Middlesbrough", csv: "Middlesbrough", league: "championship" },
+  { fodze: "Bristol City", csv: "Bristol City", league: "championship" },
+  { fodze: "Watford", csv: "Watford", league: "championship" },
+  { fodze: "Swansea City", csv: "Swansea", league: "championship" },
+  { fodze: "Stoke City", csv: "Stoke", league: "championship" },
+  { fodze: "Hull City", csv: "Hull", league: "championship" },
+  { fodze: "Millwall", csv: "Millwall", league: "championship" },
+  { fodze: "Queens Park Rangers", csv: "QPR", league: "championship" },
+  { fodze: "Preston North End", csv: "Preston", league: "championship" },
+  { fodze: "Derby County", csv: "Derby", league: "championship" },
+  { fodze: "Sheffield Wednesday", csv: "Sheffield Weds", league: "championship" },
+  { fodze: "Oxford United", csv: "Oxford", league: "championship" },
+  { fodze: "Birmingham City", csv: "Birmingham", league: "championship" },
+  { fodze: "Wrexham", csv: "Wrexham", league: "championship" },
+  { fodze: "Charlton Athletic", csv: "Charlton", league: "championship" },
+  { fodze: "Ipswich Town", csv: "Ipswich", league: "championship" },
+  { fodze: "Leicester City", csv: "Leicester", league: "championship" },
+  { fodze: "Southampton", csv: "Southampton", league: "championship" },
+
   // La Liga
   { fodze: "Real Madrid", csv: "Real Madrid", understat: "Real Madrid", league: "la_liga" },
   { fodze: "FC Barcelona", csv: "Barcelona", understat: "Barcelona", league: "la_liga" },
@@ -91,6 +118,7 @@ const TEAM_REGISTRY: TeamIdentity[] = [
   { fodze: "Espanyol Barcelona", csv: "Espanol", understat: "Espanyol", league: "la_liga" },
   { fodze: "UD Levante", csv: "Levante", understat: "Levante", league: "la_liga" },
   { fodze: "Elche CF", csv: "Elche", understat: "Elche", league: "la_liga" },
+  { fodze: "Real Oviedo", csv: "Real Oviedo", league: "la_liga" },
 
   // Serie A
   { fodze: "Inter Milan", csv: "Inter", understat: "Inter", league: "serie_a" },
