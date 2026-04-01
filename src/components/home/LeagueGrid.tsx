@@ -23,7 +23,7 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
   const router = useRouter();
   const { league, setLeague, leagueStatus } = useApp();
 
-  // Count leagues with data for "Fuck Betting" tile
+  // Count leagues with data for Anna's Analysen tile
   const leaguesWithData = Object.keys(leagueStatus).length;
 
   const handleClick = (key: string) => {
@@ -70,28 +70,29 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
           );
         })}
 
-        {/* Fuck Betting — Full Report Mode */}
+        {/* Anna's Analysen — Full Report Mode */}
         <button onClick={() => router.push("/fuck-betting")} className="league-tile"
-          aria-label="Fuck Betting — Vollständiger Analyse-Report"
+          aria-label="Anna's Analysen — Vollständiger Analyse-Report"
           style={{
             padding: "12px", borderRadius: 10, cursor: "pointer",
             minHeight: 72, width: "100%", textAlign: "left" as const,
             gridColumn: "1 / -1",
-            border: "1px solid #e0707030",
-            background: "linear-gradient(135deg, #e0707008, #c4a26508)",
+            border: "1px solid #d4b86a30",
+            background: "linear-gradient(135deg, #d4b86a08, #c4a26508)",
             opacity: leaguesWithData > 0 ? 1 : 0.45,
           }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 20 }}>F</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/anna-avatar-1.jpg" alt="" width={32} height={32} style={{ borderRadius: "50%", objectFit: "cover", border: "1.5px solid #d4b86a40" }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#e07070" }}>Fuck Betting</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#d4b86a" }}>Anna&apos;s Analysen</div>
               <div style={{ fontSize: 10, color: "#a89070", marginTop: 2 }}>
                 {leaguesWithData > 0
                   ? `Alle Spiele · Voller Report · Ohne Quoten`
                   : "Keine Daten"}
               </div>
             </div>
-            {leaguesWithData > 0 && <div style={{ fontSize: 10, color: "#e07070", fontWeight: 600 }}>{leaguesWithData} Ligen</div>}
+            {leaguesWithData > 0 && <div style={{ fontSize: 10, color: "#d4b86a", fontWeight: 600 }}>{leaguesWithData} Ligen</div>}
           </div>
         </button>
       </div>

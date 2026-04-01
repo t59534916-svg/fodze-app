@@ -582,15 +582,21 @@ export default function FuckBettingPage() {
         }}>
           ← Zurück
         </button>
-        <h1 style={{
-          fontSize: 22, fontWeight: 700, color: "#e07070", margin: 0, letterSpacing: 1,
-          fontFamily: "Georgia, serif",
-        }}>
-          Fuck Betting
-        </h1>
-        <p style={{ fontSize: 11, color: "#a89070", margin: "4px 0 0" }}>
-          Vollständige Wahrscheinlichkeitsanalyse aller Spiele. Ohne Wettquoten. Nur Mathematik.
-        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/anna-avatar-1.jpg" alt="" width={44} height={44} style={{ borderRadius: "50%", objectFit: "cover", border: "2px solid #d4b86a40" }} />
+          <div>
+            <h1 style={{
+              fontSize: 20, fontWeight: 700, color: "#d4b86a", margin: 0, letterSpacing: 0.5,
+              fontFamily: "Georgia, serif",
+            }}>
+              Anna&apos;s Analysen
+            </h1>
+            <p style={{ fontSize: 11, color: "#a89070", margin: "2px 0 0" }}>
+              Vollständige Wahrscheinlichkeitsanalyse. Ohne Wettquoten. Nur Mathematik.
+            </p>
+          </div>
+        </div>
       </div>
 
       {loading ? (
