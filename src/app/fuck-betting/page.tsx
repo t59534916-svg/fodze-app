@@ -11,6 +11,9 @@ import {
   getFirstGoalTime, getWinningMargin, calcLambdas,
   type SecondHalfMarkets,
 } from "@/lib/dixon-coles";
+import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
+import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
+import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -72,8 +75,9 @@ interface MatchReport {
   // Form visual
   formH: string;
   formA: string;
-  // Data quality
+  // Data quality & engine
   dataQuality: "HIGH" | "LOW";
+  engine: "annafrick13-v2" | "standard";
   // Raw match data for analysis
   rawMatch: RawMatch;
   xgPerGameH: number;  // xg_h8 / games
@@ -131,6 +135,11 @@ function generateAnalysis(r: MatchReport): string {
   const formH = parseForm(h.form);
   const formA = parseForm(a.form);
   const tags = m.tags || [];
+
+  // Engine info
+  if (r.engine === "annafrick13-v2") {
+    lines.push(`Analyse via @annafrick13 v2 — LightGBM Tweedie mit 14 Features (npxG EWMA, Elo, Momentum, PPDA, Pressing). Erwartete Tore: ${r.lambdaH.toFixed(2)} : ${r.lambdaA.toFixed(2)}.`);
+  }
 
   // Data quality warning
   if (r.dataQuality === "LOW") {
@@ -310,6 +319,9 @@ function MatchReportCard({ report }: { report: MatchReport }) {
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center", flexWrap: "wrap" }}>
           <span style={S.tag("#d4b86a")}>{r.leagueName}</span>
+          {r.engine === "annafrick13-v2" && (
+            <span style={S.tag("#6aad55")}>@annafrick13</span>
+          )}
           {r.dataQuality === "LOW" && (
             <span style={S.tag("#e07070")}>Ohne xG</span>
           )}
@@ -628,15 +640,38 @@ export default function FuckBettingPage() {
   const [allData, setAllData] = useState<{ league: string; data: MatchdayData }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load all leagues with data
+  // Load all leagues with data + enrich with xG history for @annafrick13 v2
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { loadLatestMatchday } = await import("@/lib/supabase");
+      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
       const results = await Promise.all(leagueKeys.map(async (key) => {
         const md = await loadLatestMatchday(supabase, key);
-        return md ? { league: key, data: md.data as MatchdayData } : null;
+        if (!md) return null;
+        const data = md.data as MatchdayData;
+
+        // Enrich each match with per-match xG history from Supabase (needed for v2 EWMA)
+        if (data.matches) {
+          await Promise.all(data.matches.map(async (match) => {
+            const resolveTeam = (name: string) => {
+              const mapped = TEAM_SCRAPER_MAP[name];
+              return mapped?.understat || name;
+            };
+            if (match.home?.name && !match.home.xg_h_history?.length) {
+              const understatName = resolveTeam(match.home.name);
+              const hist = await loadTeamXGHistory(supabase, understatName, key, "home", 8);
+              if (hist.length > 0) match.home.xg_h_history = toXGHistoryEntries(hist);
+            }
+            if (match.away?.name && !match.away.xg_a_history?.length) {
+              const understatName = resolveTeam(match.away.name);
+              const hist = await loadTeamXGHistory(supabase, understatName, key, "away", 8);
+              if (hist.length > 0) match.away.xg_a_history = toXGHistoryEntries(hist);
+            }
+          }));
+        }
+
+        return { league: key, data };
       }));
       setAllData(results.filter((r): r is NonNullable<typeof r> => r !== null));
       setLoading(false);
@@ -682,15 +717,46 @@ export default function FuckBettingPage() {
           kickoff = matchdayDate;
         }
 
-        // Compute lambdas
+        // Compute lambdas — try @annafrick13 v2 first, fallback to standard
         const hf = getHomeFactor(h.name, ld.hf);
-        const { lambdaH, lambdaA } = calcLambdas(
-          xgH8, xgaH8, xgA8, xgaA8,
-          hGames, aGames, ld.avg, hf
-        );
+        let lambdaH: number;
+        let lambdaA: number;
+        let engine: "annafrick13-v2" | "standard" = "standard";
+        let effectiveRho = -0.05;
 
-        // Build matrix
-        const mx = buildMatrix(lambdaH, lambdaA);
+        // Try v2: needs LightGBM model + per-match xG history
+        const hHist = h.xg_h_history;
+        const aHist = a.xg_a_history;
+        if (isLGBMModelLoaded() && hHist?.length && aHist?.length) {
+          const v2Result = calcMatchPoissonMLv2({
+            xgHS: xgH8, xgaHC: xgaH8, hGames,
+            xgAS: xgA8, xgaAC: xgaA8, aGames,
+            leagueAvg: ld.avg, homeFactor: hf, league,
+            tags: match.tags || [],
+            hHistory: hHist, aHistory: aHist,
+            homeTeam: h.name, awayTeam: a.name,
+            fraction: 0.25, // not used for report (no Kelly here)
+          });
+          if (v2Result) {
+            lambdaH = v2Result.lambdaH;
+            lambdaA = v2Result.lambdaA;
+            engine = "annafrick13-v2";
+            effectiveRho = getLGBMRho();
+          } else {
+            // v2 refused (missing data) → standard fallback
+            const std = calcLambdas(xgH8, xgaH8, xgA8, xgaA8, hGames, aGames, ld.avg, hf);
+            lambdaH = std.lambdaH;
+            lambdaA = std.lambdaA;
+          }
+        } else {
+          // No model or no history → standard engine
+          const std = calcLambdas(xgH8, xgaH8, xgA8, xgaA8, hGames, aGames, ld.avg, hf);
+          lambdaH = std.lambdaH;
+          lambdaA = std.lambdaA;
+        }
+
+        // Build matrix (use optimized rho for v2, default for standard)
+        const mx = buildMatrix(lambdaH, lambdaA, effectiveRho);
         const mk = deriveAllMarkets(mx);
         const cs = getCorrectScores(mx, 12);
         const ah = getAsianHandicap(mx, "H");
@@ -802,6 +868,7 @@ export default function FuckBettingPage() {
           formH: h.form || "",
           formA: a.form || "",
           dataQuality,
+          engine,
           rawMatch: match,
           xgPerGameH: xgH8 / hGames,
           xgaPerGameH: xgaH8 / hGames,
