@@ -224,6 +224,10 @@ export interface MatchCalc extends LambdaEstimates {
       uncertainty: number;
     };
     nBootstrap: number;
+    dualTrack?: {
+      trackA: { H: number; D: number; A: number };
+      trackB: { H: number; D: number; A: number };
+    };
   };
 }
 
@@ -290,7 +294,10 @@ export interface ComboLeg {
   match: string;
   pModel: number;
   quote: number;
-  isValue: boolean;
+  isBanker: boolean;
+  ev: number;
+  edge: number;
+  evMultiplier: number;
 }
 
 // ─── Profile ─────────────────────────────────────────────────────────

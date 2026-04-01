@@ -28,7 +28,7 @@ const multIcon = (m: number) => m >= 1.05 ? "↑" : m >= 0.98 ? "→" : "↓";
 interface CustomLeg { id: string; label: string; match: string; p: string; quote: string }
 
 interface Props {
-  availableLegs: { id: string; label: string; match: string; pModel: number; quote: number; isValue: boolean }[];
+  availableLegs: ComboLeg[];
   budget: number;
   onBack: () => void;
   // Bug 1 fix: State lifted to parent for persistence
@@ -161,7 +161,7 @@ export default function ComboBuilder({
                     <span style={{ color: "#c4a26545" }}>P:{pc(l.pModel)}</span>
                     <span style={{ color: "#c4a26545" }}>Q:{l.quote.toFixed(2)}</span>
                     <span style={{ color: multColor(mult), fontWeight: 600 }}>{multIcon(mult)}{mult.toFixed(2)}× {multLabel(mult)}</span>
-                    {l.isValue && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#5a8c4a12", color: "#6aad55", fontWeight: 600 }}>VALUE</span>}
+                    {l.edge > 0 && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#5a8c4a12", color: "#6aad55", fontWeight: 600 }}>VALUE</span>}
                   </div>
                 </div>
 

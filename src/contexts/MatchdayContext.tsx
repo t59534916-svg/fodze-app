@@ -330,11 +330,17 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       if (!m.calc?.bets) continue;
       for (const b of m.calc.bets) {
         if (b.quote <= 0) continue;
+        const ev = b.pModel * b.quote - 1;
+        const edge = b.pModel - (1 / b.quote);
         legs.push({
           id: `${m.idx}-${b.label}`,
           label: `${b.label} ${m.home?.name?.split(" ").pop() || ""}–${m.away?.name?.split(" ").pop() || ""}`,
           match: `${m.home?.name} — ${m.away?.name}`,
-          pModel: b.pModel, quote: b.quote, isValue: b.isValue,
+          pModel: b.pModel, quote: b.quote,
+          isBanker: false,
+          ev,
+          edge,
+          evMultiplier: ev > 0 ? 1 + ev : 0.5,
         });
       }
     }
