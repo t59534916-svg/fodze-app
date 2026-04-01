@@ -49,7 +49,7 @@ RESPOND ONLY AS JSON:
       "tags": ["DERBY"],
       "context": "Brief context",
       "referee": "Name, avg X cards/game",
-      "kickoff": "15:30"
+      "kickoff": "YYYY-MM-DD HH:MM"
     }
   ],
   "data_confidence": "MEDIUM",

@@ -57,6 +57,19 @@ interface MatchReport {
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const toOdds = (p: number) => p > 0.01 ? (1 / p).toFixed(2) : "—";
 
+function formatKickoff(ko: string): string {
+  if (!ko) return "";
+  // "2026-04-04 15:30" → "Fr. 4.4. 15:30"
+  const match = ko.match(/^(\d{4}-\d{2}-\d{2})\s*(\d{2}:\d{2})?/);
+  if (!match) return ko;
+  try {
+    const d = new Date(match[1] + "T12:00:00");
+    const days = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+    const dayStr = `${days[d.getDay()]}. ${d.getDate()}.${d.getMonth() + 1}.`;
+    return match[2] ? `${dayStr} ${match[2]}` : dayStr;
+  } catch { return ko; }
+}
+
 // ─── Generate analysis text ───────────────────────────────────────
 
 function parseForm(form: string | undefined): { w: number; d: number; l: number; streak: string; len: number } {
@@ -262,7 +275,7 @@ function MatchReportCard({ report }: { report: MatchReport }) {
         </div>
         <div style={{ display: "flex", gap: 6, marginTop: 4, alignItems: "center" }}>
           <span style={S.tag("#d4b86a")}>{r.leagueName}</span>
-          {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{r.kickoff}</span>}
+          {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{formatKickoff(r.kickoff)}</span>}
           <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>
             {r.lambdaH.toFixed(2)} : {r.lambdaA.toFixed(2)} xG
           </span>
@@ -448,10 +461,22 @@ export default function FuckBettingPage() {
       const ld = LEAGUES[league];
       if (!ld) continue;
 
+      // Matchday-level date as fallback
+      const matchdayDate = data.date || "";
+
       for (const match of data.matches) {
         const h = match.home;
         const a = match.away;
         if (!h?.xg_h8 || !a?.xg_a8) continue;
+
+        // Resolve kickoff: full datetime > time-only + matchday date > matchday date
+        let kickoff = match.kickoff || "";
+        if (kickoff && !/^\d{4}-/.test(kickoff) && matchdayDate) {
+          // kickoff is time-only ("15:30") — prepend matchday date
+          kickoff = `${matchdayDate} ${kickoff}`;
+        } else if (!kickoff && matchdayDate) {
+          kickoff = matchdayDate;
+        }
 
         // Compute lambdas
         const hf = getHomeFactor(h.name, ld.hf);
@@ -479,7 +504,7 @@ export default function FuckBettingPage() {
           away: a.name,
           league,
           leagueName: ld.name,
-          kickoff: match.kickoff || "",
+          kickoff,
           lambdaH,
           lambdaA,
           matrix: mx,
