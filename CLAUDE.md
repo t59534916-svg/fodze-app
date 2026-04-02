@@ -14,7 +14,7 @@ Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätz
 ```bash
 npm install
 npm run dev       # http://localhost:3000
-npm run test      # 35 Tests (Engine + Poisson + Zod Schemas)
+npm run test      # 49 Tests (Engine + Poisson + Zod Schemas)
 npm run build     # Production Build
 ```
 
@@ -53,8 +53,39 @@ Next.js 14 App Router
 | `src/lib/engine-registry.ts` | Engine-Definitionen + Dispatch | Bei neuen Engines |
 | `public/lgbm-model-v2.json` | Trainiertes LightGBM Modell (v2) | Nach Retraining |
 | `src/app/fuck-betting/page.tsx` | Anna's Analysen — quotenfreier Vollreport | Bei Report-Erweiterungen |
-| `src/lib/team-colors.ts` | Trikot-Farben (BL, BL2, 3.Liga, EPL, Champ, LaLiga, SerieA) | Bei Team-Änderungen |
-| `src/lib/team-resolver.ts` | FODZE↔CSV↔Understat Team-Name-Mapping | Bei neuen Teams/Ligen |
+| `src/lib/team-colors.ts` | Trikot-Farben (21 Ligen, ~350 Teams) | Bei Team-Änderungen |
+| `src/lib/team-resolver.ts` | FODZE↔CSV↔Understat Team-Name-Mapping (~350 Teams) | Bei neuen Teams/Ligen |
+| `src/lib/calibration.ts` | Per-League Kalibrierung (Platt + Isotonic, 18 Ligen) | Bei Kalibrierungs-Änderungen |
+
+## Unterstützte Ligen (21)
+
+| Liga | Key | xG | Kalibrierung | Datenquelle |
+|------|-----|:--:|:------------:|-------------|
+| Bundesliga | `bundesliga` | ✅ | Per-League | Understat + CSV |
+| Premier League | `epl` | ✅ | Per-League | Understat + CSV |
+| La Liga | `la_liga` | ✅ | Per-League | Understat + CSV |
+| Serie A | `serie_a` | ✅ | Per-League | Understat + CSV |
+| Ligue 1 | `ligue_1` | ✅ | Per-League | Understat + CSV |
+| Eredivisie | `eredivisie` | ✅ | Per-League | Understat + CSV |
+| Championship | `championship` | ❌ | Per-League | CSV (Goals-Proxy) |
+| 2. Bundesliga | `bundesliga2` | ❌ | Per-League | CSV (Goals-Proxy) |
+| 3. Liga | `liga3` | ❌ | ❌ | Manuell |
+| Champions League | `cl` | ❌ | ❌ | Placeholder |
+| Europa League | `el` | ❌ | ❌ | Placeholder |
+| Primeira Liga | `primeira_liga` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Jupiler Pro | `jupiler_pro` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Süper Lig | `super_lig` | ❌ | Per-League | CSV (Goals-Proxy) |
+| La Liga 2 | `la_liga2` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Serie B | `serie_b` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Ligue 2 | `ligue_2` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Scottish Prem | `scottish_prem` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Super League Greece | `greek_sl` | ❌ | Per-League | CSV (Goals-Proxy) |
+| League One | `league_one` | ❌ | Per-League | CSV (Goals-Proxy) |
+| League Two | `league_two` | ❌ | Per-League | CSV (Goals-Proxy) |
+
+**Elo-Ratings**: 655 Teams aus 146.382 historischen Matches (football-data.co.uk CSVs, 25 Saisons)
+**Kalibrierung**: Platt-Params + Isotonic-Kurven per Liga (18 Ligen mit ≥300 Matches)
+**Ohne xG**: Nur ensemble-v1 Engine (Standard). Poisson-ML v1/v2 verweigern ohne xG-History.
 
 ## Konventionen
 
@@ -120,7 +151,7 @@ npx vitest run --reporter=verbose  # Detailliert
 ```
 
 Tests decken ab:
-- LEAGUES Konfiguration (11 Ligen)
+- LEAGUES Konfiguration (21 Ligen)
 - xG-Daten Validierung
 - Vig-Removal (Overround-Berechnung)
 - Dixon-Coles λ-Berechnung + Score-Matrix
@@ -219,8 +250,11 @@ First Goal Timing, xG Comparison Bar, Form Visual
 
 ### Team Colors (`src/lib/team-colors.ts`)
 `[primary, secondary]` Hex-Paare für Trikot-SVG. Abgedeckte Ligen:
-Bundesliga, 2. Bundesliga, 3. Liga, Premier League, Championship (25/26),
-La Liga, Serie A. Alias-Einträge für Kurzformen (z.B. "QPR", "West Brom").
+Bundesliga, 2. Bundesliga, 3. Liga, Premier League, Championship,
+La Liga, La Liga 2, Serie A, Serie B, Ligue 1, Ligue 2, Eredivisie,
+Primeira Liga, Jupiler Pro, Süper Lig, Scottish Premiership,
+Super League Greece, League One, League Two.
+Alias-Einträge für Kurzformen (z.B. "QPR", "West Brom").
 
 ### Team Resolver (`src/lib/team-resolver.ts`)
 Mapped zwischen drei Namensräumen:
@@ -260,6 +294,9 @@ GitHub Actions (`.github/workflows/ci.yml`):
 - Anna's Analysen nutzt v2 ohne SoS-Ratings und Absences (diese kommen nur über MatchdayContext-Flow)
 - Team-Resolver: Teams die in mehreren Ligen spielen (Auf-/Abstieg) haben den letzten Eintrag als Default-Liga
 - **WICHTIG**: Vercel Hobby Plan — KEIN `Co-Authored-By` in Commits! Blockiert Deployment.
+- Ligen ohne Understat-xG (PT, BE, TR, SP2, I2, F2, SC, GR, E2, E3) nutzen nur ensemble-v1 (Standard-Engine). Poisson-ML v1/v2 verweigern ohne xG-History.
+- ~9 Teams (Aufsteiger/Neulinge) haben Default-Elo 1500 mangels historischer CSV-Daten
+- Champions League / Europa League sind Placeholder (wechselnde Teams, keine konsistente Kalibrierung)
 
 ## Datenbank
 

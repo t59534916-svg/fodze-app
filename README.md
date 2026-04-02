@@ -24,7 +24,7 @@ npm run dev                   # http://localhost:3000
 | **System-Wetten** | 2aus3, 3aus4, 4aus5 mit EV und P(Gewinn) |
 | **Ask Anna** | KI-Beraterin: Multi-Liga Chat mit Streaming (Groq kostenlos / Claude) |
 | **Live-Odds** | Automatischer Quoten-Import via GitHub Actions + The-Odds-API |
-| **12 Ligen** | Bundesliga, PL, La Liga, Serie A, Ligue 1, 2.BL, 3.Liga, CL, EL, ... |
+| **21 Ligen** | BL, PL, La Liga, Serie A, Ligue 1, Eredivisie, Championship, 2.BL, 3.Liga, CL, EL + PT, BE, TR, SP2, IT2, FR2, SCO, GR, ENG3, ENG4 |
 | **PWA** | Installierbar, Offline-Cache via Service Worker |
 
 ## Architektur
@@ -103,7 +103,7 @@ npm run build        # Production Build
 npm run spieltag     # Admin Spieltag-Wizard (interaktiv)
 npm run backfill     # Historisches xG Backfill
 npm run export-xg    # Supabase Export → backups/
-npm run test         # vitest (13 Tests für Dixon-Coles Engine)
+npm run test         # vitest (49 Tests für Engine + Poisson + Schemas)
 npm run test:watch   # Watch-Mode
 npm run lint         # ESLint
 npm run spieltag     # Admin Spieltag-Wizard
@@ -134,20 +134,21 @@ GROQ_API_KEY=gsk_...          # FREE — https://console.groq.com
 
 | Modell | Brier Score | Gewicht |
 |--------|------------|---------|
-| Dixon-Coles (Poisson + NegBin) | 0.6047 | 4.9% |
-| Elo Rating (212 Teams) | 0.6036 | 11.5% |
-| Logistic (6 EWMA Features) | 0.5880 | 63.7% |
+| Dixon-Coles (Poisson + NegBin) | 0.6275 | 6.0% |
+| Elo Rating (655 Teams) | 0.6185 | 22.6% |
+| Logistic (6 EWMA Features) | 0.6090 | 51.3% |
 | Market-Implied (Pinnacle) | — | 20.0% |
-| **Ensemble** | **0.5876** | — |
+| **Ensemble** | **0.6076** | — |
 
-Trainiert auf 38.379 Matches, evaluiert auf 1.752 OOS Matches (nach 01.08.2023).
+Trainiert auf 139.691 Matches (18 Ligen), evaluiert auf 6.691 OOS Matches (nach 01.08.2023).
+Per-League-Kalibrierung: Platt + Isotonic Curves für jede Liga individuell.
 
 ## Qualität
 
 | Metrik | Wert |
 |--------|------|
 | Build | ✅ 0 Fehler, 19 Routen |
-| Tests | ✅ 23/23 (Engine + Zod) |
+| Tests | ✅ 49/49 (Engine + Poisson + Zod) |
 | TypeScript | Strict Types (TeamData, MatchCalc, Zod Runtime) |
 | Accessibility | WCAG 2.1 AA (ARIA, Focus, Landmarks) |
 | Security | HSTS, RLS, X-Frame-Options, Permissions-Policy |
