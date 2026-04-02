@@ -253,10 +253,42 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
 
   // motivationDiff removed — ppda + deep replace it as leakage-free features
 
-  // Season-level features (14-17) from model JSON lookup
+  // Season-level features (14-20) from model JSON lookup
   const season = input.season || "";
   const hSeason = getTeamSeasonFeatures(league, season, homeTeam);
   const aSeason = getTeamSeasonFeatures(league, season, awayTeam);
+
+  // ── 2b. Bayesian Shrinkage for season-level features (Spieltag 1-8) ──
+  // Early in the season, season-level aggregates are based on too few games.
+  // Shrink toward league-average defaults using n/(n+K) weighting.
+  // K=8: at matchday 8, season features have 50% weight; at matchday 1, ~11%.
+  const SEASON_SHRINKAGE_K = 8;
+  const matchdayEstimate = Math.min(hGames, aGames); // proxy for how far into season
+  const seasonWeight = matchdayEstimate / (matchdayEstimate + SEASON_SHRINKAGE_K);
+
+  // League-average defaults (fallback when no season data or early season)
+  const SEASON_DEFAULTS = {
+    setpiece_xg_share: 0.15,
+    late_game_xg_share: 0.20,
+    losing_state_xg_diff: 0.0,
+    top3_xgchain_share: 0.35,
+    shot_quality_avg: 0.12,
+    high_value_shot_share: 0.16,
+  };
+
+  // Shrink: value = default + weight × (observed - default)
+  const shrinkSeason = (observed: number | undefined, key: keyof typeof SEASON_DEFAULTS) => {
+    const def = SEASON_DEFAULTS[key];
+    if (observed == null) return def;
+    return def + seasonWeight * (observed - def);
+  };
+
+  // ── 2c. Absence/Rotation double-counting guard ──
+  // If post-inference absence correction will be applied (known absences),
+  // dampen Feature 18 (squad_rotation_rate_diff) to avoid counting the same
+  // "key player missing" signal twice — once in the tree, once post-inference.
+  const hasAbsenceData = !!(input.absences?.home?.length || input.absences?.away?.length);
+  const rotationDampener = hasAbsenceData ? 0.3 : 1.0; // 70% reduction when absences known
 
   const features = [
     hXGpg - aXGpg,          // 0: npxg_diff_ewma
@@ -273,13 +305,13 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     h2hDiff,                                                          // 11: h2h_npxg_diff
     ppdaRatioEwma(hHistory) - ppdaRatioEwma(aHistory),               // 12: ppda_ratio_diff
     deepCompletionsEwma(hHistory) - deepCompletionsEwma(aHistory),   // 13: deep_completions_diff
-    (hSeason?.setpiece_xg_share ?? 0.15) - (aSeason?.setpiece_xg_share ?? 0.15), // 14
-    (hSeason?.late_game_xg_share ?? 0.20) - (aSeason?.late_game_xg_share ?? 0.20), // 15
-    (hSeason?.losing_state_xg_diff ?? 0) - (aSeason?.losing_state_xg_diff ?? 0), // 16
-    (hSeason?.top3_xgchain_share ?? 0.35) - (aSeason?.top3_xgchain_share ?? 0.35), // 17
-    0, // 18: squad_rotation_rate_diff — runtime default (no roster data in browser)
-    (hSeason?.shot_quality_avg ?? 0.12) - (aSeason?.shot_quality_avg ?? 0.12), // 19: shot quality
-    (hSeason?.high_value_shot_share ?? 0.16) - (aSeason?.high_value_shot_share ?? 0.16), // 20: big chances
+    shrinkSeason(hSeason?.setpiece_xg_share, "setpiece_xg_share") - shrinkSeason(aSeason?.setpiece_xg_share, "setpiece_xg_share"), // 14
+    shrinkSeason(hSeason?.late_game_xg_share, "late_game_xg_share") - shrinkSeason(aSeason?.late_game_xg_share, "late_game_xg_share"), // 15
+    shrinkSeason(hSeason?.losing_state_xg_diff, "losing_state_xg_diff") - shrinkSeason(aSeason?.losing_state_xg_diff, "losing_state_xg_diff"), // 16
+    shrinkSeason(hSeason?.top3_xgchain_share, "top3_xgchain_share") - shrinkSeason(aSeason?.top3_xgchain_share, "top3_xgchain_share"), // 17
+    0 * rotationDampener, // 18: squad_rotation_rate_diff — dampened when absences known
+    shrinkSeason(hSeason?.shot_quality_avg, "shot_quality_avg") - shrinkSeason(aSeason?.shot_quality_avg, "shot_quality_avg"), // 19
+    shrinkSeason(hSeason?.high_value_shot_share, "high_value_shot_share") - shrinkSeason(aSeason?.high_value_shot_share, "high_value_shot_share"), // 20
   ];
 
   // ── 3. LightGBM Lambda Prediction ─────────────────────────────
