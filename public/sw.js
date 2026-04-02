@@ -1,14 +1,14 @@
-// FODZE Service Worker — Offline-First Caching
-const CACHE_NAME = "fodze-v1";
+// FODZE Service Worker — Network-First with Offline Fallback
+// Cache version bumped on every deploy to invalidate stale content
+const CACHE_NAME = "fodze-v3";
 const STATIC_ASSETS = [
   "/",
   "/icon-192.png",
   "/icon-512.png",
   "/manifest.json",
-  "/calibration_curves.json",
 ];
 
-// Install: cache static assets
+// Install: cache static shell, force activate immediately
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -16,7 +16,7 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: clean old caches
+// Activate: delete ALL old caches to force fresh content
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -26,40 +26,35 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API, cache-first for static
+// Fetch: NETWORK-FIRST for everything (fixes stale deploy issue)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests and Supabase API calls
+  // Skip non-GET requests and external API calls
   if (event.request.method !== "GET") return;
   if (url.hostname.includes("supabase")) return;
   if (url.pathname.startsWith("/api/")) return;
 
-  // Next.js data requests: network-first
-  if (url.pathname.includes("_next/data") || url.searchParams.has("_rsc")) {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    );
-    return;
-  }
-
-  // Static assets: cache-first
+  // Network-first: try network, fall back to cache for offline
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        // Cache successful responses for static assets
-        if (response.ok && (url.pathname.match(/\.(js|css|png|jpg|json|svg|woff2?)$/) || url.pathname === "/")) {
+    fetch(event.request)
+      .then((response) => {
+        // Cache successful responses for offline use
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => {
-        // Offline fallback for navigation
-        if (event.request.mode === "navigate") {
-          return caches.match("/");
-        }
-      });
-    })
+      })
+      .catch(() => {
+        // Offline: serve from cache
+        return caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          // Offline fallback for navigation
+          if (event.request.mode === "navigate") {
+            return caches.match("/");
+          }
+        });
+      })
   );
 });
