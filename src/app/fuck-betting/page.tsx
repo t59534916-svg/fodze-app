@@ -16,6 +16,7 @@ import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
 import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { resolveTeam } from "@/lib/team-resolver";
+import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import type { StandingsRow } from "@/lib/supabase";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
@@ -824,6 +825,7 @@ export default function FuckBettingPage() {
   const { supabase, leagueStatus } = useApp();
   const [allData, setAllData] = useState<{ league: string; data: MatchdayData }[]>([]);
   const [standings, setStandings] = useState<Map<string, StandingsRow[]>>(new Map());
+  const [sosMap, setSosMap] = useState<Map<string, SoSRatings>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // Load all leagues with data + enrich with xG history for @annafrick13 v2
@@ -862,15 +864,29 @@ export default function FuckBettingPage() {
       const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
       setAllData(validResults);
 
-      // Load standings for each league in parallel
+      // Load standings + SoS for each league in parallel
       const standingsMap = new Map<string, StandingsRow[]>();
+      const sosResults = new Map<string, SoSRatings>();
+      const { loadLeagueXGHistory } = await import("@/lib/supabase");
       await Promise.all(validResults.map(async ({ league }) => {
         if (!standingsMap.has(league)) {
           const rows = await loadLeagueStandings(supabase, league);
           standingsMap.set(league, rows);
         }
+        // SoS: load all league matches, compute opponent-quality ratings
+        if (!sosResults.has(league)) {
+          try {
+            const leagueXG = await loadLeagueXGHistory(supabase, league);
+            if (leagueXG.length > 0) {
+              const ld = LEAGUES[league] || LEAGUES.bundesliga;
+              const sosMatches = leagueXG.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
+              sosResults.set(league, computeSoSRatings(sosMatches, ld.avg));
+            }
+          } catch { /* SoS optional */ }
+        }
       }));
       setStandings(standingsMap);
+      setSosMap(sosResults);
       setLoading(false);
     })();
   }, [supabase, leagueStatus]);
@@ -943,6 +959,7 @@ export default function FuckBettingPage() {
         const hHist = h.xg_h_history;
         const aHist = a.xg_a_history;
         if (isLGBMModelLoaded() && hHist?.length && aHist?.length) {
+          const leagueSos = sosMap.get(league);
           const v2Result = calcMatchPoissonMLv2({
             xgHS: xgH8, xgaHC: xgaH8, hGames,
             xgAS: xgA8, xgaAC: xgaA8, aGames,
@@ -950,7 +967,8 @@ export default function FuckBettingPage() {
             tags: match.tags || [],
             hHistory: hHist, aHistory: aHist,
             homeTeam: h.name, awayTeam: a.name,
-            fraction: 0.25, // not used for report (no Kelly here)
+            fraction: 0.25,
+            sosRatings: leagueSos,
           });
           if (v2Result) {
             lambdaH = v2Result.lambdaH;
@@ -1148,7 +1166,7 @@ export default function FuckBettingPage() {
     });
 
     return result;
-  }, [allData, standings]);
+  }, [allData, standings, sosMap]);
 
   // Group by league, then by date within each league
   const groupedByLeague = useMemo(() => {
