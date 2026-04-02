@@ -33,6 +33,9 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 HISTORIE_DIR = os.path.join(PROJECT_ROOT, "Historie")
 NPXG_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "understat_npxg_matches.csv")
 FULL_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "understat_full_matches.csv")
+TACTICS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_tactics.csv")
+PLAYERS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_players.csv")
+ROSTER_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_match_rosters.csv")
 
 DIV_TO_LEAGUE = {"D1": "bundesliga", "E0": "epl", "SP1": "la_liga", "I1": "serie_a", "F1": "ligue_1"}
 LEAGUE_AVGS = {"bundesliga": 1.38, "epl": 1.35, "la_liga": 1.25, "serie_a": 1.32, "ligue_1": 1.30}
@@ -41,29 +44,33 @@ LEAGUE_HFS = {"bundesliga": 1.28, "epl": 1.22, "la_liga": 1.30, "serie_a": 1.27,
 OOT_CUTOFF = pd.Timestamp("2023-08-01")
 EWMA_ALPHA = 0.85
 
-# Feature names (14 total — v2.1 adds PPDA + Deep as rolling EWMAs)
+# Feature names (19 total — v2.1 adds tactics, players, roster features)
 FEATURE_NAMES = [
-    "npxg_diff_ewma",       # 0: EWMA npxG/g diff (SoS-proxied)
-    "npxga_diff_ewma",      # 1: EWMA npxGA/g diff
-    "elo_diff",             # 2: (Elo_H - Elo_A) / 400
-    "total_npxg",           # 3: EWMA npxG/g sum
-    "home_factor",          # 4: League/team HF
-    "league_avg",           # 5: League goals/game
-    "rest_days_diff",       # 6: (rest_H - rest_A) / 7
-    "sos_strength",         # 7: SoS diff (avg opp Elo)
-    "is_derby",             # 8: Binary
-    "npxg_momentum",        # 9: last_3_avg - season_avg
-    "npxg_volatility",      # 10: rolling_std(npxg_diff, 8)
-    "h2h_npxg_diff",        # 11: Last 5 H2H npxg differential
-    "ppda_ratio_diff",      # 12: EWMA(ppda_att/ppda_def) diff — pressing intensity
-    "deep_completions_diff", # 13: EWMA(deep - deep_allowed) diff — final-third quality
+    "npxg_diff_ewma",        # 0:  EWMA npxG/g diff (SoS-proxied)
+    "npxga_diff_ewma",       # 1:  EWMA npxGA/g diff
+    "elo_diff",              # 2:  (Elo_H - Elo_A) / 400
+    "total_npxg",            # 3:  EWMA npxG/g sum
+    "home_factor",           # 4:  League/team HF
+    "league_avg",            # 5:  League goals/game
+    "rest_days_diff",        # 6:  (rest_H - rest_A) / 7
+    "sos_strength",          # 7:  SoS diff (avg opp Elo)
+    "is_derby",              # 8:  Binary
+    "npxg_momentum",         # 9:  last_3_avg - season_avg
+    "npxg_volatility",       # 10: rolling_std(npxg_diff, 8)
+    "h2h_npxg_diff",         # 11: Last 5 H2H npxg differential
+    "ppda_ratio_diff",       # 12: EWMA(ppda_att/ppda_def) diff — pressing
+    "deep_completions_diff", # 13: EWMA(deep - deep_allowed) diff — final-third
+    "setpiece_xg_share_diff",# 14: SetPiece xG / Total xG diff (season-level)
+    "late_game_xg_share_diff", # 15: xG in 76+ min / Total xG diff (season-level)
+    "losing_state_xg_diff",  # 16: xG when losing - xGA when losing (season-level)
+    "top3_xgchain_share_diff", # 17: Top-3 player xG_chain share diff (season-level)
+    "squad_rotation_rate_diff", # 18: EWMA rotation rate diff (per-match)
 ]
 
 # Monotonic constraints: +1 = increasing, -1 = decreasing, 0 = none
-# PPDA ratio: 0 (ambiguous — high press can backfire)
-# Deep completions: +1/-1 (more deep = more goals)
-MONO_HOME = [+1, -1, +1, 0, +1, 0, +1, 0, 0, +1, 0, 0, 0, +1]
-MONO_AWAY = [-1, +1, -1, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1]
+# New features 14-18: all unconstrained (no clear monotonic relationship)
+MONO_HOME = [+1, -1, +1, 0, +1, 0, +1, 0, 0, +1, 0, 0, 0, +1, 0, 0, 0, 0, 0]
+MONO_AWAY = [-1, +1, -1, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 0]
 
 # ─── Derby pairs ────────────────────────────────────────────────
 DERBIES = {
@@ -172,6 +179,89 @@ def load_full_understat_data(full_csv_path):
     return lookup
 
 
+def load_tactics_data(tactics_csv_path):
+    """Load tactics data → season-level features per team.
+    Returns: {(league, season, team): {setpiece_xg_share, late_game_xg_share, losing_state_xg_diff}}
+    """
+    if not os.path.exists(tactics_csv_path):
+        return {}
+    df = pd.read_csv(tactics_csv_path)
+    result = {}
+
+    for (league, season, team), grp in df.groupby(["league", "season", "team"]):
+        key = (str(league), str(season), str(team))
+
+        # Total xG (from situation=OpenPlay + SetPiece + others)
+        sit = grp[grp["category"] == "situation"]
+        total_xg = sit["xg"].sum()
+        setpiece_xg = sit[sit["statistic"].isin(["SetPiece", "FromCorner", "DirectFreekick"])]["xg"].sum()
+        setpiece_share = setpiece_xg / max(total_xg, 0.1)
+
+        # Late game xG share (76+ minutes)
+        timing = grp[grp["category"] == "timing"]
+        total_timing_xg = timing["xg"].sum()
+        late_xg = timing[timing["statistic"] == "76+"]["xg"].sum()
+        late_share = late_xg / max(total_timing_xg, 0.1)
+
+        # Losing state performance
+        gs = grp[grp["category"] == "gameState"]
+        losing = gs[gs["statistic"].isin(["Goal diff -1", "Goal diff < -1"])]
+        losing_xg = losing["xg"].sum()
+        losing_xga = losing["xga"].sum()
+        losing_diff = losing_xg - losing_xga
+
+        result[key] = {
+            "setpiece_xg_share": round(setpiece_share, 4),
+            "late_game_xg_share": round(late_share, 4),
+            "losing_state_xg_diff": round(losing_diff, 4),
+        }
+
+    return result
+
+
+def load_players_data(players_csv_path):
+    """Load player data → top-3 xG chain share per team-season.
+    Returns: {(league, season, team): {top3_xgchain_share}}
+    """
+    if not os.path.exists(players_csv_path):
+        return {}
+    df = pd.read_csv(players_csv_path)
+    result = {}
+
+    for (league, season, team), grp in df.groupby(["league", "season", "team"]):
+        key = (str(league), str(season), str(team))
+        total_chain = grp["xg_chain"].sum()
+        top3_chain = grp.nlargest(3, "xg_chain")["xg_chain"].sum()
+        share = top3_chain / max(total_chain, 0.1)
+        result[key] = {"top3_xgchain_share": round(share, 4)}
+
+    return result
+
+
+def load_roster_rotation(roster_csv_path):
+    """Load roster data → per-match rotation rate.
+    Returns: {(date, team): rotation_rate} where rotation_rate = fraction of starters with < 45 min.
+    """
+    if not os.path.exists(roster_csv_path):
+        return {}
+    df = pd.read_csv(roster_csv_path)
+    result = {}
+
+    # Group by match and team side
+    for (match_id, h_a), grp in df.groupby(["match_id", "h_a"]):
+        team = grp.iloc[0]["home_team"] if h_a == "h" else grp.iloc[0]["away_team"]
+        date = str(grp.iloc[0]["date"])
+        # Count players who started (not subs) with < 45 min = rotated out early
+        starters = grp[grp["roster_in"] == 0]  # roster_in=0 means starter
+        if len(starters) == 0:
+            continue
+        short_minutes = (starters["time_minutes"] < 45).sum()
+        rotation_rate = short_minutes / len(starters)
+        result[(date, str(team))] = rotation_rate
+
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════
 # ELO RATINGS
 # ═══════════════════════════════════════════════════════════════════
@@ -254,7 +344,8 @@ def motivation_index(team, points_table, n_teams=18):
 # FEATURE ENGINEERING (13 features)
 # ═══════════════════════════════════════════════════════════════════
 
-def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_npxg=False):
+def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_npxg=False,
+                     tactics_data=None, players_data=None, roster_data=None):
     """Compute 14-feature vectors chronologically with strict shift(1)."""
     team_ewma = {}       # team -> {gf, ga}
     team_last_date = {}  # team -> last match date
@@ -264,6 +355,7 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
     h2h_history = defaultdict(list)  # frozenset(ht,at) -> list of (npxg_diff)
     team_ppda_ewma = {}  # team -> EWMA of ppda_att/ppda_def ratio
     team_deep_ewma = {}  # team -> EWMA of (deep - deep_allowed)
+    team_rotation_ewma = {}  # team -> EWMA of squad rotation rate
 
     features_per_match = []
 
@@ -360,6 +452,30 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
         a_deep_net = team_deep_ewma.get(at, 0.0)
         deep_completions_diff = h_deep_net - a_deep_net
 
+        # Features 14-17: Season-level tactics/players lookups
+        # Determine season from date (Aug-Jul = season year)
+        season_str = ""
+        if pd.notna(dt):
+            y = dt.year
+            m = dt.month
+            season_start = y if m >= 7 else y - 1
+            season_str = f"{season_start}/{str(season_start + 1)[-2:]}"
+
+        h_tact = tactics_data.get((lg, season_str, ht), {}) if tactics_data else {}
+        a_tact = tactics_data.get((lg, season_str, at), {}) if tactics_data else {}
+        h_play = players_data.get((lg, season_str, ht), {}) if players_data else {}
+        a_play = players_data.get((lg, season_str, at), {}) if players_data else {}
+
+        setpiece_diff = h_tact.get("setpiece_xg_share", 0.15) - a_tact.get("setpiece_xg_share", 0.15)
+        late_game_diff = h_tact.get("late_game_xg_share", 0.20) - a_tact.get("late_game_xg_share", 0.20)
+        losing_state_diff = h_tact.get("losing_state_xg_diff", 0.0) - a_tact.get("losing_state_xg_diff", 0.0)
+        top3_chain_diff = h_play.get("top3_xgchain_share", 0.35) - a_play.get("top3_xgchain_share", 0.35)
+
+        # Feature 18: Squad rotation rate EWMA (read BEFORE this match)
+        h_rotation = team_rotation_ewma.get(ht, 0.0)
+        a_rotation = team_rotation_ewma.get(at, 0.0)
+        rotation_diff = h_rotation - a_rotation
+
         features = [
             npxg_diff_ewma,       # 0
             npxga_diff_ewma,      # 1
@@ -375,6 +491,11 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
             h2h_diff,             # 11
             ppda_ratio_diff,      # 12
             deep_completions_diff, # 13
+            setpiece_diff,        # 14
+            late_game_diff,       # 15
+            losing_state_diff,    # 16
+            top3_chain_diff,      # 17
+            rotation_diff,        # 18
         ]
 
         features_per_match.append({
@@ -449,7 +570,15 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
         # H2H tracking (from home team perspective)
         h2h_history[pair_key].append(npxg_diff_this)
 
-        # (motivation_diff removed — leakage risk with reconstructed standings)
+        # Update rotation EWMA AFTER this match
+        if roster_data:
+            date_str_rot = dt.strftime("%Y-%m-%d") if pd.notna(dt) else ""
+            h_rot = roster_data.get((date_str_rot, ht), 0.0)
+            a_rot = roster_data.get((date_str_rot, at), 0.0)
+            prev_h_rot = team_rotation_ewma.get(ht, 0.0)
+            prev_a_rot = team_rotation_ewma.get(at, 0.0)
+            team_rotation_ewma[ht] = a_coef * h_rot + (1 - a_coef) * prev_h_rot
+            team_rotation_ewma[at] = a_coef * a_rot + (1 - a_coef) * prev_a_rot
 
     return features_per_match
 
@@ -584,6 +713,9 @@ def main():
     parser.add_argument("--no-optuna", action="store_true", help="Skip Optuna tuning")
     parser.add_argument("--use-npxg-csv", action="store_true", help="Use npxG CSV data")
     parser.add_argument("--use-full-csv", action="store_true", help="Use full Understat CSV (npxG + PPDA + deep)")
+    parser.add_argument("--use-tactics", action="store_true", help="Use tactics CSV (setpiece, timing, gameState)")
+    parser.add_argument("--use-players", action="store_true", help="Use players CSV (xG chain)")
+    parser.add_argument("--use-roster", action="store_true", help="Use roster CSV (rotation rate)")
     parser.add_argument("--n-trials", type=int, default=30, help="Optuna trials")
     args = parser.parse_args()
 
@@ -609,15 +741,30 @@ def main():
     else:
         print(f"  npxG: using goals-based EWMA (no npxG CSV)")
 
+    # Load new v2.1 data sources
+    tactics_data = {}
+    players_data = {}
+    roster_data = {}
+    if args.use_tactics:
+        tactics_data = load_tactics_data(TACTICS_CSV)
+        print(f"  Tactics data: {len(tactics_data)} team-season entries")
+    if args.use_players:
+        players_data = load_players_data(PLAYERS_CSV)
+        print(f"  Players data: {len(players_data)} team-season entries")
+    if args.use_roster:
+        roster_data = load_roster_rotation(ROSTER_CSV)
+        print(f"  Roster data: {len(roster_data)} match-team entries")
+
     # ─── 2. Elo Ratings ───
     print("\n═══ 2. ELO RATINGS ═══")
     elo = compute_elo(train_df)
     print(f"  {len(elo)} teams")
 
     # ─── 3. Feature Engineering ───
-    print("\n═══ 3. COMPUTING 13-FEATURE VECTORS ═══")
+    print(f"\n═══ 3. COMPUTING {len(FEATURE_NAMES)}-FEATURE VECTORS ═══")
     use_npxg = args.use_npxg_csv or args.use_full_csv
-    all_features = compute_features(csv_all, elo, npxg_lookup, full_lookup=full_lookup, use_npxg=use_npxg)
+    all_features = compute_features(csv_all, elo, npxg_lookup, full_lookup=full_lookup, use_npxg=use_npxg,
+                                    tactics_data=tactics_data, players_data=players_data, roster_data=roster_data)
     train_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] < OOT_CUTOFF]
     test_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] >= OOT_CUTOFF]
     print(f"  Train: {len(train_features)}, Test: {len(test_features)}")
@@ -783,6 +930,10 @@ def main():
         "rho_optimal": round(rho_opt, 4),
         "feature_names": FEATURE_NAMES,
         "golden_tests": golden,
+        "team_season_features": {
+            f"{k[0]}|{k[1]}|{k[2]}": {**v, **players_data.get(k, {})}
+            for k, v in tactics_data.items()
+        } if tactics_data else {},
         "meta": {
             "n_train": len(train_features),
             "n_test": len(test_features),
@@ -796,7 +947,10 @@ def main():
             "min_data_in_leaf": best.get("min_data_in_leaf", 50),
             "oot_cutoff": str(OOT_CUTOFF.date()),
             "npxg_used": args.use_npxg_csv or args.use_full_csv,
-        "full_understat_data": args.use_full_csv,
+            "full_understat_data": args.use_full_csv,
+            "tactics_used": args.use_tactics,
+            "players_used": args.use_players,
+            "roster_used": args.use_roster,
             "trained_at": pd.Timestamp.now().isoformat(),
         },
     }

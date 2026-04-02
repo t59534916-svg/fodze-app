@@ -31,6 +31,7 @@ interface LGBMModelV2 {
   rho_optimal: number;
   feature_names: string[];
   golden_tests: GoldenTest[];
+  team_season_features?: Record<string, Record<string, number>>;
   meta: Record<string, unknown>;
 }
 
@@ -128,7 +129,19 @@ export function getLGBMFeatureNames(): string[] {
 }
 
 /**
- * Predict lambdaH and lambdaA from a 13-feature vector.
+ * Get team season features for runtime lookup.
+ * Key format: "league|season|team" (e.g., "bundesliga|2024/25|Bayern Munich")
+ */
+export function getTeamSeasonFeatures(
+  league: string, season: string, team: string
+): Record<string, number> | null {
+  if (!model?.team_season_features) return null;
+  const key = `${league}|${season}|${team}`;
+  return model.team_season_features[key] ?? null;
+}
+
+/**
+ * Predict lambdaH and lambdaA from a feature vector.
  * Returns null if model not loaded or dimension mismatch.
  */
 export function lgbmPredict(

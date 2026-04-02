@@ -25,7 +25,7 @@ import {
 } from "./dixon-coles";
 import { getAlpha, type OverdispersionConfig } from "./neg-binomial";
 import { eloPrediction } from "./ensemble";
-import { lgbmPredict, getLGBMRho } from "./lgbm-runtime";
+import { lgbmPredict, getLGBMRho, getTeamSeasonFeatures } from "./lgbm-runtime";
 import { applySoSAdjustment, type SoSRatings } from "./sos";
 import { calcAbsenceImpact, type PlayerProfile } from "./player-impact";
 import { dualTrackCalibrate } from "./calibration";
@@ -163,6 +163,7 @@ export interface PoissonMLv2Input {
   hHistory?: XGHistoryEntry[];
   aHistory?: XGHistoryEntry[];
   homeTeam: string; awayTeam: string;
+  season?: string;
   odds?: Record<string, number>;
   sharpOdds?: { h: number | null; d: number | null; a: number | null };
   fraction: number;
@@ -252,6 +253,11 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
 
   // motivationDiff removed — ppda + deep replace it as leakage-free features
 
+  // Season-level features (14-17) from model JSON lookup
+  const season = input.season || "";
+  const hSeason = getTeamSeasonFeatures(league, season, homeTeam);
+  const aSeason = getTeamSeasonFeatures(league, season, awayTeam);
+
   const features = [
     hXGpg - aXGpg,          // 0: npxg_diff_ewma
     hXGApg - aXGApg,        // 1: npxga_diff_ewma
@@ -267,6 +273,11 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     h2hDiff,                                                          // 11: h2h_npxg_diff
     ppdaRatioEwma(hHistory) - ppdaRatioEwma(aHistory),               // 12: ppda_ratio_diff
     deepCompletionsEwma(hHistory) - deepCompletionsEwma(aHistory),   // 13: deep_completions_diff
+    (hSeason?.setpiece_xg_share ?? 0.15) - (aSeason?.setpiece_xg_share ?? 0.15), // 14
+    (hSeason?.late_game_xg_share ?? 0.20) - (aSeason?.late_game_xg_share ?? 0.20), // 15
+    (hSeason?.losing_state_xg_diff ?? 0) - (aSeason?.losing_state_xg_diff ?? 0), // 16
+    (hSeason?.top3_xgchain_share ?? 0.35) - (aSeason?.top3_xgchain_share ?? 0.35), // 17
+    0, // 18: squad_rotation_rate_diff — runtime default (no roster data in browser)
   ];
 
   // ── 3. LightGBM Lambda Prediction ─────────────────────────────

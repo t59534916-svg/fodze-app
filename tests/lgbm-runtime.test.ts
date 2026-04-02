@@ -197,6 +197,11 @@ describe("LightGBM Runtime", () => {
         0.3,   // h2h_npxg_diff
         1.5,   // ppda_ratio_diff (home presses harder)
         1.0,   // deep_completions_diff (home penetrates more)
+        0.05,  // setpiece_xg_share_diff
+        0.02,  // late_game_xg_share_diff
+        0.1,   // losing_state_xg_diff
+        -0.05, // top3_xgchain_share_diff
+        0.0,   // squad_rotation_rate_diff
       ];
       const features = baseFeatures.slice(0, nFeatures);
 
