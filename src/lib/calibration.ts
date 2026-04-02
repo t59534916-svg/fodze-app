@@ -74,6 +74,9 @@ let CALIBRATION_ACTIVE = true;
 let CALIBRATION_METHOD: "isotonic" | "platt" = "isotonic";
 let PLATT_PARAMS: Record<string, { a: number; b: number }> = {};
 
+// Per-league Platt params (loaded from retrained model)
+let LEAGUE_PLATT_PARAMS: Record<string, Record<string, { a: number; b: number }>> = {};
+
 // Per-league calibration curves (loaded from retrained model)
 let LEAGUE_CALIBRATION: Record<string, Record<string, number[]>> = {};
 
@@ -89,18 +92,35 @@ export function loadCalibrationCurves(curves: any): void {
   if (curves.method === "platt" && curves.platt_params) {
     CALIBRATION_METHOD = "platt";
     PLATT_PARAMS = curves.platt_params;
+    // Load per-league Platt params if available
+    if (curves.platt_params_league) {
+      LEAGUE_PLATT_PARAMS = curves.platt_params_league;
+    }
     CALIBRATION_ACTIVE = true;
     return;
   }
 
   // Isotonic fallback
   CALIBRATION_METHOD = "isotonic";
+  // Load global curves (support both flat and nested formats)
+  const globalCurves = curves.curves || curves;
   for (const key of ["H", "D", "A", "O25"]) {
     const globalKey = `CAL_${key}`;
-    if (curves[globalKey] && curves[globalKey].length === 101) CALIBRATION[key] = curves[globalKey];
-    else if (curves[key] && curves[key].length === 101) CALIBRATION[key] = curves[key];
+    if (globalCurves[globalKey] && globalCurves[globalKey].length === 101) CALIBRATION[key] = globalCurves[globalKey];
+    else if (globalCurves[key] && globalCurves[key].length === 101) CALIBRATION[key] = globalCurves[key];
   }
-  // Load per-league curves
+  // Load per-league curves (new format: league_curves.{league}.{market})
+  if (curves.league_curves) {
+    for (const [league, markets] of Object.entries(curves.league_curves)) {
+      if (!LEAGUE_CALIBRATION[league]) LEAGUE_CALIBRATION[league] = {};
+      for (const [market, arr] of Object.entries(markets as Record<string, unknown>)) {
+        if (Array.isArray(arr) && arr.length === 101) {
+          LEAGUE_CALIBRATION[league][market] = arr;
+        }
+      }
+    }
+  }
+  // Legacy format: CAL_H_bundesliga etc.
   for (const [key, arr] of Object.entries(curves)) {
     const match = key.match(/^CAL_(H|D|A|O25)_(.+)$/);
     if (match && Array.isArray(arr) && arr.length === 101) {
@@ -117,7 +137,8 @@ export function isCalibrationActive(): boolean { return CALIBRATION_ACTIVE; }
 export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", league?: string): number {
   // Platt scaling: calibrated_p = 1 / (1 + exp(a * logit(p) + b))
   if (CALIBRATION_METHOD === "platt") {
-    const params = PLATT_PARAMS[market];
+    // Per-league Platt params if available, fallback to global
+    const params = (league && LEAGUE_PLATT_PARAMS[league]?.[market]) || PLATT_PARAMS[market];
     if (!params) return rawP;
     const clipped = Math.max(rawP, 1e-6);
     const logit = Math.log(clipped / Math.max(1 - clipped, 1e-6));
@@ -151,10 +172,10 @@ export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", lea
   return cal;
 }
 
-export function calibrate1X2(rawH: number, rawD: number, rawA: number): { H: number; D: number; A: number } {
-  let calH = calibrateProb(rawH, "H");
-  let calD = calibrateProb(rawD, "D");
-  let calA = calibrateProb(rawA, "A");
+export function calibrate1X2(rawH: number, rawD: number, rawA: number, league?: string): { H: number; D: number; A: number } {
+  let calH = calibrateProb(rawH, "H", league);
+  let calD = calibrateProb(rawD, "D", league);
+  let calA = calibrateProb(rawA, "A", league);
   // First renormalization
   let sum = calH + calD + calA;
   if (sum > 0) { calH /= sum; calD /= sum; calA /= sum; }
@@ -170,8 +191,8 @@ export function calibrate1X2(rawH: number, rawD: number, rawA: number): { H: num
   return { H: calH, D: calD, A: calA };
 }
 
-export function calibrateOU25(rawO25: number): { O25: number; U25: number } {
-  const calO25 = calibrateProb(rawO25, "O25");
+export function calibrateOU25(rawO25: number, league?: string): { O25: number; U25: number } {
+  const calO25 = calibrateProb(rawO25, "O25", league);
   return { O25: calO25, U25: 1 - calO25 };
 }
 
@@ -204,6 +225,6 @@ export function dualTrackCalibrate(
     return { trackA, trackB: { ...trackA } };
   }
 
-  const trackB = calibrate1X2(rawH, rawD, rawA);
+  const trackB = calibrate1X2(rawH, rawD, rawA, league);
   return { trackA, trackB };
 }

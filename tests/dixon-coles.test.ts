@@ -9,8 +9,8 @@ import {
 } from "@/lib/dixon-coles";
 
 describe("LEAGUES", () => {
-  it("has 11 leagues defined", () => {
-    expect(Object.keys(LEAGUES).length).toBe(11);
+  it("has 21 leagues defined", () => {
+    expect(Object.keys(LEAGUES).length).toBe(21);
   });
 
   it("each league has name, hf, avg", () => {

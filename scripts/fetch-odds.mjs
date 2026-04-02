@@ -34,6 +34,18 @@ const LEAGUE_MAP = {
   championship: "soccer_efl_champ",
   cl:           "soccer_uefa_champs_league",
   el:           "soccer_uefa_europa_league",
+  // Tier 1
+  primeira_liga: "soccer_portugal_primeira_liga",
+  jupiler_pro:   "soccer_belgium_first_div",
+  super_lig:     "soccer_turkey_super_league",
+  la_liga2:      "soccer_spain_segunda_division",
+  serie_b:       "soccer_italy_serie_b",
+  ligue_2:       "soccer_france_ligue_two",
+  // Tier 2
+  scottish_prem: "soccer_spl",
+  greek_sl:      "soccer_greece_super_league",
+  league_one:    "soccer_england_league1",
+  league_two:    "soccer_england_league2",
 };
 
 // Sharp bookmakers (closest to true probability)

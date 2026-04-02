@@ -24,6 +24,18 @@ export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> 
   liga3:         { name: "3. Liga",           hf: 1.22, avg: 1.40 },
   cl:            { name: "Champions League",  hf: 1.15, avg: 1.28 },
   el:            { name: "Europa League",     hf: 1.15, avg: 1.25 },
+  // Tier 1 — Neue Ligen
+  primeira_liga: { name: "Primeira Liga",     hf: 1.20, avg: 1.28 },
+  jupiler_pro:   { name: "Jupiler Pro League",hf: 1.37, avg: 1.38 },
+  super_lig:     { name: "Süper Lig",         hf: 1.31, avg: 1.47 },
+  la_liga2:      { name: "La Liga 2",         hf: 1.34, avg: 1.27 },
+  serie_b:       { name: "Serie B",           hf: 1.22, avg: 1.23 },
+  ligue_2:       { name: "Ligue 2",           hf: 1.41, avg: 1.29 },
+  // Tier 2 — Kleinere Märkte
+  scottish_prem: { name: "Scottish Premiership", hf: 1.34, avg: 1.48 },
+  greek_sl:      { name: "Super League Greece",  hf: 1.11, avg: 1.22 },
+  league_one:    { name: "League One",        hf: 1.19, avg: 1.29 },
+  league_two:    { name: "League Two",        hf: 1.22, avg: 1.25 },
 };
 
 // ─── Team-spezifische Heimfaktoren (3. Liga) ──────────────────────
@@ -880,7 +892,8 @@ export interface EnhancedBetCalc extends BetCalc {
 export function calculateBetsEnhanced(
   mk:Markets,mk_low:Markets,mk_high:Markets,
   odds:Record<string,number>,fraction:number,
-  pinnacleOdds?:PinnacleOdds,anchorConfig?:Partial<AnchorConfig>
+  pinnacleOdds?:PinnacleOdds,anchorConfig?:Partial<AnchorConfig>,
+  league?:string
 ):EnhancedBetCalc[] {
   const has1X2=odds.h>0&&odds.d>0&&odds.a>0;
   const vig=has1X2?vigAdjustBest([odds.h,odds.d,odds.a]):null;
@@ -888,12 +901,12 @@ export function calculateBetsEnhanced(
   // ── Isotonic Calibration (if curves are loaded) ──
   // Calibrate H/D/A independently, then renormalize to sum=1.0
   // This prevents false edges from overconfidence (Gemini review, March 2026)
-  const cal = calibrate1X2(mk.H, mk.D, mk.A);
-  const calO25 = calibrateOU25(mk.O25);
+  const cal = calibrate1X2(mk.H, mk.D, mk.A, league);
+  const calO25 = calibrateOU25(mk.O25, league);
 
   // Also calibrate CI bounds for consistent confidence assessment
-  const calLow = calibrate1X2(mk_low.H, mk_low.D, mk_low.A);
-  const calHigh = calibrate1X2(mk_high.H, mk_high.D, mk_high.A);
+  const calLow = calibrate1X2(mk_low.H, mk_low.D, mk_low.A, league);
+  const calHigh = calibrate1X2(mk_high.H, mk_high.D, mk_high.A, league);
 
   // Map: raw model values for display, calibrated for edge/kelly
   const calMap: Record<string, number> = {

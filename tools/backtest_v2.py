@@ -23,11 +23,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.join(SCRIPT_DIR, "..")
 sys.path.insert(0, SCRIPT_DIR)
 
-# ─── Monkey-patch retrain_v2 for D2 BEFORE importing ───────────
+# ─── Import retrain_v2 (all 18 leagues now included) ───────────
 import retrain_v2
-retrain_v2.DIV_TO_LEAGUE["D2"] = "bundesliga2"
-retrain_v2.LEAGUE_AVGS["bundesliga2"] = 1.29
-retrain_v2.LEAGUE_HFS["bundesliga2"] = 1.26
 
 from retrain_v2 import (
     load_csv_data, load_full_understat_data, load_tactics_data,

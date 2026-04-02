@@ -53,6 +53,11 @@ const VALID_LEAGUES = [
   'epl', 'la_liga', 'serie_a', 'ligue_1',
   'championship', 'eredivisie',
   'cl', 'el', 'pokal',
+  // Tier 1
+  'primeira_liga', 'jupiler_pro', 'super_lig',
+  'la_liga2', 'serie_b', 'ligue_2',
+  // Tier 2
+  'scottish_prem', 'greek_sl', 'league_one', 'league_two',
 ];
 
 // ─── Parse CLI Args ──────────────────────────────────────────────────

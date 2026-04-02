@@ -25,9 +25,30 @@ from scipy.optimize import minimize
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 HISTORIE_DIR = os.path.join(PROJECT_ROOT, "Historie")
 
-DIV_TO_LEAGUE = {"D1": "bundesliga", "E0": "epl", "SP1": "la_liga", "I1": "serie_a", "F1": "ligue_1"}
-LEAGUE_AVGS = {"bundesliga": 1.38, "epl": 1.35, "la_liga": 1.25, "serie_a": 1.32, "ligue_1": 1.30}
-LEAGUE_HFS = {"bundesliga": 1.28, "epl": 1.22, "la_liga": 1.30, "serie_a": 1.27, "ligue_1": 1.32}
+DIV_TO_LEAGUE = {
+    "D1": "bundesliga", "D2": "bundesliga2",
+    "E0": "epl", "E1": "championship", "E2": "league_one", "E3": "league_two",
+    "SP1": "la_liga", "SP2": "la_liga2",
+    "I1": "serie_a", "I2": "serie_b",
+    "F1": "ligue_1", "F2": "ligue_2",
+    "N1": "eredivisie",
+    "B1": "jupiler_pro", "P1": "primeira_liga", "T1": "super_lig",
+    "SC0": "scottish_prem", "G1": "greek_sl",
+}
+LEAGUE_AVGS = {
+    "bundesliga": 1.38, "bundesliga2": 1.51, "epl": 1.35, "championship": 1.23,
+    "league_one": 1.29, "league_two": 1.25, "la_liga": 1.25, "la_liga2": 1.27,
+    "serie_a": 1.32, "serie_b": 1.23, "ligue_1": 1.30, "ligue_2": 1.29,
+    "eredivisie": 1.49, "jupiler_pro": 1.38, "primeira_liga": 1.28,
+    "super_lig": 1.47, "scottish_prem": 1.48, "greek_sl": 1.22,
+}
+LEAGUE_HFS = {
+    "bundesliga": 1.28, "bundesliga2": 1.18, "epl": 1.22, "championship": 1.41,
+    "league_one": 1.19, "league_two": 1.22, "la_liga": 1.30, "la_liga2": 1.34,
+    "serie_a": 1.27, "serie_b": 1.22, "ligue_1": 1.32, "ligue_2": 1.41,
+    "eredivisie": 1.31, "jupiler_pro": 1.37, "primeira_liga": 1.20,
+    "super_lig": 1.31, "scottish_prem": 1.34, "greek_sl": 1.11,
+}
 
 # ═══ GLOBAL OOT CUTOFF ═══
 OOT_CUTOFF = pd.Timestamp("2023-08-01")
@@ -264,6 +285,11 @@ def dc_probs(lam_h, lam_a, rho=-0.05):
 dc_train_H, dc_train_D, dc_train_A, dc_train_O25 = [], [], [], []
 act_train_H, act_train_D, act_train_A, act_train_O25 = [], [], [], []
 
+# Per-league data for per-league Platt calibration
+from collections import defaultdict
+league_train_data = defaultdict(lambda: {"H": [], "D": [], "A": [], "O25": [],
+                                          "act_H": [], "act_D": [], "act_A": [], "act_O25": []})
+
 for f in train_features:
     lg = f["league"]
     if lg not in LEAGUE_AVGS: continue
@@ -276,10 +302,15 @@ for f in train_features:
     H, D, A, O25 = dc_probs(lam_h, lam_a)
     dc_train_H.append(H); dc_train_D.append(D); dc_train_A.append(A); dc_train_O25.append(O25)
     gf, ga = f["gf"], f["ga"]
-    act_train_H.append(1 if gf > ga else 0)
-    act_train_D.append(1 if gf == ga else 0)
-    act_train_A.append(1 if gf < ga else 0)
-    act_train_O25.append(1 if gf + ga > 2 else 0)
+    aH = 1 if gf > ga else 0
+    aD = 1 if gf == ga else 0
+    aA = 1 if gf < ga else 0
+    aO = 1 if gf + ga > 2 else 0
+    act_train_H.append(aH); act_train_D.append(aD); act_train_A.append(aA); act_train_O25.append(aO)
+    # Per-league accumulation
+    ld = league_train_data[lg]
+    ld["H"].append(H); ld["D"].append(D); ld["A"].append(A); ld["O25"].append(O25)
+    ld["act_H"].append(aH); ld["act_D"].append(aD); ld["act_A"].append(aA); ld["act_O25"].append(aO)
 
 # Fit Platt scaling on TRAIN predictions
 def fit_platt(probs, actuals):
@@ -296,7 +327,28 @@ platt_params = {
     "O25": fit_platt(dc_train_O25, act_train_O25),
 }
 
-print(f"  Platt params: {platt_params}")
+print(f"  Platt params (global): {platt_params}")
+
+# Per-league Platt calibration (min 500 matches for stability)
+MIN_LEAGUE_MATCHES_PLATT = 500
+platt_params_league = {}
+for lg, ld in sorted(league_train_data.items()):
+    n = len(ld["H"])
+    if n < MIN_LEAGUE_MATCHES_PLATT:
+        continue
+    try:
+        lp = {
+            "H": fit_platt(ld["H"], ld["act_H"]),
+            "D": fit_platt(ld["D"], ld["act_D"]),
+            "A": fit_platt(ld["A"], ld["act_A"]),
+            "O25": fit_platt(ld["O25"], ld["act_O25"]),
+        }
+        platt_params_league[lg] = lp
+        print(f"  {lg:20s} ({n:5d} matches): H.a={lp['H']['a']:+.4f} D.a={lp['D']['a']:+.4f} A.a={lp['A']['a']:+.4f}")
+    except Exception as e:
+        print(f"  {lg:20s} ({n:5d} matches): FAILED — {e}")
+
+print(f"  Per-league Platt: {len(platt_params_league)} leagues (min {MIN_LEAGUE_MATCHES_PLATT} matches)")
 
 # Evaluate on TEST set
 dc_test_preds, act_test = [], []
@@ -494,9 +546,12 @@ print("\n═══ 6. EXPORTING ═══")
 
 # Calibration
 cal_output = os.path.join(PROJECT_ROOT, "public", "calibration_curves.json")
+cal_data = {"method": "platt", "platt_params": platt_params}
+if platt_params_league:
+    cal_data["platt_params_league"] = platt_params_league
 with open(cal_output, "w") as f:
-    json.dump({"method": "platt", "platt_params": platt_params}, f)
-print(f"  ✅ {cal_output}")
+    json.dump(cal_data, f)
+print(f"  ✅ {cal_output} (global + {len(platt_params_league)} leagues)")
 
 # Ensemble model
 ens_output = os.path.join(PROJECT_ROOT, "public", "ensemble-model.json")

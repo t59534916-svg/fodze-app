@@ -274,7 +274,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       { league }  // enables NegBin overdispersion + dynamic rho
     );
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
-    const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac);
+    const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
     const topScores: { s: string; p: number }[] = [];
     if (enh.matrix) {
       for (let i = 0; i <= 5; i++)
@@ -302,7 +302,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const ensembleMk = { ...enh.mk, H: ensemble.H, D: ensemble.D, A: ensemble.A, O25: ensemble.O25 };
 
     // Recalculate bets with ensemble probabilities
-    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac);
+    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
 
     return {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,

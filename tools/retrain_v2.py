@@ -38,9 +38,30 @@ PLAYERS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "und
 ROSTER_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_match_rosters.csv")
 SHOTS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_match_shots.csv")
 
-DIV_TO_LEAGUE = {"D1": "bundesliga", "E0": "epl", "SP1": "la_liga", "I1": "serie_a", "F1": "ligue_1"}
-LEAGUE_AVGS = {"bundesliga": 1.38, "epl": 1.35, "la_liga": 1.25, "serie_a": 1.32, "ligue_1": 1.30}
-LEAGUE_HFS = {"bundesliga": 1.28, "epl": 1.22, "la_liga": 1.30, "serie_a": 1.27, "ligue_1": 1.32}
+DIV_TO_LEAGUE = {
+    "D1": "bundesliga", "D2": "bundesliga2",
+    "E0": "epl", "E1": "championship", "E2": "league_one", "E3": "league_two",
+    "SP1": "la_liga", "SP2": "la_liga2",
+    "I1": "serie_a", "I2": "serie_b",
+    "F1": "ligue_1", "F2": "ligue_2",
+    "N1": "eredivisie",
+    "B1": "jupiler_pro", "P1": "primeira_liga", "T1": "super_lig",
+    "SC0": "scottish_prem", "G1": "greek_sl",
+}
+LEAGUE_AVGS = {
+    "bundesliga": 1.38, "bundesliga2": 1.51, "epl": 1.35, "championship": 1.23,
+    "league_one": 1.29, "league_two": 1.25, "la_liga": 1.25, "la_liga2": 1.27,
+    "serie_a": 1.32, "serie_b": 1.23, "ligue_1": 1.30, "ligue_2": 1.29,
+    "eredivisie": 1.49, "jupiler_pro": 1.38, "primeira_liga": 1.28,
+    "super_lig": 1.47, "scottish_prem": 1.48, "greek_sl": 1.22,
+}
+LEAGUE_HFS = {
+    "bundesliga": 1.28, "bundesliga2": 1.18, "epl": 1.22, "championship": 1.41,
+    "league_one": 1.19, "league_two": 1.22, "la_liga": 1.30, "la_liga2": 1.34,
+    "serie_a": 1.27, "serie_b": 1.22, "ligue_1": 1.32, "ligue_2": 1.41,
+    "eredivisie": 1.31, "jupiler_pro": 1.37, "primeira_liga": 1.20,
+    "super_lig": 1.31, "scottish_prem": 1.34, "greek_sl": 1.11,
+}
 
 OOT_CUTOFF = pd.Timestamp("2023-08-01")
 EWMA_ALPHA = 0.85
