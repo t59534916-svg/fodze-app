@@ -225,24 +225,10 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     ? (hXGpg - hEwmaRaw.xgPg) - (aXGpg - aEwmaRaw.xgPg)
     : 0;
 
-  // ── 1d. Player Absences ────────────────────────────────────────
-  let absenceApplied = false;
-  if (input.absences) {
-    if (input.absences.home.length > 0) {
-      const hImpact = calcAbsenceImpact(input.absences.home, hXGpg);
-      hXGpg *= hImpact.lambdaAttackMult;
-      aXGpg *= hImpact.lambdaDefenseMult;
-      absenceApplied = true;
-    }
-    if (input.absences.away.length > 0) {
-      const aImpact = calcAbsenceImpact(input.absences.away, aXGpg);
-      aXGpg *= aImpact.lambdaAttackMult;
-      hXGpg *= aImpact.lambdaDefenseMult;
-      absenceApplied = true;
-    }
-  }
+  // NOTE: Player absences moved to post-inference (after LightGBM prediction)
+  // to avoid train/serve skew. Features must match training distribution.
 
-  // ── 1e. Rest Days ─────────────────────────────────────────────
+  // ── 1d. Rest Days ─────────────────────────────────────────────
   const restDaysHome = computeRestDays(hHistory);
   const restDaysAway = computeRestDays(aHistory);
   const restDaysDiff = (restDaysHome - restDaysAway) / 7;
@@ -302,6 +288,25 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     lambdaA = leagueAvg + sA * (lambdaA_raw - leagueAvg);
   }
 
+  // ── 4b. Player Absences (post-inference) ────────────────────
+  // Applied AFTER LightGBM to avoid train/serve skew.
+  // The model sees in-distribution features; absences scale the output lambdas.
+  let absenceApplied = false;
+  if (input.absences) {
+    if (input.absences.home.length > 0) {
+      const hImpact = calcAbsenceImpact(input.absences.home, lambdaH);
+      lambdaH *= hImpact.lambdaAttackMult;
+      lambdaA *= hImpact.lambdaDefenseMult;
+      absenceApplied = true;
+    }
+    if (input.absences.away.length > 0) {
+      const aImpact = calcAbsenceImpact(input.absences.away, lambdaA);
+      lambdaA *= aImpact.lambdaAttackMult;
+      lambdaH *= aImpact.lambdaDefenseMult;
+      absenceApplied = true;
+    }
+  }
+
   // ── 5. Build matrix with optimized rho ────────────────────────
   const effectiveRho = getLGBMRho();
 
@@ -332,43 +337,21 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   const N_BOOT = 200;
   const bootH: number[] = [], bootD: number[] = [], bootA: number[] = [], bootO25: number[] = [];
 
-  if (hHistory.length >= 4 && aHistory.length >= 4) {
-    for (let b = 0; b < N_BOOT; b++) {
-      const hSample = Array.from({ length: hHistory.length }, () =>
-        hHistory[Math.floor(Math.random() * hHistory.length)]);
-      const aSample = Array.from({ length: aHistory.length }, () =>
-        aHistory[Math.floor(Math.random() * aHistory.length)]);
-
-      const bH = npxgPerGame(hSample);
-      const bA = npxgPerGame(aSample);
-
-      const bFeatures = [
-        bH.npxgPg - bA.npxgPg, bH.npxgaPg - bA.npxgaPg, eloDiffApprox,
-        bH.npxgPg + bA.npxgPg, homeFactor, leagueAvg,
-        restDaysDiff, sosStrength, isDerby,
-        momentumDiff, volatility, h2hDiff,
-        ppdaRatioEwma(hSample) - ppdaRatioEwma(aSample),
-        deepCompletionsEwma(hSample) - deepCompletionsEwma(aSample),
-      ];
-      const bML = lgbmPredict(bFeatures);
-      if (!bML) continue;
-
-      const bMatrix = buildMatrix(bML.lambdaH, bML.lambdaA, effectiveRho, alphaUsed);
-      const bMk = deriveAllMarkets(bMatrix);
-
-      bootH.push(bMk.H);
-      bootD.push(bMk.D);
-      bootA.push(bMk.A);
-      bootO25.push(bMk.O25);
-    }
-  } else {
-    for (let b = 0; b < N_BOOT; b++) {
-      const noise = () => 1 + (Math.random() - 0.5) * 0.2;
-      bootH.push(mk.H * noise());
-      bootD.push(mk.D * noise());
-      bootA.push(mk.A * noise());
-      bootO25.push(mk.O25 * noise());
-    }
+  // Parametric bootstrap: add Gaussian noise proportional to team volatility.
+  // This preserves EWMA chronology (no array shuffling) while reflecting
+  // each team's consistency. Volatile teams → wider CI, consistent → tighter.
+  // Irwin-Hall approximation: sum of 3 uniforms ≈ N(1.5, √0.25) → scaled to N(0, σ)
+  for (let b = 0; b < N_BOOT; b++) {
+    const noiseScale = 0.5; // dampening factor
+    const gaussApprox = () => (Math.random() + Math.random() + Math.random() - 1.5);
+    const bLH = Math.max(0.3, Math.min(4.5, lambdaH * (1 + gaussApprox() * hVol * noiseScale)));
+    const bLA = Math.max(0.3, Math.min(4.5, lambdaA * (1 + gaussApprox() * aVol * noiseScale)));
+    const bMatrix = buildMatrix(bLH, bLA, effectiveRho, alphaUsed);
+    const bMk = deriveAllMarkets(bMatrix);
+    bootH.push(bMk.H);
+    bootD.push(bMk.D);
+    bootA.push(bMk.A);
+    bootO25.push(bMk.O25);
   }
 
   bootH.sort((a, b) => a - b);
