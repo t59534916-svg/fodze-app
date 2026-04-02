@@ -36,6 +36,7 @@ FULL_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "understat_f
 TACTICS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_tactics.csv")
 PLAYERS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_players.csv")
 ROSTER_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_match_rosters.csv")
+SHOTS_CSV = os.path.join(PROJECT_ROOT, "backups", "understat-2026-03-30", "understat_match_shots.csv")
 
 DIV_TO_LEAGUE = {"D1": "bundesliga", "E0": "epl", "SP1": "la_liga", "I1": "serie_a", "F1": "ligue_1"}
 LEAGUE_AVGS = {"bundesliga": 1.38, "epl": 1.35, "la_liga": 1.25, "serie_a": 1.32, "ligue_1": 1.30}
@@ -65,12 +66,15 @@ FEATURE_NAMES = [
     "losing_state_xg_diff",  # 16: xG when losing - xGA when losing (season-level)
     "top3_xgchain_share_diff", # 17: Top-3 player xG_chain share diff (season-level)
     "squad_rotation_rate_diff", # 18: EWMA rotation rate diff (per-match)
+    "shot_quality_diff",        # 19: avg xGoals per shot diff (season-level, dominance)
+    "high_value_shot_share_diff", # 20: % of shots with xGoals >= 0.15 diff (season-level)
 ]
 
 # Monotonic constraints: +1 = increasing, -1 = decreasing, 0 = none
-# New features 14-18: all unconstrained (no clear monotonic relationship)
-MONO_HOME = [+1, -1, +1, 0, +1, 0, +1, 0, 0, +1, 0, 0, 0, +1, 0, 0, 0, 0, 0]
-MONO_AWAY = [-1, +1, -1, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 0]
+# shot_quality: +1/-1 (higher quality shots → more goals)
+# high_value_share: +1/-1 (more big chances → more goals)
+MONO_HOME = [+1, -1, +1, 0, +1, 0, +1, 0, 0, +1, 0, 0, 0, +1, 0, 0, 0, 0, 0, +1, +1]
+MONO_AWAY = [-1, +1, -1, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1, -1]
 
 # ─── Derby pairs ────────────────────────────────────────────────
 DERBIES = {
@@ -262,6 +266,36 @@ def load_roster_rotation(roster_csv_path):
     return result
 
 
+def load_shots_data(shots_csv_path):
+    """Load shot-level data → season-level shot quality per team.
+    Returns: {(league, season, team): {shot_quality_avg, high_value_shot_share}}
+    shot_quality_avg = avg xG per shot (higher = better chance creation)
+    high_value_shot_share = fraction of shots with xG >= 0.15 (big chances)
+    """
+    if not os.path.exists(shots_csv_path):
+        return {}
+    df = pd.read_csv(shots_csv_path, usecols=["league", "season", "home_team", "away_team", "h_a", "xg"])
+    df["xg"] = pd.to_numeric(df["xg"], errors="coerce").fillna(0)
+    result = {}
+
+    # Determine team from h_a + home_team/away_team
+    df["team"] = df.apply(lambda r: r["home_team"] if r["h_a"] == "h" else r["away_team"], axis=1)
+
+    for (league, season, team), grp in df.groupby(["league", "season", "team"]):
+        key = (str(league), str(season), str(team))
+        n_shots = len(grp)
+        if n_shots == 0:
+            continue
+        avg_xg = grp["xg"].mean()
+        high_value = (grp["xg"] >= 0.15).sum() / n_shots
+        result[key] = {
+            "shot_quality_avg": round(avg_xg, 5),
+            "high_value_shot_share": round(high_value, 4),
+        }
+
+    return result
+
+
 # ═══════════════════════════════════════════════════════════════════
 # ELO RATINGS
 # ═══════════════════════════════════════════════════════════════════
@@ -345,7 +379,7 @@ def motivation_index(team, points_table, n_teams=18):
 # ═══════════════════════════════════════════════════════════════════
 
 def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_npxg=False,
-                     tactics_data=None, players_data=None, roster_data=None):
+                     tactics_data=None, players_data=None, roster_data=None, shots_data=None):
     """Compute 14-feature vectors chronologically with strict shift(1)."""
     team_ewma = {}       # team -> {gf, ga}
     team_last_date = {}  # team -> last match date
@@ -465,6 +499,8 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
         a_tact = tactics_data.get((lg, season_str, at), {}) if tactics_data else {}
         h_play = players_data.get((lg, season_str, ht), {}) if players_data else {}
         a_play = players_data.get((lg, season_str, at), {}) if players_data else {}
+        h_shots = shots_data.get((lg, season_str, ht), {}) if shots_data else {}
+        a_shots = shots_data.get((lg, season_str, at), {}) if shots_data else {}
 
         setpiece_diff = h_tact.get("setpiece_xg_share", 0.15) - a_tact.get("setpiece_xg_share", 0.15)
         late_game_diff = h_tact.get("late_game_xg_share", 0.20) - a_tact.get("late_game_xg_share", 0.20)
@@ -496,6 +532,8 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
             losing_state_diff,    # 16
             top3_chain_diff,      # 17
             rotation_diff,        # 18
+            h_shots.get("shot_quality_avg", 0.12) - a_shots.get("shot_quality_avg", 0.12),  # 19
+            h_shots.get("high_value_shot_share", 0.16) - a_shots.get("high_value_shot_share", 0.16),  # 20
         ]
 
         features_per_match.append({
@@ -716,6 +754,7 @@ def main():
     parser.add_argument("--use-tactics", action="store_true", help="Use tactics CSV (setpiece, timing, gameState)")
     parser.add_argument("--use-players", action="store_true", help="Use players CSV (xG chain)")
     parser.add_argument("--use-roster", action="store_true", help="Use roster CSV (rotation rate)")
+    parser.add_argument("--use-shots", action="store_true", help="Use shots CSV (shot quality + dominance)")
     parser.add_argument("--n-trials", type=int, default=30, help="Optuna trials")
     args = parser.parse_args()
 
@@ -754,6 +793,10 @@ def main():
     if args.use_roster:
         roster_data = load_roster_rotation(ROSTER_CSV)
         print(f"  Roster data: {len(roster_data)} match-team entries")
+    shots_data = {}
+    if args.use_shots:
+        shots_data = load_shots_data(SHOTS_CSV)
+        print(f"  Shots data: {len(shots_data)} team-season entries")
 
     # ─── 2. Elo Ratings ───
     print("\n═══ 2. ELO RATINGS ═══")
@@ -764,7 +807,8 @@ def main():
     print(f"\n═══ 3. COMPUTING {len(FEATURE_NAMES)}-FEATURE VECTORS ═══")
     use_npxg = args.use_npxg_csv or args.use_full_csv
     all_features = compute_features(csv_all, elo, npxg_lookup, full_lookup=full_lookup, use_npxg=use_npxg,
-                                    tactics_data=tactics_data, players_data=players_data, roster_data=roster_data)
+                                    tactics_data=tactics_data, players_data=players_data, roster_data=roster_data,
+                                    shots_data=shots_data)
     train_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] < OOT_CUTOFF]
     test_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] >= OOT_CUTOFF]
     print(f"  Train: {len(train_features)}, Test: {len(test_features)}")
@@ -931,7 +975,7 @@ def main():
         "feature_names": FEATURE_NAMES,
         "golden_tests": golden,
         "team_season_features": {
-            f"{k[0]}|{k[1]}|{k[2]}": {**v, **players_data.get(k, {})}
+            f"{k[0]}|{k[1]}|{k[2]}": {**v, **players_data.get(k, {}), **shots_data.get(k, {})}
             for k, v in tactics_data.items()
         } if tactics_data else {},
         "meta": {
@@ -951,6 +995,7 @@ def main():
             "tactics_used": args.use_tactics,
             "players_used": args.use_players,
             "roster_used": args.use_roster,
+            "shots_used": args.use_shots,
             "trained_at": pd.Timestamp.now().isoformat(),
         },
     }

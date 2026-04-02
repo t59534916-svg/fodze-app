@@ -278,6 +278,8 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     (hSeason?.losing_state_xg_diff ?? 0) - (aSeason?.losing_state_xg_diff ?? 0), // 16
     (hSeason?.top3_xgchain_share ?? 0.35) - (aSeason?.top3_xgchain_share ?? 0.35), // 17
     0, // 18: squad_rotation_rate_diff — runtime default (no roster data in browser)
+    (hSeason?.shot_quality_avg ?? 0.12) - (aSeason?.shot_quality_avg ?? 0.12), // 19: shot quality
+    (hSeason?.high_value_shot_share ?? 0.16) - (aSeason?.high_value_shot_share ?? 0.16), // 20: big chances
   ];
 
   // ── 3. LightGBM Lambda Prediction ─────────────────────────────

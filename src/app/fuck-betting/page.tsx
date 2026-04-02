@@ -13,7 +13,7 @@ import {
   type SecondHalfMarkets,
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
-import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
+import { isLGBMModelLoaded, getLGBMRho, getTeamSeasonFeatures } from "@/lib/lgbm-runtime";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { resolveTeam } from "@/lib/team-resolver";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
@@ -217,15 +217,15 @@ function generateAnalysis(r: MatchReport): string {
   const buildReasons = (favHome: boolean) => {
     const reasons: string[] = [];
     if (favHome) {
-      if (r.xgPerGameH > 1.5) reasons.push(`stark offensiv zuhause (${r.xgPerGameH.toFixed(2)} npxG/Spiel${r.engine === "annafrick13-v2" ? " EWMA" : ""})`);
-      if (r.xgaPerGameA > 1.5) reasons.push(`${r.away} defensiv anfällig auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel kassiert)`);
-      if (r.xgaPerGameH < 1.1) reasons.push(`${r.home} defensiv solide zuhause (nur ${r.xgaPerGameH.toFixed(2)} xGA/Spiel)`);
+      if (r.xgPerGameH > 1.5) reasons.push(`stark offensiv zuhause (${r.xgPerGameH.toFixed(2)} xGoals/Spiel${r.engine === "annafrick13-v2" ? " EWMA" : ""})`);
+      if (r.xgaPerGameA > 1.5) reasons.push(`${r.away} defensiv anfällig auswärts (${r.xgaPerGameA.toFixed(2)} xGoals-Against/Spiel kassiert)`);
+      if (r.xgaPerGameH < 1.1) reasons.push(`${r.home} defensiv solide zuhause (nur ${r.xgaPerGameH.toFixed(2)} xGoals-Against/Spiel)`);
       if (formH.w >= 3 && formH.len >= 4) reasons.push(`${formH.w} von ${formH.len} Heimspielen gewonnen`);
       if (formA.l >= 2) reasons.push(`${r.away} zuletzt ${formA.l} Niederlage${formA.l > 1 ? "n" : ""} in ${formA.len} Auswärtsspielen`);
     } else {
-      if (r.xgPerGameA > 1.3) reasons.push(`offensiv stark auswärts (${r.xgPerGameA.toFixed(2)} npxG/Spiel)`);
-      if (r.xgaPerGameH > 1.5) reasons.push(`${r.home} defensive Schwächen zuhause (${r.xgaPerGameH.toFixed(2)} xGA/Spiel kassiert)`);
-      if (r.xgaPerGameA < 1.0) reasons.push(`${r.away} defensiv kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel)`);
+      if (r.xgPerGameA > 1.3) reasons.push(`offensiv stark auswärts (${r.xgPerGameA.toFixed(2)} xGoals/Spiel)`);
+      if (r.xgaPerGameH > 1.5) reasons.push(`${r.home} defensive Schwächen zuhause (${r.xgaPerGameH.toFixed(2)} xGoals-Against/Spiel kassiert)`);
+      if (r.xgaPerGameA < 1.0) reasons.push(`${r.away} defensiv kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGoals-Against/Spiel)`);
       if (formA.w >= 3) reasons.push(`${formA.w} Siege in den letzten ${formA.len} Auswärtsspielen`);
       if (formH.l >= 2) reasons.push(`${r.home} zuletzt ${formH.l} Heimniederlage${formH.l > 1 ? "n" : ""}`);
     }
@@ -234,7 +234,7 @@ function generateAnalysis(r: MatchReport): string {
 
   if (ft1X2.H > 0.5) {
     const reasons = buildReasons(true);
-    if (reasons.length === 0) reasons.push(`das xG-Profil spricht klar für die Heimmannschaft`);
+    if (reasons.length === 0) reasons.push(`das xGoals-Profil spricht klar für die Heimmannschaft`);
     lines.push(`${r.home} geht als klarer Favorit ins Spiel (${pc(ft1X2.H)}), weil ${reasons.join(", ")}.`);
   } else if (ft1X2.A > 0.5) {
     const reasons = buildReasons(false);
@@ -242,16 +242,16 @@ function generateAnalysis(r: MatchReport): string {
     lines.push(`${r.away} ist trotz Auswärtsspiel Favorit (${pc(ft1X2.A)}), denn ${reasons.join(", ")}.`);
   } else if (ft1X2.H > ft1X2.A + 0.08) {
     lines.push(`${r.home} mit leichtem Heimvorteil (${pc(ft1X2.H)} vs. ${pc(ft1X2.A)}). Der Unterschied ist gering — ${r.away} kann hier durchaus punkten.`);
-    lines.push(`${r.home} erzielt zuhause ${r.xgPerGameH.toFixed(2)} npxG/Spiel, ${r.away} kommt auswärts auf ${r.xgPerGameA.toFixed(2)}. Defensiv: ${r.home} kassiert ${r.xgaPerGameH.toFixed(2)}, ${r.away} kassiert ${r.xgaPerGameA.toFixed(2)} xGA/Spiel.`);
+    lines.push(`${r.home} erzielt zuhause ${r.xgPerGameH.toFixed(2)} xGoals/Spiel, ${r.away} kommt auswärts auf ${r.xgPerGameA.toFixed(2)}. Defensiv: ${r.home} kassiert ${r.xgaPerGameH.toFixed(2)}, ${r.away} kassiert ${r.xgaPerGameA.toFixed(2)} xGoals-Against/Spiel.`);
   } else if (ft1X2.A > ft1X2.H + 0.08) {
-    lines.push(`${r.away} leicht favorisiert (${pc(ft1X2.A)}), obwohl sie auswärts spielen. ${r.home} kommt zuhause nur auf ${r.xgPerGameH.toFixed(2)} npxG/Spiel.`);
+    lines.push(`${r.away} leicht favorisiert (${pc(ft1X2.A)}), obwohl sie auswärts spielen. ${r.home} kommt zuhause nur auf ${r.xgPerGameH.toFixed(2)} xGoals/Spiel.`);
   } else {
     lines.push(`Ein sehr ausgeglichenes Spiel — ${r.home} (${pc(ft1X2.H)}) und ${r.away} (${pc(ft1X2.A)}) nahezu gleichstark. Das Unentschieden hat mit ${pc(ft1X2.D)} eine realistische Chance.`);
-    lines.push(`Offensiv liefern sich beide ein Duell auf Augenhöhe: ${r.home} ${r.xgPerGameH.toFixed(2)} vs. ${r.away} ${r.xgPerGameA.toFixed(2)} npxG/Spiel.`);
+    lines.push(`Offensiv liefern sich beide ein Duell auf Augenhöhe: ${r.home} ${r.xgPerGameH.toFixed(2)} vs. ${r.away} ${r.xgPerGameA.toFixed(2)} xGoals/Spiel.`);
   }
 
   // ── 2. xG deep-dive (always show) ──
-  lines.push(`xG-Profil: ${r.home} erzielt ${r.xgPerGameH.toFixed(2)} und kassiert ${r.xgaPerGameH.toFixed(2)} xG/Spiel zuhause. ${r.away} erzielt ${r.xgPerGameA.toFixed(2)} und kassiert ${r.xgaPerGameA.toFixed(2)} auswärts.`);
+  lines.push(`xGoals-Profil: ${r.home} erzielt ${r.xgPerGameH.toFixed(2)} und kassiert ${r.xgaPerGameH.toFixed(2)} xGoals/Spiel zuhause. ${r.away} erzielt ${r.xgPerGameA.toFixed(2)} und kassiert ${r.xgaPerGameA.toFixed(2)} auswärts.`);
 
   // ── 3. Form analysis ──
   if (formH.len > 0 || formA.len > 0) {
@@ -273,13 +273,13 @@ function generateAnalysis(r: MatchReport): string {
 
   // ── 4. Goal expectation ──
   if (totalXG > 3.2) {
-    lines.push(`Torreiches Spiel erwartet (${totalXG.toFixed(1)} erw. Tore). ${r.home} generiert ${r.xgPerGameH.toFixed(2)} npxG/Spiel zuhause, ${r.away} kassiert auswärts ${r.xgaPerGameA.toFixed(2)}. Über 2.5 Tore: ${pc(goalsOU.O25)}, Über 3.5: ${pc(goalsOU.O35)}.`);
+    lines.push(`Torreiches Spiel erwartet (${totalXG.toFixed(1)} erw. Tore). ${r.home} generiert ${r.xgPerGameH.toFixed(2)} xGoals/Spiel zuhause, ${r.away} kassiert auswärts ${r.xgaPerGameA.toFixed(2)}. Über 2.5 Tore: ${pc(goalsOU.O25)}, Über 3.5: ${pc(goalsOU.O35)}.`);
   } else if (totalXG < 2.2) {
     const lowReasons: string[] = [];
-    if (r.xgPerGameH < 1.2) lowReasons.push(`${r.home} offensiv limitiert (${r.xgPerGameH.toFixed(2)} npxG/Spiel)`);
-    if (r.xgPerGameA < 1.0) lowReasons.push(`${r.away} tut sich auswärts schwer (${r.xgPerGameA.toFixed(2)} npxG/Spiel)`);
-    if (r.xgaPerGameH < 1.1) lowReasons.push(`${r.home} defensiv stabil (${r.xgaPerGameH.toFixed(2)} xGA/Spiel)`);
-    if (r.xgaPerGameA < 1.1) lowReasons.push(`${r.away} kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGA/Spiel)`);
+    if (r.xgPerGameH < 1.2) lowReasons.push(`${r.home} offensiv limitiert (${r.xgPerGameH.toFixed(2)} xGoals/Spiel)`);
+    if (r.xgPerGameA < 1.0) lowReasons.push(`${r.away} tut sich auswärts schwer (${r.xgPerGameA.toFixed(2)} xGoals/Spiel)`);
+    if (r.xgaPerGameH < 1.1) lowReasons.push(`${r.home} defensiv stabil (${r.xgaPerGameH.toFixed(2)} xGoals-Against/Spiel)`);
+    if (r.xgaPerGameA < 1.1) lowReasons.push(`${r.away} kompakt auswärts (${r.xgaPerGameA.toFixed(2)} xGoals-Against/Spiel)`);
     lines.push(`Torarmes Spiel wahrscheinlich (${totalXG.toFixed(1)} erw. Tore)${lowReasons.length > 0 ? ": " + lowReasons.join(", ") : ""}. Unter 2.5: ${pc(1 - goalsOU.O25)}.`);
   } else {
     lines.push(`Mit ${totalXG.toFixed(1)} erwarteten Toren ein durchschnittliches Spiel. Über 2.5: ${pc(goalsOU.O25)}, Unter 2.5: ${pc(1 - goalsOU.O25)}.`);
@@ -479,7 +479,36 @@ function generateAnalysis(r: MatchReport): string {
     lines.push(`KOMBI-EMPFEHLUNG: ${comboLines.join(" | ")}`);
   }
 
-  // ── 15. Confidence assessment ──
+  // ── 15. Taktik-Profil (nur wenn Daten vorhanden + einfließen) ──
+  const hSF = getTeamSeasonFeatures(r.league, "2024/25", r.rawMatch.home?.name || "");
+  const aSF = getTeamSeasonFeatures(r.league, "2024/25", r.rawMatch.away?.name || "");
+  if (hSF || aSF) {
+    const profParts: string[] = [];
+    if (hSF) {
+      const parts: string[] = [];
+      if (hSF.setpiece_xg_share) parts.push(`${(hSF.setpiece_xg_share * 100).toFixed(0)}% Set-Piece xGoals`);
+      if (hSF.late_game_xg_share) parts.push(`${(hSF.late_game_xg_share * 100).toFixed(0)}% Late-Game (76+)`);
+      if (hSF.shot_quality_avg) parts.push(`Schussqualität ${hSF.shot_quality_avg.toFixed(3)} xGoals/Schuss`);
+      if (hSF.high_value_shot_share) parts.push(`${(hSF.high_value_shot_share * 100).toFixed(0)}% Großchancen`);
+      if (hSF.top3_xgchain_share) parts.push(`Top-3 erw. Torbeteiligung: ${(hSF.top3_xgchain_share * 100).toFixed(0)}%`);
+      if (hSF.losing_state_xg_diff) parts.push(`Rückstand-Bilanz: ${hSF.losing_state_xg_diff > 0 ? "+" : ""}${hSF.losing_state_xg_diff.toFixed(2)}`);
+      if (parts.length > 0) profParts.push(`${r.home}: ${parts.join(", ")}`);
+    }
+    if (aSF) {
+      const parts: string[] = [];
+      if (aSF.setpiece_xg_share) parts.push(`${(aSF.setpiece_xg_share * 100).toFixed(0)}% Set-Piece xGoals`);
+      if (aSF.late_game_xg_share) parts.push(`${(aSF.late_game_xg_share * 100).toFixed(0)}% Late-Game`);
+      if (aSF.shot_quality_avg) parts.push(`Schussqualität ${aSF.shot_quality_avg.toFixed(3)} xGoals/Schuss`);
+      if (aSF.high_value_shot_share) parts.push(`${(aSF.high_value_shot_share * 100).toFixed(0)}% Großchancen`);
+      if (aSF.top3_xgchain_share) parts.push(`Top-3 erw. Torbeteiligung: ${(aSF.top3_xgchain_share * 100).toFixed(0)}%`);
+      if (parts.length > 0) profParts.push(`${r.away}: ${parts.join(", ")}`);
+    }
+    if (profParts.length > 0) {
+      lines.push(`TAKTIK-PROFIL (fließt in Vorhersage ein): ${profParts.join(" | ")}`);
+    }
+  }
+
+  // ── 16. Confidence assessment ──
   const conf = r.confidence;
   const confLabel = conf >= 85 ? "Sehr hoch" : conf >= 70 ? "Hoch" : conf >= 50 ? "Mittel" : conf >= 35 ? "Niedrig" : "Sehr niedrig";
   const confReasons: string[] = [];
@@ -605,9 +634,9 @@ function MatchReportCard({ report }: { report: MatchReport }) {
             const [aPrimary] = TEAM_COLORS[r.away] || ["#a89070", "#fff"];
             const maxXG = Math.max(r.xgPerGameH, r.xgPerGameA, r.xgaPerGameH, r.xgaPerGameA, 0.5);
             return (<>
-              <div style={S.sectionLabel}>xG-Vergleich (pro Spiel)</div>
+              <div style={S.sectionLabel}>xGoals-Vergleich (pro Spiel)</div>
               {/* xG Offensive */}
-              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, letterSpacing: "0.05em" }}>OFFENSIV (xG erzielt)</div>
+              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, letterSpacing: "0.05em" }}>OFFENSIV (xGoals erzielt)</div>
               {[
                 { name: r.home, val: r.xgPerGameH, color: hPrimary },
                 { name: r.away, val: r.xgPerGameA, color: aPrimary },
@@ -621,7 +650,7 @@ function MatchReportCard({ report }: { report: MatchReport }) {
                 </div>
               ))}
               {/* xGA Defensive */}
-              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, marginTop: 6, letterSpacing: "0.05em" }}>DEFENSIV (xGA kassiert)</div>
+              <div style={{ fontSize: 9, color: "#a89070", marginBottom: 3, marginTop: 6, letterSpacing: "0.05em" }}>DEFENSIV (xGoals-Against kassiert)</div>
               {[
                 { name: r.home, val: r.xgaPerGameH, color: hPrimary },
                 { name: r.away, val: r.xgaPerGameA, color: aPrimary },

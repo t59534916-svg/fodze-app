@@ -202,6 +202,8 @@ describe("LightGBM Runtime", () => {
         0.1,   // losing_state_xg_diff
         -0.05, // top3_xgchain_share_diff
         0.0,   // squad_rotation_rate_diff
+        0.02,  // shot_quality_diff
+        0.03,  // high_value_shot_share_diff
       ];
       const features = baseFeatures.slice(0, nFeatures);
 
