@@ -17,7 +17,7 @@ import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { resolveTeam } from "@/lib/team-resolver";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
-import type { StandingsRow } from "@/lib/supabase";
+import type { StandingsRow, LiveOdds } from "@/lib/supabase";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -93,6 +93,10 @@ interface MatchReport {
   awayPos: number | null;
   homePoints: number | null;
   awayPoints: number | null;
+  // Live odds (from Supabase live_odds)
+  bestOdds?: { h: number; d: number; a: number; o25?: number; u25?: number };
+  sharpOdds?: { h: number; d: number; a: number };
+  numBookmakers?: number;
   // Confidence score 0-100
   confidence: number;
   // Brief analysis
@@ -347,19 +351,148 @@ function generateAnalysis(r: MatchReport): string {
     lines.push(`Auffällige Märkte: ${keyMarkets.join(" · ")}.`);
   }
 
-  // ── 11. Confidence assessment ──
+  // ── 11. Quotenanalyse + Value Detection ──
+  const bo = r.bestOdds;
+  const so = r.sharpOdds;
+  if (bo && bo.h > 0) {
+    const valueBets: string[] = [];
+    const edgeCalc = (modelP: number, quote: number) => {
+      const marketP = 1 / quote;
+      const edge = modelP - marketP;
+      const kelly = edge > 0.03 ? Math.max(0, (modelP * quote - 1) / (quote - 1) * 0.33) : 0;
+      const grade = edge >= 0.08 ? "A" : edge >= 0.05 ? "B" : edge >= 0.03 ? "C" : "";
+      return { edge, kelly, grade };
+    };
+
+    // 1X2 value
+    const markets: { label: string; modelP: number; quote: number }[] = [
+      { label: "Heim (1)", modelP: ft1X2.H, quote: bo.h },
+      { label: "Unentschieden (X)", modelP: ft1X2.D, quote: bo.d },
+      { label: "Auswärts (2)", modelP: ft1X2.A, quote: bo.a },
+    ];
+    if (bo.o25) markets.push({ label: "Ü2.5 Tore", modelP: goalsOU.O25, quote: bo.o25 });
+    if (bo.u25) markets.push({ label: "U2.5 Tore", modelP: 1 - goalsOU.O25, quote: bo.u25 });
+    // DC, DNB, BTTS from model probs (no separate odds, use implied)
+    markets.push({ label: "BTTS Ja", modelP: r.btts.yes, quote: 1 / Math.max(r.btts.yes, 0.01) * 1.08 }); // estimated
+
+    for (const mk2 of markets) {
+      if (mk2.quote <= 1) continue;
+      const { edge, kelly, grade } = edgeCalc(mk2.modelP, mk2.quote);
+      if (grade) {
+        valueBets.push(`${mk2.label} @ ${mk2.quote.toFixed(2)} — Modell: ${pc(mk2.modelP)} — Edge ${(edge * 100).toFixed(1)}% (${grade}) — Kelly ${(kelly * 100).toFixed(1)}%`);
+      }
+    }
+
+    // Sharp vs Model comparison
+    if (so && so.h > 0) {
+      const sharpH = (1 / so.h), sharpD = (1 / so.d), sharpA = (1 / so.a);
+      const sharpTotal = sharpH + sharpD + sharpA;
+      const pinnH = sharpH / sharpTotal, pinnD = sharpD / sharpTotal, pinnA = sharpA / sharpTotal;
+      const biggestDiff = Math.max(
+        Math.abs(ft1X2.H - pinnH), Math.abs(ft1X2.D - pinnD), Math.abs(ft1X2.A - pinnA)
+      );
+      if (biggestDiff > 0.05) {
+        const who = ft1X2.H - pinnH > 0.05 ? `Modell sieht ${r.home} stärker als Pinnacle` :
+                    ft1X2.A - pinnA > 0.05 ? `Modell sieht ${r.away} stärker als Pinnacle` :
+                    pinnH - ft1X2.H > 0.05 ? `Pinnacle bewertet ${r.home} deutlich höher — Vorsicht` :
+                    `Modell und Markt divergieren`;
+        lines.push(`Quotenvergleich (${r.numBookmakers || "?"} Bookmaker): ${who}. Pinnacle: ${so.h.toFixed(2)}/${so.d.toFixed(2)}/${so.a.toFixed(2)} | Best: ${bo.h.toFixed(2)}/${bo.d.toFixed(2)}/${bo.a.toFixed(2)}.`);
+      } else {
+        lines.push(`Quotenvergleich: Modell und Markt weitgehend einig. Pinnacle: ${so.h.toFixed(2)}/${so.d.toFixed(2)}/${so.a.toFixed(2)}.`);
+      }
+    }
+
+    if (valueBets.length > 0) {
+      lines.push(`VALUE BETS: ${valueBets.join(" | ")}`);
+    } else {
+      lines.push(`Keine klaren Value Bets bei aktuellen Quoten (Edge < 3% in allen Märkten).`);
+    }
+  }
+
+  // ── 12. Asian Handicap ──
+  const ahLines: string[] = [];
+  for (const line of ["-2", "-1.5", "-1", "-0.5", "0", "+0.5", "+1", "+1.5"]) {
+    const ah = r.asianHandicap[line];
+    if (ah && ah.P_Win > 0.55) {
+      ahLines.push(`HC ${line}: ${pc(ah.P_Win)} (Fair ${ah.Fair_Odds.toFixed(2)})`);
+    }
+  }
+  if (ahLines.length > 0) {
+    lines.push(`Handicap: ${ahLines.slice(0, 3).join(" · ")}.`);
+  }
+
+  // ── 13. Spezial-Märkte ──
+  const specials: string[] = [];
+  if (r.cleanSheetH > 0.20) specials.push(`CS ${r.home}: ${pc(r.cleanSheetH)}`);
+  if (r.cleanSheetA > 0.18) specials.push(`CS ${r.away}: ${pc(r.cleanSheetA)}`);
+  if (r.winToNilH > 0.15) specials.push(`WtN ${r.home}: ${pc(r.winToNilH)}`);
+  if (r.winToNilA > 0.12) specials.push(`WtN ${r.away}: ${pc(r.winToNilA)}`);
+  if (r.oddGoals > 0.53) specials.push(`Ungerade Tore: ${pc(r.oddGoals)}`);
+  else if (r.evenGoals > 0.53) specials.push(`Gerade Tore: ${pc(r.evenGoals)}`);
+  if (r.firstGoalBefore30 > 0.55) specials.push(`Tor vor Min 30: ${pc(r.firstGoalBefore30)}`);
+  if (r.raceTo2H > 0.30) specials.push(`Race to 2 ${r.home}: ${pc(r.raceTo2H)}`);
+  if (r.raceTo2Neither > 0.35) specials.push(`Race to 2 keiner: ${pc(r.raceTo2Neither)}`);
+  if (r.yellowCards.expected > 4.5) specials.push(`Karten: ${r.yellowCards.expected.toFixed(1)} erw., Ü4.5: ${pc(r.yellowCards.over45)}`);
+  if (specials.length > 0) {
+    lines.push(`Spezial: ${specials.join(" · ")}.`);
+  }
+
+  // ── 14. Kombi-Empfehlung ──
+  const combos: { legs: string[]; prob: number; desc: string }[] = [];
+  // Ü2.5 + BTTS (stark korreliert)
+  if (goalsOU.O25 > 0.50 && r.btts.yes > 0.52) {
+    // P(O25 AND BTTS) direkt aus Matrix berechnen
+    let pBoth = 0;
+    for (let i = 1; i < 10; i++) for (let j = 1; j < 10; j++) if (i + j > 2 && r.matrix[i]?.[j]) pBoth += r.matrix[i][j];
+    combos.push({ legs: ["Ü2.5", "BTTS Ja"], prob: pBoth, desc: "Torreiches offenes Spiel" });
+  }
+  // Favorit + Ü1.5 (wenn klarer Favorit)
+  if (ft1X2.H > 0.45) {
+    let pHO15 = 0;
+    for (let i = 2; i < 10; i++) for (let j = 0; j < 10; j++) if (r.matrix[i]?.[j]) pHO15 += r.matrix[i][j]; // H wins with 2+ goals
+    // Actually: H wins AND total > 1.5
+    let pHAndO15 = 0;
+    for (let i = 1; i < 10; i++) for (let j = 0; j < 10; j++) if (i > j && i + j > 1 && r.matrix[i]?.[j]) pHAndO15 += r.matrix[i][j];
+    combos.push({ legs: ["Heim", "Ü1.5"], prob: pHAndO15, desc: "Heimsieg mit Toren" });
+  } else if (ft1X2.A > 0.40) {
+    let pAAndO15 = 0;
+    for (let i = 0; i < 10; i++) for (let j = 1; j < 10; j++) if (j > i && i + j > 1 && r.matrix[i]?.[j]) pAAndO15 += r.matrix[i][j];
+    combos.push({ legs: ["Auswärts", "Ü1.5"], prob: pAAndO15, desc: "Auswärtssieg mit Toren" });
+  }
+  // DC + BTTS (sicherer)
+  if (r.dc["1X"] > 0.65 && r.btts.yes > 0.50) {
+    let pDC1XBTTS = 0;
+    for (let i = 1; i < 10; i++) for (let j = 1; j < 10; j++) if (i >= j && r.matrix[i]?.[j]) pDC1XBTTS += r.matrix[i][j];
+    combos.push({ legs: ["DC 1X", "BTTS Ja"], prob: pDC1XBTTS, desc: "Heim nicht verlieren + beide treffen" });
+  } else if (r.dc["X2"] > 0.65 && r.btts.yes > 0.50) {
+    let pDCX2BTTS = 0;
+    for (let i = 1; i < 10; i++) for (let j = 1; j < 10; j++) if (j >= i && r.matrix[i]?.[j]) pDCX2BTTS += r.matrix[i][j];
+    combos.push({ legs: ["DC X2", "BTTS Ja"], prob: pDCX2BTTS, desc: "Gast nicht verlieren + beide treffen" });
+  }
+
+  if (combos.length > 0) {
+    combos.sort((a, b) => b.prob - a.prob);
+    const comboLines = combos.slice(0, 3).map((c, i) => {
+      const estQuote = c.prob > 0 ? (1 / c.prob * 0.92).toFixed(2) : "?"; // 8% margin estimate
+      return `${i + 1}. ${c.legs.join(" + ")} — ${pc(c.prob)} (ca. ${estQuote}) — ${c.desc}`;
+    });
+    lines.push(`KOMBI-EMPFEHLUNG: ${comboLines.join(" | ")}`);
+  }
+
+  // ── 15. Confidence assessment ──
   const conf = r.confidence;
   const confLabel = conf >= 85 ? "Sehr hoch" : conf >= 70 ? "Hoch" : conf >= 50 ? "Mittel" : conf >= 35 ? "Niedrig" : "Sehr niedrig";
   const confReasons: string[] = [];
-  if (r.engine === "annafrick13-v2") confReasons.push("LightGBM v2 Engine");
+  if (r.engine === "annafrick13-v2") confReasons.push("LightGBM v2.1 Engine (19 Features)");
   else confReasons.push("Standard-Engine");
   if (r.dataQuality === "HIGH") confReasons.push("vollständige xG-Daten");
   else confReasons.push("eingeschränkte Datenlage");
   const hHist = r.rawMatch.home?.xg_h_history?.length || 0;
-  const aHist = r.rawMatch.away?.xg_a_history?.length || 0;
-  if (Math.min(hHist, aHist) >= 8) confReasons.push("8+ Spiele History");
-  else if (Math.min(hHist, aHist) >= 5) confReasons.push(`nur ${Math.min(hHist, aHist)} Spiele History`);
+  const aHist2 = r.rawMatch.away?.xg_a_history?.length || 0;
+  if (Math.min(hHist, aHist2) >= 8) confReasons.push("8+ Spiele History");
+  else if (Math.min(hHist, aHist2) >= 5) confReasons.push(`nur ${Math.min(hHist, aHist2)} Spiele History`);
   else confReasons.push("wenig historische Daten");
+  if (bo && bo.h > 0) confReasons.push("Live-Quoten verfügbar");
   lines.push(`Konfidenz: ${conf}% (${confLabel}) — ${confReasons.join(", ")}.`);
 
   return lines.join("\n\n");
@@ -826,13 +959,14 @@ export default function FuckBettingPage() {
   const [allData, setAllData] = useState<{ league: string; data: MatchdayData }[]>([]);
   const [standings, setStandings] = useState<Map<string, StandingsRow[]>>(new Map());
   const [sosMap, setSosMap] = useState<Map<string, SoSRatings>>(new Map());
+  const [oddsMap, setOddsMap] = useState<Map<string, LiveOdds>>(new Map());
   const [loading, setLoading] = useState(true);
 
   // Load all leagues with data + enrich with xG history for @annafrick13 v2
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries, loadLeagueStandings } = await import("@/lib/supabase");
+      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries, loadLeagueStandings, loadLiveOdds } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
       const results = await Promise.all(leagueKeys.map(async (key) => {
         const md = await loadLatestMatchday(supabase, key);
@@ -887,9 +1021,42 @@ export default function FuckBettingPage() {
       }));
       setStandings(standingsMap);
       setSosMap(sosResults);
+
+      // Load live odds for each league and build a fuzzy-match map
+      const allOdds = new Map<string, LiveOdds>();
+      await Promise.all(validResults.map(async ({ league }) => {
+        try {
+          const odds = await loadLiveOdds(supabase, league);
+          for (const o of odds) {
+            // Key: normalize team names for fuzzy matching
+            const key = `${o.home_team.toLowerCase()}|${o.away_team.toLowerCase()}`;
+            allOdds.set(key, o);
+          }
+        } catch { /* odds optional */ }
+      }));
+      setOddsMap(allOdds);
       setLoading(false);
     })();
   }, [supabase, leagueStatus]);
+
+  // Helper: find live odds for a match (fuzzy team name matching)
+  const findOdds = (homeName: string, awayName: string): LiveOdds | null => {
+    // Try exact lowercase match
+    const key = `${homeName.toLowerCase()}|${awayName.toLowerCase()}`;
+    if (oddsMap.has(key)) return oddsMap.get(key)!;
+    // Try resolving via team-resolver
+    const hRes = resolveTeam(homeName);
+    const aRes = resolveTeam(awayName);
+    for (const [k, v] of oddsMap.entries()) {
+      const [oh, oa] = k.split("|");
+      // Check if resolved names match odds-api names
+      if (hRes?.oddsApi?.toLowerCase() === oh && aRes?.oddsApi?.toLowerCase() === oa) return v;
+      if (hRes?.csv?.toLowerCase() === oh && aRes?.csv?.toLowerCase() === oa) return v;
+      // Substring match
+      if (oh.includes(homeName.toLowerCase().split(" ").pop()!) && oa.includes(awayName.toLowerCase().split(" ").pop()!)) return v;
+    }
+    return null;
+  };
 
   // Helper: find team position in standings (try FODZE name, then Understat name)
   const findPos = (teamName: string, leagueStandings: StandingsRow[] | undefined): StandingsRow | null => {
@@ -1139,6 +1306,19 @@ export default function FuckBettingPage() {
           analysis: "",
         };
 
+        // Lookup live odds
+        const matchOdds = findOdds(h.name, a.name);
+        if (matchOdds) {
+          report.bestOdds = {
+            h: matchOdds.best_h || 0, d: matchOdds.best_d || 0, a: matchOdds.best_a || 0,
+            o25: matchOdds.best_over25 || 0, u25: matchOdds.best_under25 || 0,
+          };
+          if (matchOdds.sharp_h) {
+            report.sharpOdds = { h: matchOdds.sharp_h, d: matchOdds.sharp_d || 0, a: matchOdds.sharp_a || 0 };
+          }
+          report.numBookmakers = matchOdds.num_bookmakers;
+        }
+
         // Lookup table positions
         const leagueStandings = standings.get(league);
         const hRow = findPos(h.name, leagueStandings);
@@ -1166,7 +1346,7 @@ export default function FuckBettingPage() {
     });
 
     return result;
-  }, [allData, standings, sosMap]);
+  }, [allData, standings, sosMap, oddsMap]);
 
   // Group by league, then by date within each league
   const groupedByLeague = useMemo(() => {
