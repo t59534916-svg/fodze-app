@@ -1456,6 +1456,11 @@ export default function FuckBettingPage() {
                   padding: "8px 0 6px", borderBottom: "2px solid #c4a26530", marginBottom: 8,
                 }}>
                   {ld?.name || league}
+                  {(() => {
+                    const leagueData = allData.find(d => d.league === league)?.data;
+                    const upd = (leagueData as any)?.last_updated;
+                    return upd ? <span style={{ fontWeight: 400, fontSize: 10, color: "#a89070", marginLeft: 8 }}>Update: {upd}</span> : null;
+                  })()}
                 </div>
 
                 {/* Standings Table (collapsible) */}

@@ -65,7 +65,10 @@ export default function MatchdayPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, ...S.goldText }}>{data?.league} — {data?.matchday}</div>
-          <div style={{ fontSize: 10, color: "#c4a26560" }}>{matches.length} Spiele · {data?.data_confidence}</div>
+          <div style={{ fontSize: 10, color: "#c4a26560" }}>
+            {matches.length} Spiele{data?.data_confidence ? ` · ${data.data_confidence}` : ""}
+            {(data as any)?.last_updated ? ` · Update: ${(data as any).last_updated}` : ""}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
           {br > 0 && (
