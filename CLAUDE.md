@@ -67,25 +67,27 @@ Next.js 14 App Router
 | Serie A | `serie_a` | ✅ | Per-League | Understat + CSV |
 | Ligue 1 | `ligue_1` | ✅ | Per-League | Understat + CSV |
 | Eredivisie | `eredivisie` | ✅ | Per-League | Understat + CSV |
-| Championship | `championship` | ❌ | Per-League | CSV (Goals-Proxy) |
-| 2. Bundesliga | `bundesliga2` | ❌ | Per-League | CSV (Goals-Proxy) |
-| 3. Liga | `liga3` | ❌ | ❌ | Manuell |
+| Championship | `championship` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| 2. Bundesliga | `bundesliga2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| 3. Liga | `liga3` | ✅ FootyStats | ❌ | FootyStats (echte xG) |
 | Champions League | `cl` | ❌ | ❌ | Placeholder |
 | Europa League | `el` | ❌ | ❌ | Placeholder |
-| Primeira Liga | `primeira_liga` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Jupiler Pro | `jupiler_pro` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Süper Lig | `super_lig` | ❌ | Per-League | CSV (Goals-Proxy) |
-| La Liga 2 | `la_liga2` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Serie B | `serie_b` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Ligue 2 | `ligue_2` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Scottish Prem | `scottish_prem` | ❌ | Per-League | CSV (Goals-Proxy) |
-| Super League Greece | `greek_sl` | ❌ | Per-League | CSV (Goals-Proxy) |
-| League One | `league_one` | ❌ | Per-League | CSV (Goals-Proxy) |
-| League Two | `league_two` | ❌ | Per-League | CSV (Goals-Proxy) |
+| Primeira Liga | `primeira_liga` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Jupiler Pro | `jupiler_pro` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Süper Lig | `super_lig` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| La Liga 2 | `la_liga2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Serie B | `serie_b` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Ligue 2 | `ligue_2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Scottish Prem | `scottish_prem` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| Super League Greece | `greek_sl` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| League One | `league_one` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+| League Two | `league_two` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
 
 **Elo-Ratings**: 655 Teams aus 146.382 historischen Matches (football-data.co.uk CSVs, 25 Saisons)
 **Kalibrierung**: Platt-Params + Isotonic-Kurven per Liga (18 Ligen mit ≥300 Matches)
-**Ohne xG**: Nur ensemble-v1 Engine (Standard). Poisson-ML v1/v2 verweigern ohne xG-History.
+**Shots-to-xG Modell**: `xG = -0.045 + 0.242×SOT + 0.065×SOFF` (R²=0.57, trainiert auf 3.283 Matches mit echtem Understat-xG)
+**Per-Match xG-History**: 7.350 Einträge in `team_xg_history` für 12 non-Understat-Ligen (source: `shots-model`)
+**xG-Quellen**: Understat (6 Top-Ligen, echte xG) → Shots-Modell (12 weitere Ligen, geschätzte xG aus Schussdaten) → FootyStats (3. Liga)
 
 ## Konventionen
 
@@ -307,8 +309,10 @@ odds_snapshots     -- Quotenverlauf mit Timestamps
 bets               -- Platzierte Wetten + P&L
 profiles           -- Bankroll, Risikoprofil
 live_odds          -- Auto-Import via GitHub Actions Cron
-team_xg_history    -- 28.718 historische per-Match xG-Einträge (2017-2025)
-                   -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against
+team_xg_history    -- 36.068 per-Match xG-Einträge (2017-2026)
+                   -- 28.718 echte xG (Understat, 6 Ligen, 2017-2025)
+                   -- 7.350 geschätzte xG (Shots-Modell, 12 Ligen, 2025/26)
+                   -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against, source
 upcoming_fixtures  -- Auto-Spielplan aus The-Odds-API (piggybacked auf fetch-odds.mjs)
                    -- Felder: league, event_id, home_team, away_team, commence_time
 ```
@@ -527,6 +531,8 @@ Flags: `--dry` (nur validieren), `--label "Custom"`, `--date "YYYY-MM-DD"`
 | `matchday-predict.py` | `python3 tools/matchday-predict.py` | LightGBM Prediction (alle Features) |
 | `matchday-enrich.py` | `python3 tools/matchday-enrich.py` | + Schiedsrichter + Wetter |
 | `retrain_v2.py` | `python3 tools/retrain_v2.py` | LightGBM Modell neu trainieren |
+| `train-shots-xg.py` | `python3 tools/train-shots-xg.py` | Shots→xG Regression trainieren (R²=0.57) |
+| `backfill-shots-xg.mjs` | `node scripts/backfill-shots-xg.mjs --all` | CSV Schuss-Daten → per-Match xG nach Supabase |
 
 ## Python-Tools (Fortgeschritten)
 

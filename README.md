@@ -78,21 +78,19 @@ npm run spieltag    # Interaktiver 6-Schritt Wizard
 
 Details: [WORKFLOW.md](WORKFLOW.md)
 
-## Historische xG-Daten
+## xG-Daten
 
-28.718 echte xG-Einträge in Supabase `team_xg_history` (2017-2025):
+36.068 per-Match xG-Einträge in Supabase `team_xg_history`:
 
-| Liga | Einträge | Quelle |
-|------|----------|--------|
-| Bundesliga | 4.896 | Understat (echte xG) |
-| Premier League | 6.080 | Understat (echte xG) |
-| La Liga | 6.080 | Understat (echte xG) |
-| Serie A | 6.080 | Understat (echte xG) |
-| Ligue 1 | 5.582 | Understat (echte xG) |
+| Quelle | Ligen | Einträge | Methode |
+|--------|-------|----------|---------|
+| Understat | BL, EPL, La Liga, Serie A, Ligue 1, Eredivisie | 28.718 | Echte xG (2017-2025) |
+| Shots-Modell | 12 weitere Ligen (Championship, 2.BL, PT, BE, TR, ...) | 7.350 | `xG ≈ 0.242×SOT + 0.065×SOFF` (R²=0.57) |
 
 ```bash
-npm run backfill     # Historisches xG Backfill (Browser-Script Methode)
-npm run export-xg    # Supabase → lokale JSON-Backups (backups/)
+npm run backfill                              # Understat xG Backfill (Browser-Script)
+node scripts/backfill-shots-xg.mjs --all      # CSV Schüsse → geschätzte xG (12 Ligen)
+npm run export-xg                             # Supabase → lokale JSON-Backups
 ```
 
 ## Scripts
