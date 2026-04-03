@@ -1,0 +1,19 @@
+{
+  "intercept": -0.045386,
+  "coef_shots_on_target": 0.242087,
+  "coef_shots_off_target": 0.064552,
+  "r2": 0.5654,
+  "mae": 0.4865,
+  "rmse": 0.6306,
+  "n_train": 3283,
+  "train_leagues": [
+    "bundesliga",
+    "epl",
+    "la_liga",
+    "serie_a",
+    "ligue_1",
+    "eredivisie"
+  ],
+  "train_season": "2024/25",
+  "_formula": "xG = intercept + coef_shots_on_target * HST + coef_shots_off_target * (HS - HST)"
+}
