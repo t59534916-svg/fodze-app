@@ -33,9 +33,16 @@ const IconStats = ({ active }: { active: boolean }) => (
   </svg>
 );
 
+const IconValue = ({ active }: { active: boolean }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={active ? "#d4b86a" : "#8a7560"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1" fill={active ? "#d4b86a" : "#8a7560"} />
+  </svg>
+);
+
 const tabs = [
   { href: "/", label: "Home", Icon: IconHome },
   { href: "/matchday", label: "Analyse", Icon: IconAnalyse },
+  { href: "/goldilocks", label: "Value", Icon: IconValue },
   { href: "/matchday/combos", label: "Kombis", Icon: IconKombis },
   { href: "/simulator", label: "Simulator", Icon: IconSimulator },
   { href: "/performance", label: "Stats", Icon: IconStats },
