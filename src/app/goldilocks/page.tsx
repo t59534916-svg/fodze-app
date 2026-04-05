@@ -4,6 +4,14 @@ import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { LEAGUES, vigAdjustBest } from "@/lib/dixon-coles";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
+import { card, badge } from "@/styles/components";
+
+// ─── Constants ──────────────────────────────────────────────────────
+
+const EDGE_MIN = 0.025;
+const EDGE_MAX = 0.075;
+const EDGE_GRADE_A = 0.05;
+const EDGE_GRADE_B = 0.04;
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -13,12 +21,12 @@ interface GoldilocksBet {
   homeTeam: string;
   awayTeam: string;
   kickoff: string;
-  market: string;       // "1", "X", "2", "Ü2.5", "U2.5"
+  market: string;
   bestOdds: number;
   pinnacleOdds: number;
-  fairProb: number;     // Pinnacle vig-free
-  impliedProb: number;  // From best odds
-  edge: number;         // fairProb - impliedProb
+  fairProb: number;
+  impliedProb: number;
+  edge: number;
   grade: "A" | "B" | "C";
 }
 
@@ -45,27 +53,14 @@ const S = {
     color: active ? color.gold : color.textMuted,
     fontSize: fontSize.xs, fontWeight: fontWeight.medium,
     cursor: "pointer", transition: "all 0.15s",
-    minHeight: 32, display: "inline-flex", alignItems: "center",
+    minHeight: 44, display: "inline-flex", alignItems: "center",
   }),
-  card: {
-    background: color.surface,
-    border: `1px solid ${color.border}`,
-    borderRadius: radius.md,
-    padding: space[4],
-    marginBottom: space[3],
-    transition: "border-color 0.15s",
-  },
+  betCard: { ...card(), padding: space[4], marginBottom: space[3] },
   cardHeader: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
     marginBottom: space[3],
   },
   league: { fontSize: fontSize.xs, color: color.textMuted },
-  grade: (g: string) => ({
-    fontSize: fontSize.xs, fontWeight: fontWeight.bold,
-    padding: `1px ${space[2]}px`, borderRadius: radius.sm,
-    background: g === "A" ? "#6aad5530" : g === "B" ? "#d4b86a30" : "#a8907030",
-    color: g === "A" ? "#6aad55" : g === "B" ? color.gold : color.textMuted,
-  }),
   matchName: {
     fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.text,
     marginBottom: space[2],
@@ -81,12 +76,10 @@ const S = {
     fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.goldShine,
     fontFamily: "Georgia, serif",
   },
-  edgeBox: {
-    textAlign: "right" as const,
-  },
+  edgeBox: { textAlign: "right" as const },
   edgeValue: (e: number) => ({
     fontSize: fontSize.base, fontWeight: fontWeight.bold,
-    color: e >= 0.05 ? "#6aad55" : e >= 0.04 ? color.gold : color.textMuted,
+    color: e >= EDGE_GRADE_A ? color.value : e >= EDGE_GRADE_B ? color.gold : color.textMuted,
   }),
   probText: { fontSize: fontSize.xs, color: color.textMuted },
   detailRow: {
@@ -118,7 +111,9 @@ const S = {
   },
 };
 
-// ─── Market Labels ──────────────────────────────────────────────────
+const GRADE_BADGE: Record<string, ReturnType<typeof badge>> = {
+  A: badge("value"), B: badge("gold"), C: badge("neutral"),
+};
 
 const MARKET_LABELS: Record<string, string> = {
   "1": "Heim", "X": "Remis", "2": "Gast", "Ü2.5": "Über 2.5", "U2.5": "Unter 2.5",
@@ -135,12 +130,11 @@ export default function GoldilocksPage() {
   const [filter, setFilter] = useState<FilterType>("all");
   const [lastFetch, setLastFetch] = useState("");
 
-  // Load live odds and compute Goldilocks bets
   useEffect(() => {
     (async () => {
       setLoading(true);
       const { loadLiveOdds } = await import("@/lib/supabase");
-      const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k] || k in LEAGUES);
+      const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
       const allBets: GoldilocksBet[] = [];
 
       await Promise.all(leagueKeys.map(async (league) => {
@@ -149,11 +143,10 @@ export default function GoldilocksPage() {
           const ld = LEAGUES[league];
 
           for (const o of odds) {
-            const sh = o.sharp_h as number, sd = o.sharp_d as number, sa = o.sharp_a as number;
-            const bh = o.best_h as number, bd = o.best_d as number, ba = o.best_a as number;
-            if (!sh || sh <= 1 || !bh || bh <= 1 || !sd || !sa) continue;
+            const sh = o.sharp_h, sd = o.sharp_d, sa = o.sharp_a;
+            const bh = o.best_h, bd = o.best_d, ba = o.best_a;
+            if (!sh || sh <= 1 || !bh || bh <= 1 || !sd || !sa || !bd || !ba) continue;
 
-            // Pinnacle vig-free probabilities
             const sharpVig = vigAdjustBest([sh, sd, sa]);
             const [pinnH, pinnD, pinnA] = sharpVig.probs;
 
@@ -163,9 +156,8 @@ export default function GoldilocksPage() {
               { key: "2", fairProb: pinnA, bestOdds: ba, pinnOdds: sa },
             ];
 
-            // O/U 2.5
-            const so25 = o.sharp_over25 as number, su25 = o.sharp_under25 as number;
-            const bo25 = o.best_over25 as number, bu25 = o.best_under25 as number;
+            const so25 = o.sharp_over25, su25 = o.sharp_under25;
+            const bo25 = o.best_over25, bu25 = o.best_under25;
             if (so25 && so25 > 1 && bo25 && bo25 > 1) {
               const ouVig = vigAdjustBest([so25, su25 || 1.01]);
               markets.push({ key: "Ü2.5", fairProb: ouVig.probs[0], bestOdds: bo25, pinnOdds: so25 });
@@ -178,30 +170,23 @@ export default function GoldilocksPage() {
               const impliedProb = 1 / mkt.bestOdds;
               const edge = mkt.fairProb - impliedProb;
 
-              // Goldilocks zone: 2.5% - 7.5%
-              if (edge >= 0.025 && edge <= 0.075) {
-                const grade: "A" | "B" | "C" = edge >= 0.05 ? "A" : edge >= 0.04 ? "B" : "C";
+              if (edge >= EDGE_MIN && edge <= EDGE_MAX) {
+                const grade: "A" | "B" | "C" = edge >= EDGE_GRADE_A ? "A" : edge >= EDGE_GRADE_B ? "B" : "C";
                 allBets.push({
-                  league,
-                  leagueName: ld?.name || league,
-                  homeTeam: o.home_team,
-                  awayTeam: o.away_team,
+                  league, leagueName: ld?.name || league,
+                  homeTeam: o.home_team, awayTeam: o.away_team,
                   kickoff: o.commence_time || "",
-                  market: mkt.key,
-                  bestOdds: mkt.bestOdds,
-                  pinnacleOdds: mkt.pinnOdds,
-                  fairProb: mkt.fairProb,
-                  impliedProb,
-                  edge,
-                  grade,
+                  market: mkt.key, bestOdds: mkt.bestOdds, pinnacleOdds: mkt.pinnOdds,
+                  fairProb: mkt.fairProb, impliedProb, edge, grade,
                 });
               }
             }
           }
-        } catch { /* skip league */ }
+        } catch (err) {
+          console.warn(`[Goldilocks] Failed to load odds for ${league}:`, err);
+        }
       }));
 
-      // Sort by edge descending
       allBets.sort((a, b) => b.edge - a.edge);
       setBets(allBets);
       setLastFetch(new Date().toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
@@ -209,7 +194,6 @@ export default function GoldilocksPage() {
     })();
   }, [supabase, leagueStatus]);
 
-  // Filter bets
   const filtered = useMemo(() => {
     return bets.filter(b => {
       if (filter === "A") return b.grade === "A";
@@ -220,11 +204,14 @@ export default function GoldilocksPage() {
     });
   }, [bets, filter]);
 
-  // Stats
-  const gradeA = bets.filter(b => b.grade === "A").length;
-  const gradeB = bets.filter(b => b.grade === "B").length;
-  const gradeC = bets.filter(b => b.grade === "C").length;
-  const avgEdge = bets.length > 0 ? bets.reduce((s, b) => s + b.edge, 0) / bets.length : 0;
+  const { gradeA, gradeB, gradeC, avgEdge } = useMemo(() => {
+    let a = 0, b = 0, c = 0, sum = 0;
+    for (const bet of bets) {
+      if (bet.grade === "A") a++; else if (bet.grade === "B") b++; else c++;
+      sum += bet.edge;
+    }
+    return { gradeA: a, gradeB: b, gradeC: c, avgEdge: bets.length ? sum / bets.length : 0 };
+  }, [bets]);
 
   if (loading) {
     return (
@@ -239,7 +226,6 @@ export default function GoldilocksPage() {
 
   return (
     <AppShell>
-      {/* Header */}
       <div style={S.header}>
         <div style={S.count}>{bets.length}</div>
         <div style={S.title}>Goldilocks Bets</div>
@@ -249,7 +235,6 @@ export default function GoldilocksPage() {
         </div>
       </div>
 
-      {/* Filter Chips */}
       <div style={S.chips}>
         {([
           ["all", `Alle (${bets.length})`],
@@ -258,13 +243,12 @@ export default function GoldilocksPage() {
           ["1X2", "1X2"],
           ["OU", "Ü/U 2.5"],
         ] as [FilterType, string][]).map(([key, label]) => (
-          <div key={key} style={S.chip(filter === key)} onClick={() => setFilter(key)}>
+          <button key={key} style={S.chip(filter === key)} onClick={() => setFilter(key)}>
             {label}
-          </div>
+          </button>
         ))}
       </div>
 
-      {/* Bet Cards */}
       {filtered.length === 0 ? (
         <div style={S.empty}>
           <div style={{ fontSize: 28, marginBottom: space[3] }}>🔍</div>
@@ -272,17 +256,12 @@ export default function GoldilocksPage() {
         </div>
       ) : (
         filtered.map((bet, i) => (
-          <div key={`${bet.homeTeam}-${bet.market}-${i}`} style={S.card}>
-            {/* Card Header: League + Grade */}
+          <div key={`${bet.league}-${bet.homeTeam}-${bet.market}-${i}`} style={S.betCard}>
             <div style={S.cardHeader}>
               <div style={S.league}>{bet.leagueName}</div>
-              <div style={S.grade(bet.grade)}>{bet.grade}</div>
+              <div style={GRADE_BADGE[bet.grade]}>{bet.grade}</div>
             </div>
-
-            {/* Match Name */}
             <div style={S.matchName}>{bet.homeTeam} vs {bet.awayTeam}</div>
-
-            {/* Bet Row */}
             <div style={S.betRow}>
               <div>
                 <div style={S.betLabel}>{MARKET_LABELS[bet.market] || bet.market}</div>
@@ -296,8 +275,6 @@ export default function GoldilocksPage() {
                 <div style={S.probText}>Prob {(bet.fairProb * 100).toFixed(0)}%</div>
               </div>
             </div>
-
-            {/* Detail Row */}
             <div style={S.detailRow}>
               <span>Pinnacle: {bet.pinnacleOdds.toFixed(2)} → Fair {(bet.fairProb * 100).toFixed(1)}%</span>
               <span>Best: {bet.bestOdds.toFixed(2)} → Implied {(bet.impliedProb * 100).toFixed(1)}%</span>
@@ -306,7 +283,6 @@ export default function GoldilocksPage() {
         ))
       )}
 
-      {/* Footer Explainer */}
       <div style={S.footer}>
         <div style={S.footerTitle}>Was ist Goldilocks?</div>
         <div style={S.footerText}>
