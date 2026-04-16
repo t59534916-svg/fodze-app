@@ -1,0 +1,50 @@
+name: Settle Bets
+
+on:
+  # Run daily at 02:17 and 08:17 UTC — catches late Sunday matches + early Monday.
+  # Also Monday 12:17 for Monday Night Football.
+  schedule:
+    - cron: "17 2 * * *"
+    - cron: "17 8 * * *"
+    - cron: "17 12 * * 1"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Look back N days (default 3)"
+        required: false
+        default: "3"
+      league:
+        description: "Single league (empty = all)"
+        required: false
+        default: ""
+
+jobs:
+  settle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Settle completed bets
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          LEAGUE="${{ github.event.inputs.league }}"
+          DAYS="${{ github.event.inputs.days }}"
+          DAYS="${DAYS:-3}"
+          if [ -n "$LEAGUE" ]; then
+            node scripts/fetch-results.mjs --league "$LEAGUE" --days "$DAYS"
+          else
+            node scripts/fetch-results.mjs --days "$DAYS"
+          fi

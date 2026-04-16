@@ -2,6 +2,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
+import BetHistoryShare from "@/components/performance/BetHistoryShare";
+import LiveCalibration from "@/components/performance/LiveCalibration";
+import { computeBetStats } from "@/lib/bet-metrics";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 import { text } from "@/styles/components";
 
@@ -201,31 +204,28 @@ function GradeBar() {
 // ─── Main Page ───
 function LivePerformance() {
   const { userBets } = useApp();
-  const settled = userBets.filter(b => b.result === "won" || b.result === "lost");
+
+  const stats = useMemo(() => computeBetStats(userBets), [userBets]);
+  // Brier needs ≥5 settled observations with model_prob so early noise
+  // doesn't anchor the display.
+  const brier = useMemo(() => {
+    const withProb = stats.settled.filter(b => b.model_prob && b.model_prob > 0);
+    if (withProb.length < 5) return null;
+    return (
+      withProb.reduce((s, b) => {
+        const actual = b.result === "won" ? 1 : 0;
+        return s + ((b.model_prob || 0) - actual) ** 2;
+      }, 0) / withProb.length
+    );
+  }, [stats.settled]);
+
+  const { settled, won, pnl, totalStake, roi, winRate, avgEdge } = stats;
+
   if (settled.length === 0) return (
     <div style={{ background: color.surface, border: `1px solid ${color.border}`, borderRadius: radius.md, padding: space[5], marginBottom: space[4], textAlign: "center" }}>
       <div style={{ fontSize: fontSize.sm, color: color.textMuted }}>Noch keine abgerechneten Wetten für Live-Performance</div>
     </div>
   );
-
-  const won = settled.filter(b => b.result === "won");
-  const pnl = settled.reduce((s, b) => s + (b.result === "won" ? (b.odds_placed - 1) * b.stake : -b.stake), 0);
-  const totalStake = settled.reduce((s, b) => s + b.stake, 0);
-  const roi = totalStake > 0 ? (pnl / totalStake) * 100 : 0;
-  const winRate = (won.length / settled.length) * 100;
-
-  // Brier Score (if model_prob available)
-  const withProb = settled.filter(b => b.model_prob && b.model_prob > 0);
-  let brier = null;
-  if (withProb.length >= 5) {
-    brier = withProb.reduce((s, b) => {
-      const actual = b.result === "won" ? 1 : 0;
-      return s + Math.pow((b.model_prob || 0) - actual, 2);
-    }, 0) / withProb.length;
-  }
-
-  // CLV: closing line value
-  const avgEdge = settled.reduce((s, b) => s + (b.edge || 0), 0) / settled.length;
 
   return (
     <div style={{ background: "linear-gradient(135deg, #5a8c4a08, #c4a26508)", border: "1px solid #6aad5520", borderRadius: radius.md, padding: space[5], marginBottom: space[4] }}>
@@ -303,6 +303,12 @@ export default function PerformancePage() {
         <>
           {/* Live Performance from actual bets */}
           <LivePerformance />
+
+          {/* Live AI calibration from actual bets */}
+          <LiveCalibration />
+
+          {/* Past bets with share button */}
+          <BetHistoryShare />
 
           {/* Training Info */}
           <div style={S.card}>

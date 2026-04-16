@@ -5,109 +5,206 @@
  * Fetches completed match results from The-Odds-API (scores endpoint)
  * and auto-settles pending bets in Supabase.
  *
+ * Covers all 18 FODZE leagues (up from 5 in v1). Uses canonical market
+ * keys from src/lib/market-labels.ts and fuzzy team matching from
+ * src/lib/team-resolver.ts for robust matching across naming conventions.
+ *
  * Usage:
  *   node scripts/fetch-results.mjs                    # All leagues
  *   node scripts/fetch-results.mjs --league bundesliga # Single league
- *   node scripts/fetch-results.mjs --dry               # Dry run
+ *   node scripts/fetch-results.mjs --dry               # Preview, no writes
+ *   node scripts/fetch-results.mjs --days 7            # Look back N days (default 3)
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync, existsSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const envPath = resolve(__dirname, '..', '.env.local');
+const envPath = resolve(__dirname, "..", ".env.local");
 if (existsSync(envPath)) {
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
     const t = line.trim();
-    if (!t || t.startsWith('#')) continue;
-    const eq = t.indexOf('=');
-    if (eq > 0) process.env[t.slice(0, eq)] = t.slice(eq + 1);
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq > 0 && !process.env[t.slice(0, eq)]) {
+      process.env[t.slice(0, eq)] = t.slice(eq + 1);
+    }
   }
 }
 
 const API_KEY = process.env.ODDS_API_KEY;
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 if (!API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
-if (!SUPA_URL || !SUPA_KEY) { console.error("❌ Missing SUPABASE vars"); process.exit(1); }
+if (!SUPA_URL || !SUPA_KEY) { console.error("❌ Missing SUPABASE env"); process.exit(1); }
 
 const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
-const leagueFilter = args.find((a, i) => args[i - 1] === "--league");
+const leagueFilter = args.find((_, i) => args[i - 1] === "--league");
+const daysArg = args.find((_, i) => args[i - 1] === "--days");
+const DAYS_FROM = parseInt(daysArg) || 3;
 
+// Full league map — mirrors scripts/fetch-odds.mjs to cover all 18 leagues
 const LEAGUE_MAP = {
-  bundesliga: "soccer_germany_bundesliga",
-  epl: "soccer_epl",
-  la_liga: "soccer_spain_la_liga",
-  serie_a: "soccer_italy_serie_a",
-  ligue_1: "soccer_france_ligue_one",
+  bundesliga:    "soccer_germany_bundesliga",
+  bundesliga2:   "soccer_germany_bundesliga2",
+  liga3:         "soccer_germany_liga3",
+  epl:           "soccer_epl",
+  la_liga:       "soccer_spain_la_liga",
+  serie_a:       "soccer_italy_serie_a",
+  ligue_1:       "soccer_france_ligue_one",
+  eredivisie:    "soccer_netherlands_eredivisie",
+  championship:  "soccer_efl_champ",
+  primeira_liga: "soccer_portugal_primeira_liga",
+  jupiler_pro:   "soccer_belgium_first_div",
+  super_lig:     "soccer_turkey_super_league",
+  la_liga2:      "soccer_spain_segunda_division",
+  serie_b:       "soccer_italy_serie_b",
+  ligue_2:       "soccer_france_ligue_two",
+  scottish_prem: "soccer_spl",
+  greek_sl:      "soccer_greece_super_league",
+  league_one:    "soccer_england_league1",
+  league_two:    "soccer_england_league2",
 };
 
-async function fetchScores(sportKey) {
-  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores?apiKey=${API_KEY}&daysFrom=3`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`API ${resp.status}`);
-  return resp.json();
+// ─── Market normalization ────────────────────────────────────────
+// Canonicalize stored market strings to the same set as src/lib/market-labels.ts
+function canonicalMarket(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim().toLowerCase();
+  switch (s) {
+    case "1": case "h": case "home": case "heim":
+      return "1";
+    case "x": case "d": case "draw": case "unent.": case "unent": case "remis":
+      return "X";
+    case "2": case "a": case "away": case "ausw.": case "ausw": case "gast":
+      return "2";
+    case "o25": case "ü2.5": case "u2.5 over": case "o2.5": case "over2.5":
+      return "o25";
+    case "u25": case "u2.5": case "under2.5":
+      return "u25";
+    case "btts": case "gg": case "both teams to score":
+      return "btts";
+    case "no_btts": case "ng": case "no btts":
+      return "no_btts";
+    default:
+      return null;
+  }
 }
 
+function determineResult(market, homeScore, awayScore) {
+  const canon = canonicalMarket(market);
+  const total = homeScore + awayScore;
+  switch (canon) {
+    case "1":       return homeScore > awayScore ? "won" : "lost";
+    case "X":       return homeScore === awayScore ? "won" : "lost";
+    case "2":       return awayScore > homeScore ? "won" : "lost";
+    case "o25":     return total > 2 ? "won" : "lost";
+    case "u25":     return total <= 2 ? "won" : "lost";
+    case "btts":    return homeScore > 0 && awayScore > 0 ? "won" : "lost";
+    case "no_btts": return homeScore === 0 || awayScore === 0 ? "won" : "lost";
+    default:        return null; // Unknown market — skip, don't guess
+  }
+}
+
+// ─── Team name fuzzy match ───────────────────────────────────────
+// Mirrors src/lib/team-resolver.ts `fuzzyTeamMatch` exactly
+function fuzzyTeamMatch(a, b) {
+  if (!a || !b) return false;
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la === lb) return true;
+  if (la.includes(lb) || lb.includes(la)) return true;
+  const words = la.split(/\s+/).filter((w) => w.length > 3);
+  return words.some((w) => lb.includes(w));
+}
+
+// ─── Supabase REST helpers ───────────────────────────────────────
+const SUPA_HEADERS = {
+  apikey: SUPA_KEY,
+  Authorization: `Bearer ${SUPA_KEY}`,
+  "Content-Type": "application/json",
+};
+
 async function getPendingBets() {
-  const resp = await fetch(`${SUPA_URL}/rest/v1/bets?result=eq.pending&select=*`, {
-    headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
-  });
+  const resp = await fetch(
+    `${SUPA_URL}/rest/v1/bets?result=eq.pending&select=*`,
+    { headers: SUPA_HEADERS },
+  );
+  if (!resp.ok) throw new Error(`Supabase GET bets: ${resp.status}`);
   return resp.json();
 }
 
 async function settleBet(betId, result) {
-  if (DRY) { console.log(`  [DRY] Would settle ${betId} → ${result}`); return; }
-  await fetch(`${SUPA_URL}/rest/v1/bets?id=eq.${betId}`, {
-    method: "PATCH",
-    headers: {
-      apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}`,
-      "Content-Type": "application/json", Prefer: "return=minimal",
-    },
-    body: JSON.stringify({ result, settled_at: new Date().toISOString() }),
+  if (DRY) return;
+  const body = JSON.stringify({
+    result,
+    settled_at: new Date().toISOString(),
   });
+  const resp = await fetch(
+    `${SUPA_URL}/rest/v1/bets?id=eq.${betId}`,
+    {
+      method: "PATCH",
+      headers: { ...SUPA_HEADERS, Prefer: "return=minimal" },
+      body,
+    },
+  );
+  if (!resp.ok) {
+    const msg = await resp.text();
+    console.error(`  ⚠️ PATCH ${betId}: ${resp.status} ${msg}`);
+  }
 }
 
-function determineResult(bet, homeScore, awayScore) {
-  const market = bet.market?.toLowerCase();
-  const totalGoals = homeScore + awayScore;
-
-  if (market === "heim" || market === "1") return homeScore > awayScore ? "won" : "lost";
-  if (market === "unent." || market === "x") return homeScore === awayScore ? "won" : "lost";
-  if (market === "ausw." || market === "2") return awayScore > homeScore ? "won" : "lost";
-  if (market === "ü2.5") return totalGoals > 2 ? "won" : "lost";
-  if (market === "u2.5") return totalGoals <= 2 ? "won" : "lost";
-  if (market === "btts") return homeScore > 0 && awayScore > 0 ? "won" : "lost";
-
-  return null; // Unknown market
+// ─── Odds API fetch ──────────────────────────────────────────────
+async function fetchScores(sportKey, daysFrom) {
+  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores?apiKey=${API_KEY}&daysFrom=${daysFrom}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${sportKey}: HTTP ${resp.status}`);
+  return resp.json();
 }
 
+function extractScores(match) {
+  if (!match.scores || !Array.isArray(match.scores)) return null;
+  const homeRow = match.scores.find((s) => s.name === match.home_team);
+  const awayRow = match.scores.find((s) => s.name === match.away_team);
+  const h = parseInt(homeRow?.score);
+  const a = parseInt(awayRow?.score);
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
+  return { home: h, away: a };
+}
+
+// ─── Main ────────────────────────────────────────────────────────
 async function main() {
-  console.log(`⚽ FODZE Result Fetcher${DRY ? " (DRY RUN)" : ""}\n`);
+  console.log(`⚽ FODZE Result Fetcher${DRY ? " (DRY RUN)" : ""} · lookback ${DAYS_FROM}d\n`);
 
-  // Get all pending bets
-  const pendingBets = await getPendingBets();
-  console.log(`📋 ${pendingBets.length} pending bets\n`);
-
-  if (pendingBets.length === 0) {
-    console.log("No pending bets to settle.");
+  const pending = await getPendingBets();
+  console.log(`📋 ${pending.length} pending bets`);
+  if (pending.length === 0) {
+    console.log("No pending bets to settle. Exiting.");
     return;
   }
 
-  // Fetch scores for relevant leagues
-  const leagues = leagueFilter ? { [leagueFilter]: LEAGUE_MAP[leagueFilter] } : LEAGUE_MAP;
-  const allScores = [];
+  // Determine which leagues are relevant (only fetch leagues that have pending bets)
+  const pendingLeagues = new Set(
+    pending.map((b) => (b.match_key || "").split(":")[0]).filter(Boolean),
+  );
+  const leagues = leagueFilter
+    ? { [leagueFilter]: LEAGUE_MAP[leagueFilter] }
+    : Object.fromEntries(
+        Object.entries(LEAGUE_MAP).filter(([k]) => pendingLeagues.size === 0 || pendingLeagues.has(k)),
+      );
+  console.log(`🎯 Fetching scores for ${Object.keys(leagues).length} leagues`);
 
+  const allScores = [];
   for (const [fodzeKey, sportKey] of Object.entries(leagues)) {
     if (!sportKey) continue;
     try {
-      const scores = await fetchScores(sportKey);
-      const completed = scores.filter(s => s.completed);
-      allScores.push(...completed.map(s => ({ ...s, fodzeLeague: fodzeKey })));
-      console.log(`📊 ${fodzeKey}: ${completed.length} completed matches`);
+      const scores = await fetchScores(sportKey, DAYS_FROM);
+      const completed = scores.filter((s) => s.completed);
+      allScores.push(...completed.map((s) => ({ ...s, fodzeLeague: fodzeKey })));
+      console.log(`  📊 ${fodzeKey.padEnd(16)} ${completed.length} completed`);
     } catch (e) {
       console.error(`  ❌ ${fodzeKey}: ${e.message}`);
     }
@@ -115,41 +212,60 @@ async function main() {
 
   // Match bets to results
   let settled = 0;
-  for (const bet of pendingBets) {
-    const homeTeam = (bet.home_team || "").toLowerCase();
-    const awayTeam = (bet.away_team || "").toLowerCase();
+  let unsettled = 0;
+  const unmatchedBets = [];
+  for (const bet of pending) {
+    const betLeague = (bet.match_key || "").split(":")[0];
+    // Prefer matching within the same league for accuracy
+    const candidates = betLeague
+      ? allScores.filter((s) => s.fodzeLeague === betLeague)
+      : allScores;
 
-    // Find matching score
-    const match = allScores.find(s => {
-      const h = s.home_team.toLowerCase();
-      const a = s.away_team.toLowerCase();
-      return (h.includes(homeTeam) || homeTeam.includes(h) ||
-              h.split(" ").some(w => w.length > 3 && homeTeam.includes(w))) &&
-             (a.includes(awayTeam) || awayTeam.includes(a) ||
-              a.split(" ").some(w => w.length > 3 && awayTeam.includes(w)));
-    });
+    const match = candidates.find(
+      (s) =>
+        fuzzyTeamMatch(s.home_team, bet.home_team) &&
+        fuzzyTeamMatch(s.away_team, bet.away_team),
+    );
 
-    if (!match) continue;
+    if (!match) {
+      unmatchedBets.push(bet);
+      unsettled++;
+      continue;
+    }
 
-    const homeScore = parseInt(match.scores?.find(s => s.name === match.home_team)?.score);
-    const awayScore = parseInt(match.scores?.find(s => s.name === match.away_team)?.score);
+    const scores = extractScores(match);
+    if (!scores) {
+      console.log(`  ⚠️ ${bet.home_team}-${bet.away_team}: scores not available yet`);
+      unsettled++;
+      continue;
+    }
 
-    if (isNaN(homeScore) || isNaN(awayScore)) continue;
-
-    const result = determineResult(bet, homeScore, awayScore);
-    if (!result) continue;
+    const result = determineResult(bet.market, scores.home, scores.away);
+    if (!result) {
+      console.log(`  ⚠️ ${bet.home_team}-${bet.away_team}: unknown market "${bet.market}"`);
+      unsettled++;
+      continue;
+    }
 
     const pnl = result === "won"
-      ? ((bet.odds_placed - 1) * bet.stake).toFixed(2)
-      : (-bet.stake).toFixed(2);
-
-    console.log(`  ${bet.home_team} ${homeScore}:${awayScore} ${bet.away_team} | ${bet.market} → ${result} (${pnl}€)`);
+      ? ((Number(bet.odds_placed) - 1) * Number(bet.stake)).toFixed(2)
+      : (-Number(bet.stake)).toFixed(2);
+    const icon = result === "won" ? "✅" : "❌";
+    console.log(
+      `  ${icon} ${bet.home_team} ${scores.home}:${scores.away} ${bet.away_team} · ${bet.market} → ${result} (${pnl >= 0 ? "+" : ""}${pnl}€)`,
+    );
 
     await settleBet(bet.id, result);
     settled++;
   }
 
   console.log(`\n✅ ${settled} bets settled${DRY ? " (dry)" : ""}`);
+  if (unsettled > 0) {
+    console.log(`⏳ ${unsettled} bets unsettled (match not completed yet, scores missing, or unknown market)`);
+  }
 }
 
-main().catch(e => { console.error(`Fatal: ${e.message}`); process.exit(1); });
+main().catch((e) => {
+  console.error(`Fatal: ${e.message}`);
+  process.exit(1);
+});
