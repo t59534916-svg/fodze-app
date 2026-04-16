@@ -68,3 +68,35 @@ export function fmtDateTime(iso?: string | null): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * Format a fraction as a percentage.
+ *   percent(0.423)          → "42.3%"
+ *   percent(0.423, 0)       → "42%"
+ *   percent(0.04, 1, true)  → "+4.0%" (signed — for edge/delta display)
+ *
+ * Previously re-declared as `pc`/`pe` in 4+ pages (matchday, fuck-betting,
+ * MatchDetail, anna). Centralized here for consistency.
+ */
+export function percent(value: number, decimals = 1, signed = false): string {
+  if (!Number.isFinite(value)) return "—";
+  const pct = value * 100;
+  const body = pct.toFixed(decimals);
+  if (signed) return `${value >= 0 ? "+" : ""}${body}%`;
+  return `${body}%`;
+}
+
+/**
+ * Canonical match identifier derived from league + team names.
+ * Same format the odds_snapshots + bets tables store, so use this when
+ * looking up history or placing bets.
+ *
+ * Normalizes by lowercasing and stripping whitespace — mirrors what was
+ * previously duplicated inline in MatchdayContext, useBets, and page.tsx.
+ *   matchKey("bundesliga", "FC Bayern München", "Borussia Dortmund")
+ *     → "bundesliga:fcbayernmünchen-borussiadortmund"
+ */
+export function matchKey(league: string, homeTeam: string, awayTeam: string): string {
+  const clean = (s: string) => (s || "").toLowerCase().replace(/\s/g, "");
+  return `${league}:${clean(homeTeam)}-${clean(awayTeam)}`;
+}

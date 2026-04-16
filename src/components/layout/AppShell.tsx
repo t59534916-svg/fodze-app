@@ -25,13 +25,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           font-size: 16px;
           line-height: 1.5;
         }
-        /* Floating help icon — top-right, below decorative corners */
+        /* Floating help icon — 44×44 WCAG 2.5.5 touch target, top-right,
+           below decorative corners */
         .help-icon {
           position: absolute;
-          top: 20px;
-          right: 20px;
-          width: 32px;
-          height: 32px;
+          top: 14px;
+          right: 14px;
+          width: 44px;
+          height: 44px;
           border-radius: 50%;
           border: 1px solid #c4a26530;
           background: #c4a26510;
@@ -39,7 +40,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          font-size: 15px;
+          font-size: 18px;
           font-weight: 700;
           font-family: Georgia, serif;
           text-decoration: none;
@@ -54,7 +55,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
         @media (min-width: 1024px) {
           /* Sidebar layout — move help icon into the sidebar area */
-          .help-icon { right: auto; left: 20px; top: 20px; }
+          .help-icon { right: auto; left: 14px; top: 14px; }
         }
         @media (min-width: 768px) {
           .app-shell {

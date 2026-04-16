@@ -6,6 +6,8 @@ import {
   fmtDateLong,
   fmtDateSlug,
   fmtDateTime,
+  percent,
+  matchKey,
 } from "@/lib/format";
 
 // ─── fmtEuro ─────────────────────────────────────────────────────
@@ -148,5 +150,61 @@ describe("fmtDateTime", () => {
   it("empty string for invalid", () => {
     expect(fmtDateTime(null)).toBe("");
     expect(fmtDateTime("garbage")).toBe("");
+  });
+});
+
+// ─── percent ─────────────────────────────────────────────────────
+
+describe("percent", () => {
+  it("formats fractions with 1 decimal by default", () => {
+    expect(percent(0.423)).toBe("42.3%");
+    expect(percent(0.5)).toBe("50.0%");
+    expect(percent(1)).toBe("100.0%");
+    expect(percent(0)).toBe("0.0%");
+  });
+
+  it("respects custom decimals", () => {
+    expect(percent(0.423, 0)).toBe("42%");
+    expect(percent(0.423, 2)).toBe("42.30%");
+  });
+
+  it("signs output when signed=true", () => {
+    expect(percent(0.04, 1, true)).toBe("+4.0%");
+    expect(percent(-0.04, 1, true)).toBe("-4.0%");
+    expect(percent(0, 1, true)).toBe("+0.0%"); // 0 is non-negative
+  });
+
+  it("returns — for non-finite inputs", () => {
+    expect(percent(NaN)).toBe("—");
+    expect(percent(Infinity)).toBe("—");
+    expect(percent(-Infinity)).toBe("—");
+  });
+
+  it("handles negatives without signed flag", () => {
+    expect(percent(-0.1)).toBe("-10.0%");
+  });
+});
+
+// ─── matchKey ────────────────────────────────────────────────────
+
+describe("matchKey", () => {
+  it("joins league + teams with : and -", () => {
+    expect(matchKey("bundesliga", "Bayern", "Dortmund")).toBe("bundesliga:bayern-dortmund");
+  });
+
+  it("lowercases and strips whitespace", () => {
+    expect(matchKey("bundesliga", "FC Bayern München", "Borussia Dortmund"))
+      .toBe("bundesliga:fcbayernmünchen-borussiadortmund");
+  });
+
+  it("handles empty team names defensively", () => {
+    expect(matchKey("epl", "", "Arsenal")).toBe("epl:-arsenal");
+    expect(matchKey("epl", "Arsenal", "")).toBe("epl:arsenal-");
+  });
+
+  it("is deterministic (same inputs = same output)", () => {
+    const a = matchKey("la_liga", "Real Madrid", "Barcelona");
+    const b = matchKey("la_liga", "Real Madrid", "Barcelona");
+    expect(a).toBe(b);
   });
 });

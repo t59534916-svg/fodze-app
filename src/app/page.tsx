@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import { isCalibrationActive } from "@/lib/dixon-coles";
@@ -19,9 +19,17 @@ const S = {
 
 export default function Home() {
   const router = useRouter();
-  const { user, profile, supabase, setLeague } = useApp();
+  const { user, profile, supabase, setLeague, leagueStatus } = useApp();
   const { loadCached, error } = useMatchday();
   const [showSettings, setShowSettings] = useState(false);
+
+  // Count how many leagues have upcoming matchday data — drives the
+  // "Value Bets" CTA visibility. Home was previously a dead-end page that
+  // required 5-6 taps to reach a value bet; this shortcuts to 1.
+  const activeLeaguesCount = useMemo(
+    () => Object.values(leagueStatus).filter(Boolean).length,
+    [leagueStatus],
+  );
 
   const handleLoadLeague = async (key: string) => {
     setLeague(key);
@@ -91,6 +99,44 @@ export default function Home() {
             Abmelden
           </button>
         </div>
+      )}
+
+      {/* Value Bets CTA — direct path to Goldilocks page */}
+      {activeLeaguesCount > 0 && (
+        <button
+          onClick={() => router.push("/goldilocks")}
+          aria-label="Value Bets anzeigen"
+          style={{
+            width: "100%", padding: "14px 18px", marginBottom: 16,
+            background: "linear-gradient(135deg, #d4b86a20, #d4b86a10)",
+            border: "1px solid #d4b86a50", borderRadius: 12,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            cursor: "pointer", transition: "all 0.15s",
+            minHeight: 56,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: "#d4b86a25", display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d4b86a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="1" fill="#d4b86a" />
+              </svg>
+            </div>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#d4b86a", letterSpacing: 0.3 }}>
+                Value Bets anzeigen
+              </div>
+              <div style={{ fontSize: 11, color: "#c4a26570", marginTop: 2 }}>
+                {activeLeaguesCount} aktive Liga{activeLeaguesCount !== 1 ? "s" : ""} · Edge 2.5–7.5%
+              </div>
+            </div>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d4b86a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
       )}
 
       {/* League Grid */}

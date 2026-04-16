@@ -19,6 +19,22 @@ function formatDate(iso: string): string {
   } catch { return iso; }
 }
 
+// Classifies how "fresh" a matchday date is.
+// Today = HEUTE badge (gold pulse). Tomorrow = MORGEN. Future = no badge.
+// Past = no badge (App shows the latest day that was seeded; a future
+// refresh will overwrite it).
+function dateProximity(iso: string): "today" | "tomorrow" | "future" | "past" {
+  if (!iso) return "past";
+  const d = new Date(iso + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((d.getTime() - today.getTime()) / 86_400_000);
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "tomorrow";
+  if (diffDays > 1) return "future";
+  return "past";
+}
+
 export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: string) => void }) {
   const router = useRouter();
   const { league, setLeague, leagueStatus } = useApp();
@@ -41,20 +57,24 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
           const info = leagueStatus[key];
           const hasData = !!info;
           const isSelected = league === key;
+          const proximity = hasData ? dateProximity(info!.date) : "past";
+          const showHeute = proximity === "today";
+          const showMorgen = proximity === "tomorrow";
           return (
             <button key={key} onClick={() => handleClick(key)} className="league-tile"
-              aria-label={`${val.name}${hasData ? ` — ${info!.label}` : " — Keine Daten"}`}
+              aria-label={`${val.name}${hasData ? ` — ${info!.label}${showHeute ? ", heute" : ""}` : " — Keine Daten"}`}
               aria-pressed={isSelected}
               style={{
                 padding: "12px", borderRadius: 10, cursor: "pointer",
                 minHeight: 72, width: "100%", textAlign: "left" as const,
-                border: isSelected ? "1.5px solid #d4b86a" : "1px solid #c4a26515",
+                border: isSelected ? "1.5px solid #d4b86a" : showHeute ? "1.5px solid #d4b86a40" : "1px solid #c4a26515",
                 background: isSelected ? "#c4a26512" : "#0d070530",
                 opacity: hasData ? 1 : 0.45,
+                position: "relative",
               }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 20 }}>{FLAG[key] || "⚽"}</span>
-                <div style={{ flex: 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{val.name}</div>
                   {hasData ? (
                     <div style={{ fontSize: 10, color: "#c4a26570", marginTop: 2 }}>
@@ -64,7 +84,24 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
                     <div style={{ fontSize: 10, color: "#c4a26550", marginTop: 2 }}>Keine Daten</div>
                   )}
                 </div>
-                {hasData && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#6aad55", flexShrink: 0 }} aria-hidden="true" />}
+                {showHeute && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 700, color: "#1a0f0a",
+                    background: "#d4b86a", padding: "2px 6px", borderRadius: 10,
+                    letterSpacing: 0.5, flexShrink: 0,
+                  }}>HEUTE</span>
+                )}
+                {showMorgen && (
+                  <span style={{
+                    fontSize: 8, fontWeight: 700, color: "#d4b86a",
+                    background: "#d4b86a20", padding: "2px 6px", borderRadius: 10,
+                    letterSpacing: 0.5, flexShrink: 0,
+                    border: "1px solid #d4b86a40",
+                  }}>MORGEN</span>
+                )}
+                {hasData && !showHeute && !showMorgen && (
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#6aad55", flexShrink: 0 }} aria-hidden="true" />
+                )}
               </div>
             </button>
           );

@@ -1,6 +1,8 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, loadLeagueXGHistory, toXGHistoryEntries } from "@/lib/supabase";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, loadLeagueXGHistory, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory } from "@/lib/supabase";
+import { matchKey } from "@/lib/format";
+import { parseAbsences } from "@/lib/absence-parser";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
@@ -166,13 +168,25 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const live = await loadLiveOdds(supabase, lg);
       setLiveOdds(live);
 
+      // Load odds history for all matches in parallel (was sequential —
+      // 10 matches × ~100ms each = 1s. Parallel runs in ~150ms total.)
+      const matchKeys = (cached.data.matches || []).map((m: RawMatch) =>
+        matchKey(lg, m.home?.name || "", m.away?.name || ""),
+      );
+      const histories = await Promise.all(
+        matchKeys.map((k: string) => loadOddsHistory(supabase, k)),
+      );
+
+      const historyUpdates: Record<number, OddsSnapshot[]> = {};
+      const oddsUpdates: Record<number, OddsData> = {};
+      let anyLiveOdds = false;
+
       for (let i = 0; i < (cached.data.matches?.length || 0); i++) {
         const match = cached.data.matches[i];
-        const key = `${lg}:${match.home?.name}-${match.away?.name}`.toLowerCase().replace(/\s/g, "");
-        const hist = await loadOddsHistory(supabase, key);
-        if (hist.length > 0) {
-          setOddsHistory(prev => ({ ...prev, [i]: hist }));
-          setOddsData(prev => ({ ...prev, [i]: hist[hist.length - 1].odds }));
+        const hist = histories[i];
+        if (hist && hist.length > 0) {
+          historyUpdates[i] = hist;
+          oddsUpdates[i] = hist[hist.length - 1].odds;
           continue;
         }
         const homeName = (match.home?.name || "").toLowerCase();
@@ -186,7 +200,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
                   loA.split(" ").some((w: string) => w.length > 3 && awayName.includes(w)));
         });
         if (matched && matched.best_h) {
-          setOddsData(prev => ({ ...prev, [i]: {
+          oddsUpdates[i] = {
             h: String(matched.best_h), d: String(matched.best_d), a: String(matched.best_a),
             o25: matched.best_over25 ? String(matched.best_over25) : "",
             u25: matched.best_under25 ? String(matched.best_under25) : "",
@@ -194,10 +208,15 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
             _sharp: { h: matched.sharp_h, d: matched.sharp_d, a: matched.sharp_a },
             _bookmakers: matched.num_bookmakers,
             _fetched: matched.fetched_at,
-          }}));
-          setOddsSource("live");
+          } as OddsData;
+          anyLiveOdds = true;
         }
       }
+
+      // Batch all the per-match setState calls into one update each
+      if (Object.keys(historyUpdates).length > 0) setOddsHistory(prev => ({ ...prev, ...historyUpdates }));
+      if (Object.keys(oddsUpdates).length > 0) setOddsData(prev => ({ ...prev, ...oddsUpdates }));
+      if (anyLiveOdds) setOddsSource("live");
       return true;
     }
     return false;
@@ -242,18 +261,16 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   const handleSaveOdds = useCallback(async (idx: number) => {
     const o = oddsData[idx]; if (!o?.h && !o?.d && !o?.a) return;
     setSaving(idx);
-    const { saveOddsSnapshot, loadOddsHistory: loadHist } = await import("@/lib/supabase");
     const match = data?.matches?.[idx];
-    const key = `${league}:${match?.home?.name}-${match?.away?.name}`.toLowerCase().replace(/\s/g, "");
+    const key = matchKey(league, match?.home?.name || "", match?.away?.name || "");
     await saveOddsSnapshot(supabase, league, key, match?.home?.name || "", match?.away?.name || "", o, user.id);
-    const hist = await loadHist(supabase, key);
+    const hist = await loadOddsHistory(supabase, key);
     setOddsHistory(prev => ({ ...prev, [idx]: hist })); setSaving(null);
   }, [oddsData, data, league, user.id, supabase]);
 
   const handleDelHist = useCallback(async (idx: number) => {
-    const { deleteOddsHistory } = await import("@/lib/supabase");
     const match = data?.matches?.[idx];
-    const key = `${league}:${match?.home?.name}-${match?.away?.name}`.toLowerCase().replace(/\s/g, "");
+    const key = matchKey(league, match?.home?.name || "", match?.away?.name || "");
     await deleteOddsHistory(supabase, key);
     setOddsHistory(prev => { const n = { ...prev }; delete n[idx]; return n; });
   }, [data, league, supabase]);
@@ -269,6 +286,16 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const matchHf = getHomeFactor(h.name, ld.hf);
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
 
+    // ── Parse injuries into PlayerProfile[] for absence-aware prediction ──
+    // Before: match.home.injuries was displayed but never fed to the engines.
+    // The 7.5% Goldilocks cap was rejecting edges that we should've modeled.
+    const homeAbsences = parseAbsences(h.injuries, h.name || "");
+    const awayAbsences = parseAbsences(a.injuries, a.name || "");
+    const absences =
+      homeAbsences.length > 0 || awayAbsences.length > 0
+        ? { home: homeAbsences, away: awayAbsences }
+        : undefined;
+
     // ── ML engine input (shared between v1 and v2) ─────────────────
     const mlInputs = {
       xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
@@ -280,6 +307,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       odds: no, fraction: frac,
       sharpOdds: o._sharp as any,
       sosRatings: sosRatings || undefined,
+      absences,
       options: { league } as any,
     };
 
@@ -296,7 +324,8 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       a.xg_a8, a.xga_a8 || 0, a.games || 8, a.form,
       ld.avg, matchHf, match.tags || [],
       h.xg_h_history, a.xg_a_history,
-      undefined, undefined, undefined, undefined, // SoS, names, absences
+      // sosRatings, homeTeamName, awayTeamName, absences
+      sosRatings || undefined, h.name, a.name, absences,
       { league }  // enables NegBin overdispersion + dynamic rho
     );
     const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
