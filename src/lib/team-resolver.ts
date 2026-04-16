@@ -383,6 +383,35 @@ const TEAM_REGISTRY: TeamIdentity[] = [
   { fodze: "Bromley", csv: "Bromley", league: "league_two" },
   { fodze: "Harrogate Town", csv: "Harrogate", league: "league_two" },
   { fodze: "Fleetwood Town", csv: "Fleetwood Town", league: "league_two" },
+
+  // ─── CSV / Elo aliases: FODZE matchday variants that differ from
+  // what football-data.co.uk uses in the Elo training data. Added after
+  // an audit showed 48 current-matchday teams missing Elo via exact lookup.
+  { fodze: "Hertha Berlin", csv: "Hertha", understat: "Hertha Berlin", league: "bundesliga2" },
+  { fodze: "Paris Saint Germain", csv: "Paris SG", understat: "Paris Saint Germain", league: "ligue_1" },
+  { fodze: "Jahn Regensburg", csv: "Regensburg", league: "liga3" },
+  { fodze: "SSV Jahn Regensburg", csv: "Regensburg", league: "liga3" },
+  { fodze: "VfL Osnabrück", csv: "Osnabruck", league: "liga3" },
+  { fodze: "FC Energie Cottbus", csv: "Energie Cottbus", league: "liga3" },
+  { fodze: "Energie Cottbus", csv: "Energie Cottbus", league: "liga3" },
+  { fodze: "Waldhof Mannheim", csv: "Waldhof Mannheim", league: "liga3" },
+  { fodze: "SV Waldhof Mannheim", csv: "Waldhof Mannheim", league: "liga3" },
+  { fodze: "Wehen Wiesbaden", csv: "Wehen", league: "liga3" },
+  { fodze: "SV Wehen Wiesbaden", csv: "Wehen", league: "liga3" },
+  { fodze: "SC Preußen Münster", csv: "Preussen Munster", understat: "Preußen Münster", league: "bundesliga2" },
+  // Greek SL — DB names differ from full matchday names
+  { fodze: "Olympiakos Piraeus", csv: "Olympiakos", understat: "Olympiakos", league: "greek_sl" },
+  { fodze: "PAOK Thessaloniki", csv: "PAOK", understat: "PAOK", league: "greek_sl" },
+  { fodze: "Aris Thessaloniki", csv: "Aris", understat: "Aris", league: "greek_sl" },
+  { fodze: "AEK Athens", csv: "AEK", understat: "AEK", league: "greek_sl" },
+  { fodze: "Levadiakos", csv: "Levadeiakos", understat: "Levadeiakos", league: "greek_sl" },
+  { fodze: "Volos FC", csv: "Volos NFC", understat: "Volos NFC", league: "greek_sl" },
+  // Jupiler Pro aliases
+  { fodze: "Leuven", csv: "Oud-Heverlee Leuven", league: "jupiler_pro" },
+  { fodze: "Union Saint-Gilloise", csv: "St. Gilloise", understat: "St. Gilloise", league: "jupiler_pro" },
+  { fodze: "SV Zulte-Waregem", csv: "Waregem", understat: "Waregem", league: "jupiler_pro" },
+  { fodze: "Standard Liege", csv: "Standard", league: "jupiler_pro" },
+  { fodze: "Sint Truiden", csv: "St Truiden", league: "jupiler_pro" },
 ];
 
 // ─── Build Lookup Maps ───────────────────────────────────────────────

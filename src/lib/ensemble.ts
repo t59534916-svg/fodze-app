@@ -13,7 +13,6 @@
 
 // ─── Elo Rating Model ────────────────────────────────────────────────
 
-const DEFAULT_ELO = 1500;
 const K_FACTOR = 32;
 const HOME_ADVANTAGE_ELO = 65;
 
@@ -21,17 +20,29 @@ interface EloRatings {
   [team: string]: number;
 }
 
-import { toCsvName } from "./team-resolver";
+import { toCsvName, resolveTeam } from "./team-resolver";
+import { seedElo } from "./elo-seeding";
 
 // Global Elo store (loaded from ensemble-model.json at runtime)
 let eloRatings: EloRatings = {};
 
-function getElo(team: string): number {
-  // Direct lookup first (already a CSV name)
+/**
+ * Look up a team's Elo rating. Tries exact CSV name, then FODZE→CSV
+ * resolution, then falls back to league-aware seeding (league_median -
+ * promotion_penalty) instead of the old flat 1500.
+ *
+ * @param team FODZE, CSV, or Understat name
+ * @param leagueHint Optional — makes the fallback league-aware
+ */
+function getElo(team: string, leagueHint?: string): number {
   if (eloRatings[team] !== undefined) return eloRatings[team];
-  // Resolve FODZE/Understat name to CSV name
   const csvName = toCsvName(team);
-  return eloRatings[csvName] ?? DEFAULT_ELO;
+  if (eloRatings[csvName] !== undefined) return eloRatings[csvName];
+
+  // Not found — use league-aware seeding. Derive league from team-resolver
+  // registry if the caller didn't pass a hint.
+  const league = leagueHint ?? resolveTeam(team)?.league;
+  return seedElo(league, eloRatings);
 }
 
 function expectedScore(ratingA: number, ratingB: number): number {

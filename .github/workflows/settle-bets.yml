@@ -58,3 +58,14 @@ jobs:
         run: node scripts/backfill-liga3-goals.mjs --days 3
         # Uses goals as a noisy xG proxy for 3. Liga — better than the
         # pure league-avg fallback once ~15 matches have been played per team.
+
+      - name: Backfill real xG from FootyStats (if API key configured)
+        env:
+          FOOTYSTATS_API_KEY: ${{ secrets.FOOTYSTATS_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        # No-op without FOOTYSTATS_API_KEY — just logs "skipped".
+        # When the key is added, Liga 3 starts getting real per-match xG
+        # and the goals-proxy rows are replaced on conflict.
+        run: node scripts/backfill-footystats.mjs --league liga3
