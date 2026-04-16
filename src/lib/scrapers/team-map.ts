@@ -30,9 +30,12 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "FC Augsburg":          { understat: "Augsburg", league: "bundesliga" },
   "1. FSV Mainz 05":      { understat: "Mainz 05", league: "bundesliga" },
   "Borussia Mönchengladbach": { understat: "Borussia M.Gladbach", league: "bundesliga" },
-  "1. FC Heidenheim":     { understat: "Heidenheim", league: "bundesliga" },
+  "1. FC Heidenheim":     { understat: "FC Heidenheim", league: "bundesliga" },
   "FC St. Pauli":         { understat: "St. Pauli", league: "bundesliga" },
   "Holstein Kiel":        { understat: "Holstein Kiel", league: "bundesliga" },
+  // Aliases to match matchday-name variants exactly
+  "Bayer 04 Leverkusen":  { understat: "Bayer Leverkusen", league: "bundesliga" },
+  "SV Werder Bremen":     { understat: "Werder Bremen", league: "bundesliga" },
 
   // ─── Premier League (Understat) ─────────────────────────────
   "Manchester City":      { understat: "Manchester City", league: "epl" },
@@ -40,14 +43,20 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "Liverpool":            { understat: "Liverpool", league: "epl" },
   "Aston Villa":          { understat: "Aston Villa", league: "epl" },
   "Tottenham":            { understat: "Tottenham", league: "epl" },
+  "Tottenham Hotspur":    { understat: "Tottenham", league: "epl" },
   "Chelsea":              { understat: "Chelsea", league: "epl" },
   "Newcastle":            { understat: "Newcastle United", league: "epl" },
+  "Newcastle United":     { understat: "Newcastle United", league: "epl" },
   "Manchester United":    { understat: "Manchester United", league: "epl" },
   "West Ham":             { understat: "West Ham", league: "epl" },
+  "West Ham United":      { understat: "West Ham", league: "epl" },
   "Brighton":             { understat: "Brighton", league: "epl" },
+  "Brighton & Hove Albion": { understat: "Brighton", league: "epl" },
   "Bournemouth":          { understat: "Bournemouth", league: "epl" },
+  "AFC Bournemouth":      { understat: "Bournemouth", league: "epl" },
   "Crystal Palace":       { understat: "Crystal Palace", league: "epl" },
   "Wolverhampton":        { understat: "Wolverhampton Wanderers", league: "epl" },
+  "Wolverhampton Wanderers": { understat: "Wolverhampton Wanderers", league: "epl" },
   "Fulham":               { understat: "Fulham", league: "epl" },
   "Everton":              { understat: "Everton", league: "epl" },
   "Brentford":            { understat: "Brentford", league: "epl" },
@@ -55,6 +64,11 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "Ipswich Town":         { understat: "Ipswich", league: "epl" },
   "Leicester City":       { understat: "Leicester", league: "epl" },
   "Southampton":          { understat: "Southampton", league: "epl" },
+  "Leeds United":         { understat: "Leeds", league: "epl" },
+  "Burnley":              { understat: "Burnley", league: "epl" },
+  // Sunderland: Promoted 2025/26, Understat data only from 2016/17 era. Resolves
+  // to "Sunderland" but DB has 0 rows — engine falls back to league averages.
+  "Sunderland":           { understat: "Sunderland", league: "epl" },
 
   // ─── La Liga (Understat) ────────────────────────────────────
   "Real Madrid":          { understat: "Real Madrid", league: "la_liga" },
@@ -70,15 +84,29 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
 
   // ─── Serie A (Understat) ────────────────────────────────────
   "Inter Mailand":        { understat: "Inter", league: "serie_a" },
+  "Inter Milan":          { understat: "Inter", league: "serie_a" },
   "AC Milan":             { understat: "AC Milan", league: "serie_a" },
   "Juventus":             { understat: "Juventus", league: "serie_a" },
   "Atalanta":             { understat: "Atalanta", league: "serie_a" },
   "SSC Neapel":           { understat: "Napoli", league: "serie_a" },
+  "Napoli":               { understat: "Napoli", league: "serie_a" },
   "AS Rom":               { understat: "Roma", league: "serie_a" },
+  "Roma":                 { understat: "Roma", league: "serie_a" },
   "Lazio":                { understat: "Lazio", league: "serie_a" },
   "Fiorentina":           { understat: "Fiorentina", league: "serie_a" },
   "Bologna":              { understat: "Bologna", league: "serie_a" },
   "Torino":               { understat: "Torino", league: "serie_a" },
+  "Hellas Verona":        { understat: "Verona", league: "serie_a" },
+  "Como 1907":            { understat: "Como", league: "serie_a" },
+  "US Sassuolo":          { understat: "Sassuolo", league: "serie_a" },
+  "Parma":                { understat: "Parma Calcio 1913", league: "serie_a" },
+  "Cremonese":            { understat: "Cremonese", league: "serie_a" },
+  "Genoa":                { understat: "Genoa", league: "serie_a" },
+  "Lecce":                { understat: "Lecce", league: "serie_a" },
+  "Cagliari":             { understat: "Cagliari", league: "serie_a" },
+  "Udinese":              { understat: "Udinese", league: "serie_a" },
+  // Pisa: Promoted 2025/26, no Understat history yet — DB lookup returns 0.
+  "Pisa":                 { understat: "Pisa", league: "serie_a" },
 
   // ─── Ligue 1 (Understat) ───────────────────────────────────
   "Paris Saint-Germain":  { understat: "Paris Saint Germain", league: "ligue_1" },
@@ -95,7 +123,7 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "Fortuna Düsseldorf":   { fbref: "/en/squads/b1278397/Fortuna-Dusseldorf-Stats", league: "bundesliga2" },
   "Hertha BSC":           { fbref: "/en/squads/2818f8bc/Hertha-BSC-Stats", league: "bundesliga2" },
   "Hamburger SV":         { fbref: "/en/squads/febe5e84/Hamburger-SV-Stats", league: "bundesliga2" },
-  "1. FC Köln":           { fbref: "/en/squads/bc357bf7/Koln-Stats", league: "bundesliga2" },
+  "1. FC Köln":           { understat: "FC Cologne", fbref: "/en/squads/bc357bf7/Koln-Stats", league: "bundesliga" },
   "Hannover 96":          { fbref: "/en/squads/60b5e41f/Hannover-96-Stats", league: "bundesliga2" },
   "SV Darmstadt 98":      { fbref: "/en/squads/6a399165/Darmstadt-98-Stats", league: "bundesliga2" },
   "SC Paderborn":         { fbref: "/en/squads/3a4e3fe6/Paderborn-07-Stats", league: "bundesliga2" },
@@ -121,6 +149,15 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "SpVgg Unterhaching":   { fbref: "/en/squads/fc6e7be1/Unterhaching-Stats", league: "liga3" },
   "Viktoria Köln":        { fbref: "/en/squads/2fe80c74/Viktoria-Koln-Stats", league: "liga3" },
   "FC Viktoria Köln":     { fbref: "/en/squads/2fe80c74/Viktoria-Koln-Stats", league: "liga3" },
+
+  // ─── Greek Super League (Shots-Modell, Namens-Aliase) ──────────
+  // DB has abbreviated/different spellings vs matchday names
+  "Olympiakos Piraeus":   { understat: "Olympiakos", league: "greek_sl" },
+  "PAOK Thessaloniki":    { understat: "PAOK", league: "greek_sl" },
+  "Aris Thessaloniki":    { understat: "Aris", league: "greek_sl" },
+  "AEK Athens":           { understat: "AEK", league: "greek_sl" },
+  "Levadiakos":           { understat: "Levadeiakos", league: "greek_sl" },
+  "Volos FC":             { understat: "Volos NFC", league: "greek_sl" },
 };
 
 /**

@@ -134,7 +134,8 @@ export async function loadTeamXGHistory(
   venue: "home" | "away",
   limit: number = 8
 ): Promise<TeamXGMatch[]> {
-  const { data, error } = await supabase
+  // Exact match first (fast path when the resolver returns a mapped name)
+  const exact = await supabase
     .from("team_xg_history")
     .select("*")
     .eq("team", team)
@@ -142,8 +143,32 @@ export async function loadTeamXGHistory(
     .eq("venue", venue)
     .order("match_date", { ascending: false })
     .limit(limit);
-  if (error) { console.error("loadTeamXGHistory error:", error); return []; }
-  return (data || []).reverse(); // Chronological order (oldest first)
+  if (exact.error) { console.error("loadTeamXGHistory error:", exact.error); return []; }
+  if (exact.data && exact.data.length > 0) return exact.data.reverse();
+
+  // Fuzzy fallback: the exact name didn't match. Search by the most
+  // distinctive word from the FODZE name — handles cases like
+  // "Hannover 96" → "Hannover", "VfB Stuttgart" → "Stuttgart",
+  // "1. FC Nürnberg" → "Nurnberg", "Borussia Mönchengladbach" → "Gladbach".
+  const tokens = team
+    .toLowerCase()
+    .replace(/[._]/g, " ")
+    .split(/\s+/)
+    // Strip common abbreviations / noise words
+    .filter((w) => w.length > 3 && !/^(fc|sc|sv|vfl|vfb|tsg|tsv|rb|afc|the|club)$/.test(w));
+  if (tokens.length === 0) return [];
+  // Pick the longest token — typically the city/club name, most distinctive
+  const probe = tokens.sort((a, b) => b.length - a.length)[0];
+  const fuzzy = await supabase
+    .from("team_xg_history")
+    .select("*")
+    .ilike("team", `%${probe}%`)
+    .eq("league", league)
+    .eq("venue", venue)
+    .order("match_date", { ascending: false })
+    .limit(limit);
+  if (fuzzy.error || !fuzzy.data || fuzzy.data.length === 0) return [];
+  return fuzzy.data.reverse();
 }
 
 /**

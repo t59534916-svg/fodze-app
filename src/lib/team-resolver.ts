@@ -404,6 +404,30 @@ for (const team of TEAM_REGISTRY) {
 // ─── Public API ──────────────────────────────────────────────────────
 
 /**
+ * Fuzzy-compare two team names for "same team" intent.
+ *
+ * Used when two naming universes emit different strings for the same team
+ * and a definitive mapping isn't available at the call site — e.g. matching
+ * `live_odds.home_team` against `matchdays.data.matches[].home.name`, or
+ * lining up goldilocks odds against matchday-resolved teams.
+ *
+ * Rules (case-insensitive):
+ *   1. Substring either way                       → match
+ *   2. Any shared word with length > 3            → match
+ *
+ * This mirrors the pattern used inline in `MatchdayContext.loadCached`.
+ */
+export function fuzzyTeamMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la === lb) return true;
+  if (la.includes(lb) || lb.includes(la)) return true;
+  const words = la.split(/\s+/).filter((w) => w.length > 3);
+  return words.some((w) => lb.includes(w));
+}
+
+/**
  * Resolve any team name variant to a TeamIdentity.
  * Tries: exact FODZE → exact CSV → exact Understat → case-insensitive → substring
  */

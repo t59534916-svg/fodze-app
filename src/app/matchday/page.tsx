@@ -1,8 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import { ENGINES } from "@/lib/engine-registry";
+import { fuzzyTeamMatch } from "@/lib/team-resolver";
 import { useMatchday } from "@/hooks/useMatchday";
 import { useBets } from "@/hooks/useBets";
 import AppShell from "@/components/layout/AppShell";
@@ -23,7 +24,8 @@ const S = {
 
 export default function MatchdayPage() {
   const router = useRouter();
-  const { effectiveBudget, bankroll, dayBudget, setDayBudget, league, engine, setEngine } = useApp();
+  const searchParams = useSearchParams();
+  const { effectiveBudget, bankroll, dayBudget, setDayBudget, league, setLeague, engine, setEngine } = useApp();
   const {
     data, matches, processed, valueMatches, totalStake, topTips, comboLegs,
     oddsData, oddsHistory, saving, setOdds, handleSaveOdds, handleDelHist, loadCached,
@@ -35,12 +37,52 @@ export default function MatchdayPage() {
   const [tipSort, setTipSort] = useState<"ev" | "conf">("ev");
   const br = effectiveBudget;
 
-  // Auto-load cached matchday if no data
+  // Deep-link from /goldilocks: ?league=X&home=Y&away=Z
+  // Runs once per unique searchParams — forces the right league to load even
+  // before React propagates the context update.
+  const deepLinkHandledRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!data) {
+    const qpLeague = searchParams.get("league");
+    if (!qpLeague) return;
+    const key = `${qpLeague}|${searchParams.get("home") || ""}|${searchParams.get("away") || ""}`;
+    if (deepLinkHandledRef.current === key) return;
+    deepLinkHandledRef.current = key;
+    if (qpLeague !== league) setLeague(qpLeague);
+    loadCached(qpLeague).catch(() => {});
+  }, [searchParams, league, setLeague, loadCached]);
+
+  // Auto-load cached matchday if no data (and no deep-link is driving load)
+  useEffect(() => {
+    if (!data && !searchParams.get("league")) {
       loadCached().catch(() => {});
     }
-  }, [data, loadCached]);
+  }, [data, loadCached, searchParams]);
+
+  // Preselect + scroll to the deep-linked match once `processed` populates.
+  // Goldilocks sources teams from `live_odds.*` while matchday uses
+  // `matchdays.data.matches[].home.name` — conventions may differ, so we
+  // fall back to the shared `fuzzyTeamMatch` resolver.
+  const preselectDoneRef = useRef(false);
+  useEffect(() => {
+    if (preselectDoneRef.current) return;
+    const qpHome = searchParams.get("home");
+    const qpAway = searchParams.get("away");
+    if (!qpHome || !qpAway || processed.length === 0) return;
+
+    const idx = processed.findIndex((m) =>
+      fuzzyTeamMatch(m.home?.name || "", qpHome) &&
+      fuzzyTeamMatch(m.away?.name || "", qpAway),
+    );
+    if (idx >= 0) {
+      preselectDoneRef.current = true;
+      setSelectedMatch(idx);
+      // Defer scroll until the expanded card is in the DOM
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-match-idx="${idx}"]`);
+        (el as HTMLElement | null)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, [processed, searchParams]);
 
   if (!data) return (
     <AppShell>
@@ -186,7 +228,7 @@ export default function MatchdayPage() {
         {processed.map((m: any, i: number) => {
           const isOpen = selectedMatch === i;
           return (
-            <div key={i}>
+            <div key={i} data-match-idx={i}>
               <MatchCard
                 match={m} calc={m.calc} isOpen={isOpen}
                 onClick={() => setSelectedMatch(isOpen ? null : i)}

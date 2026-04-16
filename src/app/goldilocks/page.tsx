@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { LEAGUES, vigAdjustBest } from "@/lib/dixon-coles";
@@ -38,7 +39,7 @@ const S = {
   },
   title: {
     fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: color.gold,
-    marginBottom: space[2],
+    marginTop: 0, marginBottom: space[2],
   },
   subtitle: { fontSize: fontSize.sm, color: color.textMuted },
   chips: {
@@ -55,7 +56,10 @@ const S = {
     cursor: "pointer", transition: "all 0.15s",
     minHeight: 44, display: "inline-flex", alignItems: "center",
   }),
-  betCard: { ...card(), padding: space[4], marginBottom: space[3] },
+  betCard: {
+    ...card(), padding: space[4], marginBottom: space[3],
+    display: "block", textDecoration: "none", cursor: "pointer",
+  },
   cardHeader: {
     display: "flex", justifyContent: "space-between", alignItems: "center",
     marginBottom: space[3],
@@ -63,25 +67,29 @@ const S = {
   league: { fontSize: fontSize.xs, color: color.textMuted },
   matchName: {
     fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.text,
-    marginBottom: space[2],
+    marginBottom: space[3],
   },
   betRow: {
-    display: "flex", justifyContent: "space-between", alignItems: "center",
-    gap: space[3], flexWrap: "wrap" as const,
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    alignItems: "center",
+    gap: space[3],
   },
   betLabel: {
-    fontSize: fontSize.base, fontWeight: fontWeight.bold, color: color.gold,
+    fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: color.text,
   },
   betOdds: {
-    fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: color.goldShine,
-    fontFamily: "Georgia, serif",
+    fontSize: fontSize.base, fontWeight: fontWeight.semibold, color: color.textMuted,
+    fontFamily: "Georgia, serif", textAlign: "center" as const,
+    minWidth: 56,
   },
-  edgeBox: { textAlign: "right" as const },
+  edgeBox: { textAlign: "right" as const, minWidth: 64 },
   edgeValue: (e: number) => ({
-    fontSize: fontSize.base, fontWeight: fontWeight.bold,
+    fontSize: fontSize.xl, fontWeight: fontWeight.bold,
     color: e >= EDGE_GRADE_A ? color.value : e >= EDGE_GRADE_B ? color.gold : color.textMuted,
+    lineHeight: 1, fontFamily: "Georgia, serif",
   }),
-  probText: { fontSize: fontSize.xs, color: color.textMuted },
+  probText: { fontSize: fontSize.xs, color: color.textMuted, marginTop: 2 },
   detailRow: {
     display: "flex", justifyContent: "space-between",
     fontSize: fontSize.xs, color: color.textFaint, marginTop: space[2],
@@ -204,20 +212,26 @@ export default function GoldilocksPage() {
     });
   }, [bets, filter]);
 
-  const { gradeA, gradeB, gradeC, avgEdge } = useMemo(() => {
-    let a = 0, b = 0, c = 0, sum = 0;
+  const { gradeA, gradeB, gradeC, count1X2, countOU, avgEdge } = useMemo(() => {
+    let a = 0, b = 0, c = 0, c1 = 0, co = 0, sum = 0;
     for (const bet of bets) {
       if (bet.grade === "A") a++; else if (bet.grade === "B") b++; else c++;
+      if (bet.market === "1" || bet.market === "X" || bet.market === "2") c1++;
+      else if (bet.market === "Ü2.5" || bet.market === "U2.5") co++;
       sum += bet.edge;
     }
-    return { gradeA: a, gradeB: b, gradeC: c, avgEdge: bets.length ? sum / bets.length : 0 };
+    return {
+      gradeA: a, gradeB: b, gradeC: c,
+      count1X2: c1, countOU: co,
+      avgEdge: bets.length ? sum / bets.length : 0,
+    };
   }, [bets]);
 
   if (loading) {
     return (
       <AppShell>
-        <div style={S.loading}>
-          <div style={{ fontSize: 36, marginBottom: space[3] }}>🎯</div>
+        <div style={S.loading} role="status" aria-live="polite">
+          <div style={{ fontSize: 36, marginBottom: space[3] }} aria-hidden="true">🎯</div>
           Lade Goldilocks Bets...
         </div>
       </AppShell>
@@ -226,62 +240,76 @@ export default function GoldilocksPage() {
 
   return (
     <AppShell>
-      <div style={S.header}>
+      <header style={S.header}>
         <div style={S.count}>{bets.length}</div>
-        <div style={S.title}>Goldilocks Bets</div>
+        <h1 style={S.title}>Goldilocks Bets</h1>
         <div style={S.subtitle}>
           Edge 2.5%–7.5% · {gradeA}× A · {gradeB}× B · {gradeC}× C · Ø {(avgEdge * 100).toFixed(1)}%
           {lastFetch && ` · ${lastFetch}`}
         </div>
-      </div>
+      </header>
 
-      <div style={S.chips}>
+      <div style={S.chips} role="tablist" aria-label="Filter">
         {([
           ["all", `Alle (${bets.length})`],
           ["A", `Grade A (${gradeA})`],
           ["B", `Grade B (${gradeB})`],
-          ["1X2", "1X2"],
-          ["OU", "Ü/U 2.5"],
+          ["1X2", `1X2 (${count1X2})`],
+          ["OU", `Ü/U 2.5 (${countOU})`],
         ] as [FilterType, string][]).map(([key, label]) => (
-          <button key={key} style={S.chip(filter === key)} onClick={() => setFilter(key)}>
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={filter === key}
+            style={S.chip(filter === key)}
+            onClick={() => setFilter(key)}
+          >
             {label}
           </button>
         ))}
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={S.empty}>
-          <div style={{ fontSize: 28, marginBottom: space[3] }}>🔍</div>
-          Keine Goldilocks-Bets mit diesem Filter gefunden.
-        </div>
-      ) : (
-        filtered.map((bet, i) => (
-          <div key={`${bet.league}-${bet.homeTeam}-${bet.market}-${i}`} style={S.betCard}>
-            <div style={S.cardHeader}>
-              <div style={S.league}>{bet.leagueName}</div>
-              <div style={GRADE_BADGE[bet.grade]}>{bet.grade}</div>
-            </div>
-            <div style={S.matchName}>{bet.homeTeam} vs {bet.awayTeam}</div>
-            <div style={S.betRow}>
-              <div>
-                <div style={S.betLabel}>{MARKET_LABELS[bet.market] || bet.market}</div>
-                <div style={{ fontSize: fontSize.xs, color: color.textFaint }}>
-                  {bet.kickoff ? new Date(bet.kickoff).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+      <div aria-live="polite" aria-busy={loading}>
+        {filtered.length === 0 ? (
+          <div style={S.empty}>
+            <div style={{ fontSize: 28, marginBottom: space[3] }} aria-hidden="true">🔍</div>
+            Keine Goldilocks-Bets mit diesem Filter gefunden.
+          </div>
+        ) : (
+          filtered.map((bet, i) => (
+            <Link
+              key={`${bet.league}-${bet.homeTeam}-${bet.market}-${i}`}
+              href={`/matchday?league=${encodeURIComponent(bet.league)}&home=${encodeURIComponent(bet.homeTeam)}&away=${encodeURIComponent(bet.awayTeam)}`}
+              style={S.betCard}
+              aria-label={`${bet.homeTeam} gegen ${bet.awayTeam} — ${MARKET_LABELS[bet.market] || bet.market} @ ${bet.bestOdds.toFixed(2)}, Edge ${(bet.edge * 100).toFixed(1)} Prozent, Grade ${bet.grade}`}
+            >
+              <div style={S.cardHeader}>
+                <div style={S.league}>{bet.leagueName}</div>
+                <div style={GRADE_BADGE[bet.grade]}>{bet.grade}</div>
+              </div>
+              <div style={S.matchName}>{bet.homeTeam} vs {bet.awayTeam}</div>
+              <div style={S.betRow}>
+                <div>
+                  <div style={S.betLabel}>{MARKET_LABELS[bet.market] || bet.market}</div>
+                  <div style={{ fontSize: fontSize.xs, color: color.textFaint, marginTop: 2 }}>
+                    {bet.kickoff ? new Date(bet.kickoff).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                  </div>
+                </div>
+                <div style={S.betOdds}>@ {bet.bestOdds.toFixed(2)}</div>
+                <div style={S.edgeBox}>
+                  <div style={S.edgeValue(bet.edge)}>+{(bet.edge * 100).toFixed(1)}%</div>
+                  <div style={S.probText}>Prob {(bet.fairProb * 100).toFixed(0)}%</div>
                 </div>
               </div>
-              <div style={S.betOdds}>@ {bet.bestOdds.toFixed(2)}</div>
-              <div style={S.edgeBox}>
-                <div style={S.edgeValue(bet.edge)}>+{(bet.edge * 100).toFixed(1)}%</div>
-                <div style={S.probText}>Prob {(bet.fairProb * 100).toFixed(0)}%</div>
+              <div style={S.detailRow}>
+                <span>Pinnacle: {bet.pinnacleOdds.toFixed(2)} → Fair {(bet.fairProb * 100).toFixed(1)}%</span>
+                <span>Best: {bet.bestOdds.toFixed(2)} → Implied {(bet.impliedProb * 100).toFixed(1)}%</span>
               </div>
-            </div>
-            <div style={S.detailRow}>
-              <span>Pinnacle: {bet.pinnacleOdds.toFixed(2)} → Fair {(bet.fairProb * 100).toFixed(1)}%</span>
-              <span>Best: {bet.bestOdds.toFixed(2)} → Implied {(bet.impliedProb * 100).toFixed(1)}%</span>
-            </div>
-          </div>
-        ))
-      )}
+            </Link>
+          ))
+        )}
+      </div>
 
       <div style={S.footer}>
         <div style={S.footerTitle}>Was ist Goldilocks?</div>
