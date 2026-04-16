@@ -346,6 +346,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       { xgDiffPerGame, xgaDiffPerGame, formDiff: formToPoints(h.form) - formToPoints(a.form), homeFactor: matchHf, totalXG: enh.lambdaH + enh.lambdaA },
       hasOdds ? { h: no.h, d: no.d, a: no.a } : undefined,
       h.xg_h_history, a.xg_a_history, ld.avg,
+      league,
     );
 
     const ensembleMk = { ...enh.mk, H: ensemble.H, D: ensemble.D, A: ensemble.A, O25: ensemble.O25 };

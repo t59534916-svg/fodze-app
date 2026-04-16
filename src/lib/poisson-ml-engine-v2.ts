@@ -235,7 +235,7 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   const restDaysDiff = (restDaysHome - restDaysAway) / 7;
 
   // ── 2. Build 13-feature vector ────────────────────────────────
-  const elo = eloPrediction(homeTeam, awayTeam);
+  const elo = eloPrediction(homeTeam, awayTeam, league);
   const eloDiffApprox = elo.H > 0 ? Math.log(elo.H / Math.max(0.01, elo.A)) / 2.3 : 0;
 
   const isDerby = tags.some(t => t.toUpperCase().replace(/\s+/g, "-") === "DERBY") ? 1 : 0;

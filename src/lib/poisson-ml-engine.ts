@@ -162,7 +162,7 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
   const restDaysDiff = (restDaysHome - restDaysAway) / 7;
 
   // ── 2. Build Poisson features (10 features) ────────────────────
-  const elo = eloPrediction(homeTeam, awayTeam);
+  const elo = eloPrediction(homeTeam, awayTeam, league);
   const eloDiffApprox = elo.H > 0 ? Math.log(elo.H / Math.max(0.01, elo.A)) / 2.3 : 0;
 
   // DERBY as binary feature (trained, not post-hoc multiplier)

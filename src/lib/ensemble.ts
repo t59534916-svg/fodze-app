@@ -96,10 +96,18 @@ export function loadEnsembleModel(model: any): void {
 
 /**
  * Predict 1X2 probabilities from Elo ratings.
+ *
+ * @param leagueHint Passed to getElo() so the seeding fallback is league-aware
+ *   for teams missing from eloRatings (promoted/relegated clubs get the right
+ *   tier median instead of the registry's last-known league).
  */
-export function eloPrediction(homeTeam: string, awayTeam: string): { H: number; D: number; A: number } {
-  const rH = getElo(homeTeam) + HOME_ADVANTAGE_ELO;
-  const rA = getElo(awayTeam);
+export function eloPrediction(
+  homeTeam: string,
+  awayTeam: string,
+  leagueHint?: string,
+): { H: number; D: number; A: number } {
+  const rH = getElo(homeTeam, leagueHint) + HOME_ADVANTAGE_ELO;
+  const rA = getElo(awayTeam, leagueHint);
 
   const expH = expectedScore(rH, rA);
   // Elo gives win probability, estimate draw from empirical relationship
@@ -216,13 +224,17 @@ export function ensemblePrediction(
   homeXGHistory?: { xg: number; xga: number }[],
   awayXGHistory?: { xg: number; xga: number }[],
   leagueAvg?: number,
+  // Current league — drives league-aware Elo seeding for teams missing from
+  // eloRatings (otherwise fallback uses the registry's last-known league,
+  // which for promoted teams is the tier below they actually now play in).
+  leagueHint?: string,
 ): EnsembleResult {
 
   // ─── Individual model predictions ──────────────────────────────
 
-  const elo = eloPrediction(homeTeam, awayTeam);
+  const elo = eloPrediction(homeTeam, awayTeam, leagueHint);
   // Add eloDiff to features for logistic model (normalized by 400)
-  const eloDiff = (getElo(homeTeam) - getElo(awayTeam)) / 400;
+  const eloDiff = (getElo(homeTeam, leagueHint) - getElo(awayTeam, leagueHint)) / 400;
   const logistic = logisticPrediction({ ...features, eloDiff });
   const market = odds ? marketImpliedProbs({
     h: parseFloat(String(odds.h || 0)),
