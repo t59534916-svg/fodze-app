@@ -5,7 +5,7 @@ import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { LEAGUES, vigAdjustBest } from "@/lib/dixon-coles";
 import { computeEngineProbs, classifyEdgeSource, type EdgeSource } from "@/lib/goldilocks-engine";
-import { fuzzyTeamMatch } from "@/lib/team-resolver";
+import { fuzzyTeamMatch, resolveTeam } from "@/lib/team-resolver";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { card, badge } from "@/styles/components";
 import type { MatchdayData, RawMatch } from "@/types/match";
@@ -168,22 +168,29 @@ export default function GoldilocksPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [lastFetch, setLastFetch] = useState("");
+  // Diagnostic: how many live-odds matches had usable engine data.
+  // Surfaced in the header so users can see immediately when xG coverage
+  // is blocking the Konsens filter (the root cause of a 0-Konsens result).
+  const [engineCoverage, setEngineCoverage] = useState({ withEngine: 0, total: 0 });
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { loadLiveOdds, loadLatestMatchday } = await import("@/lib/supabase");
+      const {
+        loadLiveOdds, loadLatestMatchday,
+        loadTeamXGHistory, toXGHistoryEntries,
+      } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
       const allBets: GoldilocksBet[] = [];
+      let totalLiveOddsMatches = 0;
+      let totalWithEngine = 0;
 
       await Promise.all(leagueKeys.map(async (league) => {
         try {
-          // Parallel: live odds (always) + latest stored matchday (only if
-          // present — we gracefully fall back to market-only when missing).
-          // We deliberately do NOT enrich xG history on-the-fly here; that
-          // would add 2 queries per team × 10 matches × 18 leagues = way too
-          // many RPCs. Engine-edge is therefore only available for matchdays
-          // that were seeded with enriched data (top-5 leagues, mostly).
+          // Load live odds + (optional) stored matchday in parallel. The
+          // matchday JSON gives us richer context (injuries, tags, form) when
+          // available, but we no longer depend on it for engine-edge — we
+          // synthesize from team_xg_history directly below.
           const [odds, cached] = await Promise.all([
             loadLiveOdds(supabase, league),
             loadLatestMatchday(supabase, league).catch(() => null),
@@ -191,37 +198,103 @@ export default function GoldilocksPage() {
           const ld = LEAGUES[league];
           const matchdayData: MatchdayData | null = cached?.data || null;
 
+          // ── Batch-load xG history per unique team/venue ──────────────
+          // Mapping: live_odds uses OddsAPI names; team_xg_history uses
+          // Understat names. resolveTeam bridges the gap, loadTeamXGHistory
+          // has a fuzzy fallback for the long tail. One fetch per (team,
+          // venue) pair, all parallel — usually <1s per league.
+          const uniqueHome = new Set<string>();
+          const uniqueAway = new Set<string>();
+          for (const o of odds) {
+            uniqueHome.add(o.home_team);
+            uniqueAway.add(o.away_team);
+          }
+          const toUnderstat = (n: string) => resolveTeam(n)?.understat || n;
+          const historyEntries = await Promise.all([
+            ...Array.from(uniqueHome).map(async (team) => {
+              const hist = await loadTeamXGHistory(supabase, toUnderstat(team), league, "home", 8);
+              return { key: `H:${team}`, hist };
+            }),
+            ...Array.from(uniqueAway).map(async (team) => {
+              const hist = await loadTeamXGHistory(supabase, toUnderstat(team), league, "away", 8);
+              return { key: `A:${team}`, hist };
+            }),
+          ]);
+          const histByKey = new Map<string, typeof historyEntries[number]["hist"]>();
+          for (const e of historyEntries) histByKey.set(e.key, e.hist);
+
           for (const o of odds) {
             const sh = o.sharp_h, sd = o.sharp_d, sa = o.sharp_a;
             const bh = o.best_h, bd = o.best_d, ba = o.best_a;
             if (!sh || sh <= 1 || !bh || bh <= 1 || !sd || !sa || !bd || !ba) continue;
+            totalLiveOddsMatches++;
 
             // ── Market-edge (Pinnacle sharp, vig-removed) ──────────────
             const sharpVig = vigAdjustBest([sh, sd, sa]);
             const [pinnH, pinnD, pinnA] = sharpVig.probs;
 
             // ── Engine-edge (FODZE ensemble) ───────────────────────────
-            // Match live_odds row → stored matchday match via fuzzy team
-            // name compare (live_odds uses OddsAPI names which don't always
-            // match FODZE names). Engine probs are undefined when we can't
-            // find the match or it lacks xG data — the calling code treats
-            // that as "market-only" and doesn't invent engine edges.
+            // Primary path: synthesize a RawMatch from team_xg_history. This
+            // works even when no stored matchday exists, which is the common
+            // reality outside top-5 leagues.
+            // Fallback: if a stored matchday has our teams + xg_h8 populated,
+            // use its richer context (injuries/tags are only in matchday JSON).
             let enginePr: ReturnType<typeof computeEngineProbs> | null = null;
-            if (matchdayData?.matches) {
-              const ourMatch = matchdayData.matches.find(
+            if (ld) {
+              const hHist = histByKey.get(`H:${o.home_team}`) || [];
+              const aHist = histByKey.get(`A:${o.away_team}`) || [];
+              const hasHistory = hHist.length > 0 && aHist.length > 0;
+
+              // Synthetic match from xG-history sums (mirrors MatchdayContext
+              // fallback). Pure function of history data — no mutation of
+              // shared state.
+              let synthMatch: RawMatch | null = null;
+              if (hasHistory) {
+                const sum = (arr: any[], key: "xg" | "xga") =>
+                  +arr.reduce((s, m) => s + Number(m[key] || 0), 0).toFixed(2);
+                synthMatch = {
+                  home: {
+                    name: o.home_team,
+                    xg_h8: sum(hHist, "xg"),
+                    xga_h8: sum(hHist, "xga"),
+                    games: hHist.length,
+                    xg_h_history: toXGHistoryEntries(hHist),
+                  },
+                  away: {
+                    name: o.away_team,
+                    xg_a8: sum(aHist, "xg"),
+                    xga_a8: sum(aHist, "xga"),
+                    games: aHist.length,
+                    xg_a_history: toXGHistoryEntries(aHist),
+                  },
+                  tags: [],
+                  kickoff: o.commence_time || "",
+                } as RawMatch;
+              }
+
+              // Prefer matchday-JSON version when it has xg_h8 populated
+              // (richer: includes injuries, tags, form). Else use synthetic.
+              const mdMatch = matchdayData?.matches?.find(
                 (m: RawMatch) =>
                   fuzzyTeamMatch(m.home?.name || "", o.home_team) &&
                   fuzzyTeamMatch(m.away?.name || "", o.away_team),
               );
-              if (ourMatch && ld) {
+              const matchForEngine =
+                mdMatch && mdMatch.home?.xg_h8 && mdMatch.away?.xg_a8
+                  ? mdMatch
+                  : synthMatch;
+
+              if (matchForEngine) {
                 enginePr = computeEngineProbs({
-                  match: ourMatch,
+                  match: matchForEngine,
                   league,
                   leagueAvg: ld.avg,
                   leagueHf: ld.hf,
                 });
               }
             }
+
+            if (enginePr) totalWithEngine++;
 
             // Each market: compute BOTH edges, classify, emit row only if
             // at least one source places it in the Goldilocks zone.
@@ -301,6 +374,7 @@ export default function GoldilocksPage() {
         return b.edge - a.edge;
       });
       setBets(allBets);
+      setEngineCoverage({ withEngine: totalWithEngine, total: totalLiveOddsMatches });
       setLastFetch(new Date().toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
       setLoading(false);
     })();
@@ -353,6 +427,12 @@ export default function GoldilocksPage() {
           Edge 2.5%–7.5% · {gradeA}× A · {gradeB}× B · {gradeC}× C · Ø {(avgEdge * 100).toFixed(1)}%
           {lastFetch && ` · ${lastFetch}`}
         </div>
+        {engineCoverage.total > 0 && (
+          <div style={{ ...S.subtitle, marginTop: space[2], color: engineCoverage.withEngine === 0 ? color.warn : color.textFaint }}>
+            Engine-Daten: {engineCoverage.withEngine}/{engineCoverage.total} Matches
+            {engineCoverage.withEngine === 0 && " — Konsens unmöglich ohne xG-Historie"}
+          </div>
+        )}
       </header>
 
       <div style={S.chips} role="tablist" aria-label="Filter">
