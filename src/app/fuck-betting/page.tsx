@@ -1002,7 +1002,16 @@ export default function FuckBettingPage() {
         if (!md) return null;
         const data = md.data as MatchdayData;
 
-        // Enrich each match with per-match xG history from Supabase (needed for v2 EWMA)
+        // Enrich each match with per-match xG history from Supabase (needed
+        // for v2 EWMA). ALSO backfill xg_h8/xga_h8 summaries from the history
+        // when the matchday JSON was generated without them (generate-matchday
+        // produces fixture+odds skeletons with xg_h8=0). Without this backfill
+        // the match would show "Ohne xG" even though real history exists.
+        // Mirrors the fix in MatchdayContext.loadCached.
+        const ld = LEAGUES[key];
+        const fallbackXG = ld ? ld.avg * 8 * 0.55 : 12;
+        const fallbackXGA = ld ? ld.avg * 8 * 0.45 : 10;
+
         if (data.matches) {
           await Promise.all(data.matches.map(async (match) => {
             const resolveTeam = (name: string) => {
@@ -1012,12 +1021,35 @@ export default function FuckBettingPage() {
             if (match.home?.name && !match.home.xg_h_history?.length) {
               const understatName = resolveTeam(match.home.name);
               const hist = await loadTeamXGHistory(supabase, understatName, key, "home", 8);
-              if (hist.length > 0) match.home.xg_h_history = toXGHistoryEntries(hist);
+              if (hist.length > 0) {
+                match.home.xg_h_history = toXGHistoryEntries(hist);
+                if (!match.home.xg_h8) {
+                  match.home.xg_h8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
+                  match.home.xga_h8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
+                  match.home.games = hist.length;
+                }
+              } else if (!match.home.xg_h8) {
+                // No history → league-average synthesis so v2/standard can still run
+                match.home.xg_h8 = +fallbackXG.toFixed(2);
+                match.home.xga_h8 = +fallbackXGA.toFixed(2);
+                match.home.games = 8;
+              }
             }
             if (match.away?.name && !match.away.xg_a_history?.length) {
               const understatName = resolveTeam(match.away.name);
               const hist = await loadTeamXGHistory(supabase, understatName, key, "away", 8);
-              if (hist.length > 0) match.away.xg_a_history = toXGHistoryEntries(hist);
+              if (hist.length > 0) {
+                match.away.xg_a_history = toXGHistoryEntries(hist);
+                if (!match.away.xg_a8) {
+                  match.away.xg_a8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
+                  match.away.xga_a8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
+                  match.away.games = hist.length;
+                }
+              } else if (!match.away.xg_a8) {
+                match.away.xg_a8 = +fallbackXGA.toFixed(2);
+                match.away.xga_a8 = +fallbackXG.toFixed(2);
+                match.away.games = 8;
+              }
             }
           }));
         }
@@ -1123,16 +1155,21 @@ export default function FuckBettingPage() {
         const a = match.away;
         if (!h?.name || !a?.name) continue;
 
-        // Determine data quality: HIGH if real xG data, LOW if using league-average fallback
-        const hasXG = !!(h.xg_h8 && h.xg_h8 > 0 && a.xg_a8 && a.xg_a8 > 0);
-        const dataQuality: "HIGH" | "LOW" = hasXG ? "HIGH" : "LOW";
+        // Determine data quality: HIGH when we have real per-match xG history
+        // (either Understat or shots-model), LOW when matchday JSON had xg_h8=0
+        // AND no history was found → the load logic synthesized a Liga-avg
+        // fallback so the engine can still run, but the user should see that
+        // predictions are odds-driven rather than team-specific.
+        const hasRealXG = !!(h.xg_h_history?.length || a.xg_a_history?.length);
+        const dataQuality: "HIGH" | "LOW" = hasRealXG ? "HIGH" : "LOW";
 
-        // Fallback xG: use league average * 8 games (both teams = league average)
-        const fallbackXG = ld.avg * 8;
-        const xgH8 = hasXG ? h.xg_h8! : fallbackXG;
-        const xgaH8 = hasXG ? (h.xga_h8 || fallbackXG) : fallbackXG;
-        const xgA8 = hasXG ? a.xg_a8! : fallbackXG;
-        const xgaA8 = hasXG ? (a.xga_a8 || fallbackXG) : fallbackXG;
+        // xG summaries are now guaranteed to be populated by the load logic
+        // above (either from history, explicit matchday values, or Liga-avg
+        // synthesis). No further fallback needed here.
+        const xgH8 = h.xg_h8 || ld.avg * 8 * 0.55;
+        const xgaH8 = h.xga_h8 || ld.avg * 8 * 0.45;
+        const xgA8 = a.xg_a8 || ld.avg * 8 * 0.45;
+        const xgaA8 = a.xga_a8 || ld.avg * 8 * 0.55;
         const hGames = h.games || 8;
         const aGames = a.games || 8;
 
