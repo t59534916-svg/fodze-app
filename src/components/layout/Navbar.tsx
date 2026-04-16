@@ -39,6 +39,9 @@ const IconValue = ({ active }: { active: boolean }) => (
   </svg>
 );
 
+// Note: the Handbuch is reachable via the floating "?" icon in AppShell —
+// kept out of the primary nav to preserve 6-tab layout on mobile.
+
 const tabs = [
   { href: "/", label: "Home", Icon: IconHome },
   { href: "/matchday", label: "Analyse", Icon: IconAnalyse },

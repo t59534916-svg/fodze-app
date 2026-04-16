@@ -228,40 +228,27 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const no: Record<string, number> = {};
     for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const matchHf = getHomeFactor(h.name, ld.hf);
+    const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
 
-    // ── Poisson-ML Engine v2 (LightGBM Tweedie) ────────────────────
-    if (engine === "poisson-ml-v2") {
-      const result = calcMatchPoissonMLv2({
-        xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
-        xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
-        leagueAvg: ld.avg, homeFactor: matchHf, league,
-        tags: match.tags || [],
-        hHistory: h.xg_h_history, aHistory: a.xg_a_history,
-        homeTeam: h.name, awayTeam: a.name,
-        odds: no, fraction: frac,
-        sharpOdds: o._sharp as any,
-        sosRatings: sosRatings || undefined,
-        options: { league } as any,
-      });
-      return result;
-    }
+    // ── ML engine input (shared between v1 and v2) ─────────────────
+    const mlInputs = {
+      xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
+      xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
+      leagueAvg: ld.avg, homeFactor: matchHf, league,
+      tags: match.tags || [],
+      hHistory: h.xg_h_history, aHistory: a.xg_a_history,
+      homeTeam: h.name, awayTeam: a.name,
+      odds: no, fraction: frac,
+      sharpOdds: o._sharp as any,
+      sosRatings: sosRatings || undefined,
+      options: { league } as any,
+    };
 
-    // ── Poisson-ML Engine v1 (GLM) ───────────────────────────────────
-    if (engine === "poisson-ml") {
-      const result = calcMatchPoissonML({
-        xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
-        xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
-        leagueAvg: ld.avg, homeFactor: matchHf, league,
-        tags: match.tags || [],
-        hHistory: h.xg_h_history, aHistory: a.xg_a_history,
-        homeTeam: h.name, awayTeam: a.name,
-        odds: no, fraction: frac,
-        sharpOdds: o._sharp as any,
-        sosRatings: sosRatings || undefined,
-        options: { league } as any,
-      });
-      return result;
-    }
+    // ── Run ML engines (cheap — LightGBM ~5ms, GLM ~1ms per match) ──
+    // We always run all engines so the comparison UI can show divergence;
+    // the user-selected engine becomes the primary return.
+    const v2Calc = calcMatchPoissonMLv2(mlInputs);
+    const v1Calc = calcMatchPoissonML(mlInputs);
 
     // ── Classic Ensemble Engine (ensemble-v1) ──────────────────────
     const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
@@ -273,7 +260,6 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       undefined, undefined, undefined, undefined, // SoS, names, absences
       { league }  // enables NegBin overdispersion + dynamic rho
     );
-    const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
     const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
     const topScores: { s: string; p: number }[] = [];
     if (enh.matrix) {
@@ -304,14 +290,27 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // Recalculate bets with ensemble probabilities
     const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
 
-    return {
+    const ensembleCalc: MatchCalc = {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,
       lambdaH_raw: enh.lambdaH_raw, lambdaA_raw: enh.lambdaA_raw,
       mk: ensembleMk, bets: ensembleBets, enh, topScores: topScores.slice(0, 5),
       ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
       hasValue: ensembleBets.some(b => b.isValue), hasOdds, warnings,
-      ensemble,  // Expose ensemble details for UI
+      ensemble,
     } as MatchCalc;
+
+    // ── Pick primary based on user selection, attach per-engine mk ──
+    let primary: MatchCalc;
+    if (engine === "poisson-ml-v2" && v2Calc) primary = v2Calc;
+    else if (engine === "poisson-ml" && v1Calc) primary = v1Calc;
+    else primary = ensembleCalc;
+
+    (primary as any).allEnginesMk = {
+      "ensemble-v1": ensembleCalc.mk,
+      "poisson-ml": v1Calc?.mk || null,
+      "poisson-ml-v2": v2Calc?.mk || null,
+    };
+    return primary;
   }
 
   const matches: RawMatch[] = data?.matches || [];

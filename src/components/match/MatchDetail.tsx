@@ -4,6 +4,8 @@ import Kit from "@/components/shared/Kit";
 import XGSparkline from "@/components/XGSparkline";
 import OddsInput from "./OddsInput";
 import BettingSummary from "./BettingSummary";
+import EngineComparison from "./EngineComparison";
+import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves } from "@/lib/dixon-coles";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
@@ -33,6 +35,7 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
   league?: string;
 }) {
   const br = budget;
+  const { engine } = useApp();
 
   return (
     <div style={{ padding: "12px 0" }}>
@@ -50,6 +53,12 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
             <div style={{ width: `${calc.mk.A * 100}%`, background: "linear-gradient(90deg, #c47070, #a04040)", borderRadius: 5 }} />
           </div>
         </div>
+      )}
+
+      {/* Engine-Vergleich — side-by-side H/X/2/Ü2.5 across all 3 engines.
+          Flags divergence >= 8pp so you can spot when the engines disagree. */}
+      {calc?.allEnginesMk && (
+        <EngineComparison allEnginesMk={calc.allEnginesMk} activeEngine={engine} />
       )}
 
       {/* Top Scores */}
