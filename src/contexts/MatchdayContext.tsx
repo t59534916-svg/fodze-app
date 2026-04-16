@@ -275,20 +275,23 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     setOddsHistory(prev => { const n = { ...prev }; delete n[idx]; return n; });
   }, [data, league, supabase]);
 
-  function calcMatch(match: RawMatch, idx: number) {
+  // Computes all 3 engines per match. Expensive (~15ms per match on a warm
+  // LightGBM runtime). Memoized on inputs that actually change the output —
+  // deliberately NOT on `engine` so toggling the engine dropdown is instant.
+  function computeAllEngines(match: RawMatch, idx: number): {
+    ensembleCalc: MatchCalc;
+    v1Calc: MatchCalc | null;
+    v2Calc: MatchCalc | null;
+  } | null {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
 
-    // Parse odds for this match
     const o = oddsData[idx] || {};
     const no: Record<string, number> = {};
     for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
     const matchHf = getHomeFactor(h.name, ld.hf);
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
 
-    // ── Parse injuries into PlayerProfile[] for absence-aware prediction ──
-    // Before: match.home.injuries was displayed but never fed to the engines.
-    // The 7.5% Goldilocks cap was rejecting edges that we should've modeled.
     const homeAbsences = parseAbsences(h.injuries, h.name || "");
     const awayAbsences = parseAbsences(a.injuries, a.name || "");
     const absences =
@@ -296,7 +299,6 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         ? { home: homeAbsences, away: awayAbsences }
         : undefined;
 
-    // ── ML engine input (shared between v1 and v2) ─────────────────
     const mlInputs = {
       xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
       xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
@@ -311,24 +313,18 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       options: { league } as any,
     };
 
-    // ── Run ML engines (cheap — LightGBM ~5ms, GLM ~1ms per match) ──
-    // We always run all engines so the comparison UI can show divergence;
-    // the user-selected engine becomes the primary return.
     const v2Calc = calcMatchPoissonMLv2(mlInputs);
     const v1Calc = calcMatchPoissonML(mlInputs);
 
-    // ── Classic Ensemble Engine (ensemble-v1) ──────────────────────
     const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
     const enh = calcMatchEnhanced(
       h.xg_h8, h.xga_h8 || 0, h.games || 8, h.form,
       a.xg_a8, a.xga_a8 || 0, a.games || 8, a.form,
       ld.avg, matchHf, match.tags || [],
       h.xg_h_history, a.xg_a_history,
-      // sosRatings, homeTeamName, awayTeamName, absences
       sosRatings || undefined, h.name, a.name, absences,
-      { league }  // enables NegBin overdispersion + dynamic rho
+      { league }
     );
-    const bets = calculateBetsEnhanced(enh.mk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
     const topScores: { s: string; p: number }[] = [];
     if (enh.matrix) {
       for (let i = 0; i <= 5; i++)
@@ -336,7 +332,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           if (enh.matrix[i]?.[j] > 0.005) topScores.push({ s: `${i}:${j}`, p: enh.matrix[i][j] });
     }
     topScores.sort((a, b) => b.p - a.p);
-    // ── Ensemble: combine Dixon-Coles with Elo + Logistic + Market ──
+
     const hGames = h.games || 8, aGames = a.games || 8;
     const xgDiffPerGame = (h.xg_h8 / hGames) - (a.xg_a8 / aGames);
     const xgaDiffPerGame = ((h.xga_h8 || 0) / hGames) - ((a.xga_a8 || 0) / aGames);
@@ -352,10 +348,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       h.xg_h_history, a.xg_a_history, ld.avg,
     );
 
-    // Use ensemble probabilities for final mk (override Dixon-Coles)
     const ensembleMk = { ...enh.mk, H: ensemble.H, D: ensemble.D, A: ensemble.A, O25: ensemble.O25 };
-
-    // Recalculate bets with ensemble probabilities
     const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
 
     const ensembleCalc: MatchCalc = {
@@ -367,24 +360,38 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       ensemble,
     } as MatchCalc;
 
-    // ── Pick primary based on user selection, attach per-engine mk ──
-    let primary: MatchCalc;
-    if (engine === "poisson-ml-v2" && v2Calc) primary = v2Calc;
-    else if (engine === "poisson-ml" && v1Calc) primary = v1Calc;
-    else primary = ensembleCalc;
-
-    (primary as any).allEnginesMk = {
-      "ensemble-v1": ensembleCalc.mk,
-      "poisson-ml": v1Calc?.mk || null,
-      "poisson-ml-v2": v2Calc?.mk || null,
-    };
-    return primary;
+    return { ensembleCalc, v1Calc, v2Calc };
   }
 
   const matches: RawMatch[] = data?.matches || [];
+
+  // Inner memo: expensive engine runs. Deliberately omits `engine` from deps
+  // — the 3 engines are engine-agnostic; only primary selection is not.
+  const allEngineCalcs = useMemo(
+    () => matches.map((m: RawMatch, i: number) => computeAllEngines(m, i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded, sosRatings],
+  );
+
+  // Outer memo: cheap — picks primary from the precomputed 3 based on
+  // currently selected engine. Switching engines is now microseconds
+  // instead of re-running LightGBM/GLM/ensemble for every match.
   const processed: ProcessedMatch[] = useMemo(() =>
-    matches.map((m: RawMatch, i: number) => ({ ...m, idx: i, calc: calcMatch(m, i) })),
-    [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded, engine, sosRatings]
+    matches.map((m: RawMatch, i: number) => {
+      const all = allEngineCalcs[i];
+      if (!all) return { ...m, idx: i, calc: null };
+      let primary: MatchCalc;
+      if (engine === "poisson-ml-v2" && all.v2Calc) primary = all.v2Calc;
+      else if (engine === "poisson-ml" && all.v1Calc) primary = all.v1Calc;
+      else primary = all.ensembleCalc;
+      (primary as any).allEnginesMk = {
+        "ensemble-v1": all.ensembleCalc.mk,
+        "poisson-ml": all.v1Calc?.mk || null,
+        "poisson-ml-v2": all.v2Calc?.mk || null,
+      };
+      return { ...m, idx: i, calc: primary };
+    }),
+    [matches, allEngineCalcs, engine]
   );
   const valueMatches = useMemo(() => processed.filter((m: ProcessedMatch) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: ProcessedMatch) =>

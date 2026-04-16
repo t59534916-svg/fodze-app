@@ -12,7 +12,12 @@ import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/typ
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
-type Tab = "overview" | "odds" | "details";
+// Tabs reduced from 3 to 2 — Statistik merged into Überblick as a
+// collapsible "Mehr Details" section. The previous pattern had users
+// flipping between Überblick and Statistik looking for λ values, winning
+// margin, HT/FT — all secondary-but-needed data that didn't warrant its
+// own primary tab.
+type Tab = "overview" | "odds";
 
 // ─── Tab Button ──────────────────────────────────────────────────
 function TabBtn({ label, active, onClick, id, controls }: { label: string; active: boolean; onClick: () => void; id: string; controls: string }) {
@@ -355,17 +360,36 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
 
   return (
     <div style={{ borderTop: "1px solid #c4a26515", marginTop: 4 }}>
-      {/* Tab Bar */}
+      {/* Tab Bar — 2 primary tabs, details embedded in Überblick */}
       <div role="tablist" aria-label="Match-Details" style={{ display: "flex", borderBottom: "1px solid #c4a26510" }}>
         <TabBtn label="Überblick" active={tab === "overview"} onClick={() => setTab("overview")} id={`tab-overview-${idx}`} controls={`panel-overview-${idx}`} />
         <TabBtn label="Quoten" active={tab === "odds"} onClick={() => setTab("odds")} id={`tab-odds-${idx}`} controls={`panel-odds-${idx}`} />
-        <TabBtn label="Statistik" active={tab === "details"} onClick={() => setTab("details")} id={`tab-details-${idx}`} controls={`panel-details-${idx}`} />
       </div>
 
       <div key={tab} className="tab-fade-in" role="tabpanel" id={`panel-${tab}-${idx}`} aria-labelledby={`tab-${tab}-${idx}`}>
-        {tab === "overview" && <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} league={league} />}
+        {tab === "overview" && (
+          <>
+            <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} league={league} />
+            {/* Detailed statistics — collapsed by default to reduce visual
+                noise; power users expand when they want to verify λ,
+                adjustments, HT/FT, winning margin etc. */}
+            <details style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #c4a26510" }}>
+              <summary style={{
+                cursor: "pointer", listStyle: "none",
+                padding: "10px 12px", borderRadius: 6,
+                background: "#c4a26508",
+                color: "#c4a26590", fontSize: 11, fontWeight: 600,
+                letterSpacing: 0.5, userSelect: "none",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <span>MEHR DETAILS · λ · Statistik · Exakte Ergebnisse</span>
+                <span aria-hidden="true" style={{ fontSize: 14 }}>▾</span>
+              </summary>
+              <TabDetails match={match} calc={calc} />
+            </details>
+          </>
+        )}
         {tab === "odds" && <TabOdds match={match} calc={calc} idx={idx} odds={odds} oddsHistory={oddsHistory} saving={saving} onSetOdds={onSetOdds} onSaveOdds={onSaveOdds} onDelHist={onDelHist} budget={budget} />}
-        {tab === "details" && <TabDetails match={match} calc={calc} />}
       </div>
     </div>
   );

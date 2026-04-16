@@ -39,6 +39,16 @@ jobs:
             node scripts/fetch-odds.mjs
           fi
 
+      - name: Snapshot closing odds for pending bets near kickoff
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        # Runs on every fetch — bets whose kickoff is within 2h get
+        # their sharp closing line captured. CLV = log(placed/close)×100
+        # is the only metric that separates real edge from variance.
+        run: node scripts/snapshot-closing-odds.mjs --window 2h
+
       - name: Send Value Alerts to Telegram
         if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
         env:
