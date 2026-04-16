@@ -86,8 +86,12 @@ const SUPA_HEADERS = {
 
 async function upsertRows(rows) {
   if (DRY) return;
+  // Conflict target must match the actual UNIQUE constraint
+  // (team, league, match_date, venue) — see migration-phase1-2.sql.
+  // Prior version used `opponent` in the conflict key, which silently 400'd
+  // every run — why this script never wrote a single row for Liga 3.
   const resp = await fetch(
-    `${SUPA_URL}/rest/v1/team_xg_history?on_conflict=team,opponent,league,venue,match_date`,
+    `${SUPA_URL}/rest/v1/team_xg_history?on_conflict=team,league,match_date,venue`,
     {
       method: "POST",
       headers: {

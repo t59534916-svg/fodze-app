@@ -49,15 +49,28 @@ jobs:
             node scripts/fetch-results.mjs --days "$DAYS"
           fi
 
-      - name: Backfill Liga 3 goals-as-xG proxy
+      - name: Backfill Liga 3 goals-as-xG proxy (OpenLigaDB, free)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/backfill-liga3-openligadb.mjs
+        # OpenLigaDB (free, no key) covers 3. Liga back to 1963. Upserts
+        # current + previous season daily — idempotent, so we always have
+        # the most recent matchday within 24h of the final whistle.
+        # The previous Odds-API-based script was capped at daysFrom=3 and
+        # missed matches whenever the cron didn't fire in that window;
+        # OpenLigaDB has no such limit.
+
+      - name: (Legacy) Odds-API Liga 3 goals proxy — disabled
+        if: false
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node scripts/backfill-liga3-goals.mjs --days 3
-        # Uses goals as a noisy xG proxy for 3. Liga — better than the
-        # pure league-avg fallback once ~15 matches have been played per team.
+        # Kept as documentation — OpenLigaDB replaced it above.
 
       - name: Backfill real xG from FootyStats (if API key configured)
         env:

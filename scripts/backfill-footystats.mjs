@@ -102,8 +102,11 @@ const SUPA_HEADERS = {
 
 async function upsertRows(rows) {
   if (DRY) return;
+  // Conflict target matches the real UNIQUE constraint from
+  // migration-phase1-2.sql: (team, league, match_date, venue). A typo here
+  // silently 400s every run and rows never land.
   const resp = await fetch(
-    `${SUPA_URL}/rest/v1/team_xg_history?on_conflict=team,opponent,league,venue,match_date`,
+    `${SUPA_URL}/rest/v1/team_xg_history?on_conflict=team,league,match_date,venue`,
     {
       method: "POST",
       headers: { ...SUPA_HEADERS, Prefer: "return=minimal,resolution=merge-duplicates" },

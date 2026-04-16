@@ -280,17 +280,39 @@ async function upsertFixtures(league, events) {
   }
 }
 
+// Priority-ordered league list — top-6 fetch first so they're guaranteed to
+// land even if The-Odds-API rate-limits or we exhaust the monthly credit
+// budget mid-run. Everything after "serie_a" gets BEST-EFFORT coverage.
+// Historical bug: prior default filtered to just the top-6 slice, meaning
+// the other 13 leagues NEVER got fresh odds from the cron — visible stale
+// data since d052c61 (league expansion) until this fix.
+const PRIORITY_ORDER = [
+  "bundesliga", "bundesliga2", "liga3", "epl", "la_liga", "serie_a",
+  "ligue_1", "eredivisie", "championship",
+  "primeira_liga", "jupiler_pro", "super_lig",
+  "la_liga2", "serie_b", "ligue_2",
+  "scottish_prem", "greek_sl", "league_one", "league_two",
+  "cl", "el",
+];
+
 async function main() {
-  const leagues = singleLeague
-    ? { [singleLeague]: LEAGUE_MAP[singleLeague] }
-    : Object.fromEntries(
-        Object.entries(LEAGUE_MAP).filter(([k]) =>
-          ["bundesliga", "bundesliga2", "liga3", "epl", "la_liga", "serie_a"].includes(k)
-        )
-      );
+  let leagues;
+  if (singleLeague) {
+    leagues = { [singleLeague]: LEAGUE_MAP[singleLeague] };
+  } else {
+    // Default: all leagues, priority-ordered. Keep CL/EL out of the daily
+    // default — they're tournament-bound (no odds most of the year) so we
+    // save credits by only fetching them on explicit `--league cl` runs.
+    leagues = {};
+    for (const k of PRIORITY_ORDER) {
+      if (k === "cl" || k === "el") continue;
+      if (LEAGUE_MAP[k]) leagues[k] = LEAGUE_MAP[k];
+    }
+  }
 
   console.log(`🔥 FODZE Odds Fetcher — ${Object.keys(leagues).length} leagues`);
   console.log(`   Mode: ${DRY ? "DRY RUN" : "LIVE"}`);
+  console.log(`   Priority: top-6 first so they're guaranteed under rate limits`);
   console.log();
 
   let totalEvents = 0;

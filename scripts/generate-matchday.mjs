@@ -149,13 +149,101 @@ async function loadFixtures() {
   return fixtures.filter(f => f.commence_time <= future);
 }
 
+// ─── xG enrichment from team_xg_history ──────────────────────────
+// Previously: matchdays stored with xg_h8=0 skelett, relied on MatchdayContext
+// re-enriching in the browser on every visit. That meant stored JSONs showed
+// "0% xG coverage" in the audit + engine paths that don't go through
+// MatchdayContext (Goldilocks, fuck-betting standalone) had no data.
+// Now: enrichment happens once at generation and gets persisted.
+
+async function loadLeagueXGHistory(lg) {
+  // Pull up to 3000 rows ordered recent-first. Each team plays ~20
+  // venue-specific matches per season so this covers 2 seasons for 20 teams.
+  const url = `${SUPA_URL}/rest/v1/team_xg_history?` + new URLSearchParams({
+    league: `eq.${lg}`,
+    order: 'match_date.desc',
+    limit: '3000',
+  });
+  const resp = await fetch(url, {
+    headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
+  });
+  if (!resp.ok) return [];
+  return resp.json();
+}
+
+// Fuzzy-match a FODZE/Odds-API team name against the team_xg_history name
+// space (Understat/shots-model/goals-proxy all use different conventions).
+// Returns the last N venue-specific entries for the best match.
+function lookupTeamXG(historyRows, teamNames, venue, n = 8) {
+  const candidates = Array.isArray(teamNames) ? teamNames : [teamNames];
+  // Strategy: try exact match (any candidate), then case-insensitive, then
+  // fuzzy (one candidate is a substring of the team_xg team or vice versa).
+  // First matching team wins — stable across re-runs because we sort by
+  // name length (longer = more distinctive) when tied.
+  const pool = historyRows.filter((r) => r.venue === venue);
+  const tryFind = (pred) => {
+    const found = pool.filter(pred);
+    if (found.length === 0) return null;
+    // Group by r.team, pick the most-populated group, take last N
+    const byTeam = {};
+    for (const r of found) (byTeam[r.team] ||= []).push(r);
+    const best = Object.entries(byTeam).sort((a, b) => b[1].length - a[1].length)[0];
+    return best[1].slice(0, n);
+  };
+  // Exact match, any candidate
+  for (const name of candidates) {
+    const hits = tryFind((r) => r.team === name);
+    if (hits) return hits;
+  }
+  // Case-insensitive exact
+  for (const name of candidates) {
+    const lower = name.toLowerCase();
+    const hits = tryFind((r) => r.team.toLowerCase() === lower);
+    if (hits) return hits;
+  }
+  // Fuzzy: team includes candidate OR candidate includes team (longer one wins)
+  for (const name of candidates) {
+    const lower = name.toLowerCase();
+    const hits = tryFind((r) => {
+      const t = r.team.toLowerCase();
+      return t.includes(lower) || lower.includes(t);
+    });
+    if (hits) return hits;
+  }
+  return [];
+}
+
+function summarizeXG(entries) {
+  if (!entries || entries.length === 0) return null;
+  const xgSum = +entries.reduce((s, r) => s + Number(r.xg || 0), 0).toFixed(2);
+  const xgaSum = +entries.reduce((s, r) => s + Number(r.xga || 0), 0).toFixed(2);
+  // Chronological order for EWMA — history[0] = oldest
+  const chrono = [...entries].reverse();
+  return {
+    xg: xgSum,
+    xga: xgaSum,
+    games: entries.length,
+    history: chrono.map((r) => ({
+      xg: Number(r.xg),
+      xga: Number(r.xga),
+      date: r.match_date,
+      opponent: r.opponent || undefined,
+    })),
+  };
+}
+
 // ─── Build Matchday JSON ──────────────────────────────────────────
-function buildMatchdayJSON(fixtures) {
+function buildMatchdayJSON(fixtures, xgHistory) {
   if (fixtures.length === 0) return null;
 
   // Determine matchday label from first fixture date
   const firstDate = fixtures[0].commence_time.slice(0, 10);
   const dates = [...new Set(fixtures.map(f => f.commence_time.slice(0, 10)))];
+
+  // Coverage counters for the final log line — users see at a glance whether
+  // enrichment landed (or whether they need to seed xG data first).
+  let enrichedHome = 0;
+  let enrichedAway = 0;
 
   const matchday = {
     league: LEAGUE_NAMES[league] || league,
@@ -171,24 +259,41 @@ function buildMatchdayJSON(fixtures) {
       const ko = new Date(f.commence_time);
       const kickoff = `${ko.getFullYear()}-${String(ko.getMonth() + 1).padStart(2, '0')}-${String(ko.getDate()).padStart(2, '0')} ${String(ko.getHours()).padStart(2, '0')}:${String(ko.getMinutes()).padStart(2, '0')}`;
 
+      // Look up last 8 venue-specific entries for each team. Try both the
+      // Odds-API name (matches live_odds + goals-proxy rows) AND the FODZE
+      // name (matches Understat-scraped rows) so we catch the team regardless
+      // of which source populated their history.
+      const homeEntries = xgHistory.length > 0
+        ? lookupTeamXG(xgHistory, [homeApi, homeFodze], "home", 8)
+        : [];
+      const awayEntries = xgHistory.length > 0
+        ? lookupTeamXG(xgHistory, [awayApi, awayFodze], "away", 8)
+        : [];
+      const homeXG = summarizeXG(homeEntries);
+      const awayXG = summarizeXG(awayEntries);
+      if (homeXG) enrichedHome++;
+      if (awayXG) enrichedAway++;
+
       return {
         home: {
           name: homeFodze,
-          xg_h8: 0,
-          xga_h8: 0,
-          games: 8,
+          xg_h8: homeXG?.xg ?? 0,
+          xga_h8: homeXG?.xga ?? 0,
+          games: homeXG?.games ?? 8,
           form: "",
           injuries: "",
           yellow_risk: "",
+          ...(homeXG ? { xg_h_history: homeXG.history } : {}),
         },
         away: {
           name: awayFodze,
-          xg_a8: 0,
-          xga_a8: 0,
-          games: 8,
+          xg_a8: awayXG?.xg ?? 0,
+          xga_a8: awayXG?.xga ?? 0,
+          games: awayXG?.games ?? 8,
           form: "",
           injuries: "",
           yellow_risk: "",
+          ...(awayXG ? { xg_a_history: awayXG.history } : {}),
         },
         tags: [],
         context: "",
@@ -196,6 +301,13 @@ function buildMatchdayJSON(fixtures) {
         kickoff,
       };
     }),
+    // Attached to the JSON for debugging — not used by the engine.
+    _enrichment: {
+      home_coverage: `${enrichedHome}/${fixtures.length}`,
+      away_coverage: `${enrichedAway}/${fixtures.length}`,
+      source: "team_xg_history (Understat/shots-model/goals-proxy)",
+      enriched_at: new Date().toISOString(),
+    },
   };
 
   return matchday;
@@ -208,21 +320,35 @@ async function main() {
   console.log(`   Fenster: nächste ${days} Tage`);
   console.log();
 
-  const fixtures = await loadFixtures();
+  const [fixtures, xgHistory] = await Promise.all([
+    loadFixtures(),
+    loadLeagueXGHistory(league),
+  ]);
   console.log(`   ${fixtures.length} Fixtures gefunden`);
+  console.log(`   ${xgHistory.length} xG-Einträge für diese Liga im team_xg_history`);
 
   if (fixtures.length === 0) {
     console.log('   ⚠ Keine anstehenden Spiele. Wurde fetch-odds.mjs schon ausgeführt?');
     return;
   }
-
-  const matchday = buildMatchdayJSON(fixtures);
-
-  // Print summary
-  for (const m of matchday.matches) {
-    console.log(`   ${m.home.name} vs ${m.away.name} (${m.kickoff})`);
+  if (xgHistory.length === 0) {
+    console.log(
+      '   ⚠ Keine xG-Historie für diese Liga — Matchday wird als Skelett (xg_h8=0) erstellt.',
+    );
+    console.log(
+      '      → Vorher backfill-<source>.mjs laufen lassen (z.B. backfill-liga3-openligadb.mjs)',
+    );
   }
-  console.log();
+
+  const matchday = buildMatchdayJSON(fixtures, xgHistory);
+
+  // Print summary with enrichment status per match
+  for (const m of matchday.matches) {
+    const hBadge = m.home.xg_h_history ? "✓" : "·";
+    const aBadge = m.away.xg_a_history ? "✓" : "·";
+    console.log(`   ${hBadge}${aBadge} ${m.home.name} vs ${m.away.name} (${m.kickoff})`);
+  }
+  console.log(`\n   Enrichment: Home ${matchday._enrichment.home_coverage}, Away ${matchday._enrichment.away_coverage}\n`);
 
   // Write JSON file
   const outPath = resolve(__dirname, '..', `matchday-${league}-auto.json`);
