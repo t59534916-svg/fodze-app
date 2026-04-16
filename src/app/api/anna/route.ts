@@ -1,26 +1,123 @@
 import { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 // Priority: GROQ_API_KEY (free) → CLAUDE_API_KEY (paid) → error
 // Groq: Free, fast (Llama 3.3 70B) — https://console.groq.com
 // Claude: Paid but higher quality — https://console.anthropic.com
 
+// ─── Limits (defense against LLM-credit drain) ─────────────────────
+// The endpoint was previously unauthenticated + unlimited. An attacker
+// with the URL could drain Groq free tier or run up Anthropic bills
+// by hammering POST /api/anna. These limits + cookie auth close that.
+const MAX_SYSTEM_PROMPT_CHARS = 20_000; // ~5k tokens, plenty for context
+const MAX_TOTAL_MESSAGES_CHARS = 40_000; // ~10k tokens across history
+const MAX_MESSAGE_COUNT = 30; // no runaway back-and-forth
+
+// Simple in-memory rate-limit (per Next.js worker). Not a proper defense
+// against distributed abuse — that would need Upstash or similar — but
+// catches casual script-kiddies and accidental loops.
+const rateLimit = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 20; // 20 requests/min per user
+
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const bucket = rateLimit.get(userId);
+  if (!bucket || bucket.resetAt < now) {
+    rateLimit.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= RATE_LIMIT_MAX) return false;
+  bucket.count++;
+  return true;
+}
+
+// ─── Auth guard ────────────────────────────────────────────────────
+
+async function getUserIdOrUnauthorized(): Promise<string | Response> {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll() } },
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return user.id;
+}
+
 export async function POST(req: NextRequest) {
-  const { messages, systemPrompt } = await req.json();
+  const userIdOrError = await getUserIdOrUnauthorized();
+  if (userIdOrError instanceof Response) return userIdOrError;
+  const userId = userIdOrError;
+
+  if (!checkRateLimit(userId)) {
+    return new Response(
+      JSON.stringify({ error: "Rate limit exceeded. Max 20 requests/minute." }),
+      { status: 429, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return new Response(
+      JSON.stringify({ error: "Invalid JSON body" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  const { messages, systemPrompt } = body as { messages?: unknown; systemPrompt?: unknown };
+
+  // Validate shapes — reject anything that would pass garbage to the LLM
+  if (!Array.isArray(messages)) {
+    return new Response(
+      JSON.stringify({ error: "messages must be an array" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (typeof systemPrompt !== "string") {
+    return new Response(
+      JSON.stringify({ error: "systemPrompt must be a string" }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (messages.length > MAX_MESSAGE_COUNT) {
+    return new Response(
+      JSON.stringify({ error: `Too many messages (max ${MAX_MESSAGE_COUNT})` }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+    return new Response(
+      JSON.stringify({ error: `systemPrompt too long (max ${MAX_SYSTEM_PROMPT_CHARS} chars)` }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+  const totalChars = messages.reduce(
+    (sum: number, m: unknown) =>
+      sum + (typeof m === "object" && m && "content" in m && typeof (m as { content: unknown }).content === "string"
+        ? ((m as { content: string }).content).length
+        : 0),
+    0,
+  );
+  if (totalChars > MAX_TOTAL_MESSAGES_CHARS) {
+    return new Response(
+      JSON.stringify({ error: `Combined messages too long (max ${MAX_TOTAL_MESSAGES_CHARS} chars)` }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   const groqKey = process.env.GROQ_API_KEY;
   const claudeKey = process.env.CLAUDE_API_KEY;
 
-  // Try Groq first (free)
-  if (groqKey) {
-    return streamGroq(groqKey, messages, systemPrompt);
-  }
+  if (groqKey) return streamGroq(groqKey, messages as any[], systemPrompt);
+  if (claudeKey) return streamClaude(claudeKey, messages as any[], systemPrompt);
 
-  // Fall back to Claude (paid)
-  if (claudeKey) {
-    return streamClaude(claudeKey, messages, systemPrompt);
-  }
-
-  // No API key — return offline signal
   return new Response(JSON.stringify({ error: "NO_KEY", offline: true }), {
     status: 200, headers: { "Content-Type": "application/json" },
   });
@@ -116,7 +213,7 @@ async function streamClaude(apiKey: string, messages: any[], systemPrompt: strin
   }
 }
 
-// Check which API is configured
+// Check which API is configured — no auth gate (public status indicator)
 export async function GET() {
   return new Response(JSON.stringify({
     hasGroq: !!process.env.GROQ_API_KEY,

@@ -575,10 +575,25 @@ export function vigAdjustPower(quotes:number[]):{probs:number[];overround:number
 // KELLY + BAYESIAN REGRESSION + FORM + TAGS
 // ═══════════════════════════════════════════════════════════════════════
 
+/**
+ * Fractional Kelly stake as a percentage of bankroll.
+ *
+ * `fraction` encodes the user risk profile (K=0.25, M=0.33, A=0.5 — set
+ * in AppContext). The absolute cap is now derived from `fraction` so the
+ * profile choice actually matters:
+ *   K (fraction ≤ 0.28) → cap 2.5% — conservative
+ *   M (fraction ≤ 0.40) → cap 4.0% — balanced (default)
+ *   A (fraction > 0.40) → cap 6.0% — aggressive (but still sane)
+ *
+ * Before this change a flat 0.05 cap applied regardless of fraction,
+ * which meant conservative and aggressive users converged on the same
+ * 5% stake on any non-trivial edge — silently defeating the risk profile.
+ */
 export function kellyFraction(pEigen:number, quote:number, fraction=0.33):number {
   if (quote<=1) return 0;
   const k = (pEigen*quote-1)/(quote-1);
-  return Math.max(0, Math.min(k*fraction, 0.05));
+  const cap = fraction <= 0.28 ? 0.025 : fraction <= 0.40 ? 0.04 : 0.06;
+  return Math.max(0, Math.min(k*fraction, cap));
 }
 
 const PRIOR_K = 6;

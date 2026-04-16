@@ -66,7 +66,10 @@ ALTER TABLE odds_snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bets ENABLE ROW LEVEL SECURITY;
 
--- Policies: Alle eingeloggten User können alles sehen und schreiben
+-- Policies: RLS — non-sensitive tables are readable by all auth users,
+-- sensitive user-scoped tables (bets, profiles) are OWNER-ONLY.
+-- See scripts/migration-rls-tighten.sql for the migration that fixed the
+-- previous "read all" leak on bets + profiles.
 CREATE POLICY "Authenticated read all" ON matchdays FOR SELECT USING (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated insert" ON matchdays FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
@@ -74,10 +77,11 @@ CREATE POLICY "Authenticated read all" ON odds_snapshots FOR SELECT USING (auth.
 CREATE POLICY "Authenticated insert" ON odds_snapshots FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated delete own" ON odds_snapshots FOR DELETE USING (auth.uid() = created_by);
 
-CREATE POLICY "Authenticated read all" ON profiles FOR SELECT USING (auth.role() = 'authenticated');
+-- profiles + bets: user reads ONLY their own data (not "read all")
+-- The "manage own" policy with FOR ALL covers SELECT/INSERT/UPDATE/DELETE
+-- for the owner — no broad read policy needed.
 CREATE POLICY "Authenticated manage own" ON profiles FOR ALL USING (auth.uid() = id);
 
-CREATE POLICY "Authenticated read all" ON bets FOR SELECT USING (auth.role() = 'authenticated');
 CREATE POLICY "Authenticated manage own" ON bets FOR ALL USING (auth.uid() = created_by);
 
 -- Trigger: Profil automatisch erstellen bei Signup
