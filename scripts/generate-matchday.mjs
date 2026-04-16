@@ -20,6 +20,11 @@
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  lookupTeamXG as lookupTeamXGShared,
+  deriveForm,
+  deriveTags,
+} from './_lib/matchday-enrich.mjs';
 
 // ─── Load .env.local ──────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -171,47 +176,10 @@ async function loadLeagueXGHistory(lg) {
   return resp.json();
 }
 
-// Fuzzy-match a FODZE/Odds-API team name against the team_xg_history name
-// space (Understat/shots-model/goals-proxy all use different conventions).
-// Returns the last N venue-specific entries for the best match.
-function lookupTeamXG(historyRows, teamNames, venue, n = 8) {
-  const candidates = Array.isArray(teamNames) ? teamNames : [teamNames];
-  // Strategy: try exact match (any candidate), then case-insensitive, then
-  // fuzzy (one candidate is a substring of the team_xg team or vice versa).
-  // First matching team wins — stable across re-runs because we sort by
-  // name length (longer = more distinctive) when tied.
-  const pool = historyRows.filter((r) => r.venue === venue);
-  const tryFind = (pred) => {
-    const found = pool.filter(pred);
-    if (found.length === 0) return null;
-    // Group by r.team, pick the most-populated group, take last N
-    const byTeam = {};
-    for (const r of found) (byTeam[r.team] ||= []).push(r);
-    const best = Object.entries(byTeam).sort((a, b) => b[1].length - a[1].length)[0];
-    return best[1].slice(0, n);
-  };
-  // Exact match, any candidate
-  for (const name of candidates) {
-    const hits = tryFind((r) => r.team === name);
-    if (hits) return hits;
-  }
-  // Case-insensitive exact
-  for (const name of candidates) {
-    const lower = name.toLowerCase();
-    const hits = tryFind((r) => r.team.toLowerCase() === lower);
-    if (hits) return hits;
-  }
-  // Fuzzy: team includes candidate OR candidate includes team (longer one wins)
-  for (const name of candidates) {
-    const lower = name.toLowerCase();
-    const hits = tryFind((r) => {
-      const t = r.team.toLowerCase();
-      return t.includes(lower) || lower.includes(t);
-    });
-    if (hits) return hits;
-  }
-  return [];
-}
+// Re-export with the same local name to keep the rest of this file stable.
+// Normalization (umlauts, FC/SC/VfB strip, alias map) lives in the shared
+// helper so backfill-enrich-matchdays.mjs gets the exact same logic.
+const lookupTeamXG = lookupTeamXGShared;
 
 function summarizeXG(entries) {
   if (!entries || entries.length === 0) return null;
@@ -244,6 +212,9 @@ function buildMatchdayJSON(fixtures, xgHistory) {
   // enrichment landed (or whether they need to seed xG data first).
   let enrichedHome = 0;
   let enrichedAway = 0;
+  let formHome = 0;
+  let formAway = 0;
+  let tagsApplied = 0;
 
   const matchday = {
     league: LEAGUE_NAMES[league] || league,
@@ -274,13 +245,27 @@ function buildMatchdayJSON(fixtures, xgHistory) {
       if (homeXG) enrichedHome++;
       if (awayXG) enrichedAway++;
 
+      // Derive form (W D L string over last 5 matches, venue-agnostic).
+      // Feeds formMultiplier in the engine — was always "" before, so the
+      // form multiplier was identically 1.0 for every match.
+      const homeForm = xgHistory.length > 0 ? deriveForm(xgHistory, [homeApi, homeFodze]) : "";
+      const awayForm = xgHistory.length > 0 ? deriveForm(xgHistory, [awayApi, awayFodze]) : "";
+      if (homeForm) formHome++;
+      if (awayForm) formAway++;
+
+      // Derive tags: DERBY via rivalry map, ROTATION via fixture density.
+      // Engine's applyTagCorrections() multiplies λ by TAG_MAP[tag] so these
+      // only fire when present — never fired before because tags was [].
+      const derivedTags = deriveTags(f, fixtures);
+      if (derivedTags.length > 0) tagsApplied++;
+
       return {
         home: {
           name: homeFodze,
           xg_h8: homeXG?.xg ?? 0,
           xga_h8: homeXG?.xga ?? 0,
           games: homeXG?.games ?? 8,
-          form: "",
+          form: homeForm,
           injuries: "",
           yellow_risk: "",
           ...(homeXG ? { xg_h_history: homeXG.history } : {}),
@@ -290,12 +275,12 @@ function buildMatchdayJSON(fixtures, xgHistory) {
           xg_a8: awayXG?.xg ?? 0,
           xga_a8: awayXG?.xga ?? 0,
           games: awayXG?.games ?? 8,
-          form: "",
+          form: awayForm,
           injuries: "",
           yellow_risk: "",
           ...(awayXG ? { xg_a_history: awayXG.history } : {}),
         },
-        tags: [],
+        tags: derivedTags,
         context: "",
         referee: "",
         kickoff,
@@ -303,8 +288,11 @@ function buildMatchdayJSON(fixtures, xgHistory) {
     }),
     // Attached to the JSON for debugging — not used by the engine.
     _enrichment: {
-      home_coverage: `${enrichedHome}/${fixtures.length}`,
-      away_coverage: `${enrichedAway}/${fixtures.length}`,
+      home_xg: `${enrichedHome}/${fixtures.length}`,
+      away_xg: `${enrichedAway}/${fixtures.length}`,
+      home_form: `${formHome}/${fixtures.length}`,
+      away_form: `${formAway}/${fixtures.length}`,
+      tags_applied: `${tagsApplied}/${fixtures.length}`,
       source: "team_xg_history (Understat/shots-model/goals-proxy)",
       enriched_at: new Date().toISOString(),
     },
@@ -342,13 +330,22 @@ async function main() {
 
   const matchday = buildMatchdayJSON(fixtures, xgHistory);
 
-  // Print summary with enrichment status per match
+  // Print summary with enrichment status per match. Two-char badge:
+  // [0] xG present, [1] form present. Tags shown inline when non-empty.
   for (const m of matchday.matches) {
-    const hBadge = m.home.xg_h_history ? "✓" : "·";
-    const aBadge = m.away.xg_a_history ? "✓" : "·";
-    console.log(`   ${hBadge}${aBadge} ${m.home.name} vs ${m.away.name} (${m.kickoff})`);
+    const hXG = m.home.xg_h_history ? "✓" : "·";
+    const aXG = m.away.xg_a_history ? "✓" : "·";
+    const hForm = m.home.form ? "✓" : "·";
+    const aForm = m.away.form ? "✓" : "·";
+    const tags = m.tags.length ? ` [${m.tags.join(",")}]` : "";
+    console.log(
+      `   ${hXG}${aXG}·${hForm}${aForm} ${m.home.name} vs ${m.away.name} (${m.kickoff})${tags}`,
+    );
   }
-  console.log(`\n   Enrichment: Home ${matchday._enrichment.home_coverage}, Away ${matchday._enrichment.away_coverage}\n`);
+  const e = matchday._enrichment;
+  console.log(
+    `\n   xG: ${e.home_xg} home / ${e.away_xg} away  ·  Form: ${e.home_form} / ${e.away_form}  ·  Tags: ${e.tags_applied}\n`,
+  );
 
   // Write JSON file
   const outPath = resolve(__dirname, '..', `matchday-${league}-auto.json`);
