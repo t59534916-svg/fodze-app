@@ -4,6 +4,7 @@ import {
   isSettled,
   computeBetStats,
   computeCalibration,
+  computeClvStats,
 } from "@/lib/bet-metrics";
 import type { PlacedBet } from "@/types/match";
 
@@ -225,5 +226,89 @@ describe("computeCalibration", () => {
     ];
     const r = computeCalibration(bets);
     expect(r?.n).toBe(1);
+  });
+});
+
+// ─── computeClvStats ─────────────────────────────────────────────
+
+describe("computeClvStats", () => {
+  it("returns null for empty input", () => {
+    expect(computeClvStats([])).toBeNull();
+  });
+
+  it("returns null when no bets have clv", () => {
+    const bets = [
+      makeBet({ result: "won", clv: undefined }),
+      makeBet({ result: "lost", clv: undefined }),
+    ];
+    expect(computeClvStats(bets)).toBeNull();
+  });
+
+  it("ignores pending bets even if they have clv set", () => {
+    // Pending bet with clv shouldn't happen in practice (clv is computed at
+    // settlement), but if a row is in that state, we refuse to count it.
+    const bets = [
+      makeBet({ result: "won", clv: 2.0 }),
+      makeBet({ result: "pending", clv: 999 }), // excluded
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.count).toBe(1);
+    expect(r?.avgClv).toBeCloseTo(2.0);
+  });
+
+  it("all-positive sample: avgClv > 0, positiveRate = 1", () => {
+    const bets = [
+      makeBet({ result: "won", clv: 1.5 }),
+      makeBet({ result: "lost", clv: 2.5 }),
+      makeBet({ result: "won", clv: 3.0 }),
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.count).toBe(3);
+    expect(r?.avgClv).toBeCloseTo((1.5 + 2.5 + 3.0) / 3, 5);
+    expect(r?.positiveRate).toBe(1);
+    expect(r?.totalClv).toBeCloseTo(7.0, 5);
+  });
+
+  it("all-negative sample: avgClv < 0, positiveRate = 0", () => {
+    const bets = [
+      makeBet({ result: "won", clv: -1.0 }),
+      makeBet({ result: "lost", clv: -2.0 }),
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.avgClv).toBeCloseTo(-1.5);
+    expect(r?.positiveRate).toBe(0);
+  });
+
+  it("mixed sample: zero CLV is NOT counted as positive", () => {
+    const bets = [
+      makeBet({ result: "won", clv: 0 }),   // not positive
+      makeBet({ result: "won", clv: 1.0 }), // positive
+      makeBet({ result: "lost", clv: -1.0 }), // negative
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.count).toBe(3);
+    expect(r?.avgClv).toBeCloseTo(0, 5); // 0 + 1 - 1 = 0
+    expect(r?.positiveRate).toBeCloseTo(1 / 3, 5); // only the 1.0
+  });
+
+  it("treats missing clv as 'no data', NOT as 0 (preserves signal honesty)", () => {
+    const bets = [
+      makeBet({ result: "won", clv: 3.0 }),
+      makeBet({ result: "lost", clv: undefined }), // excluded, not averaged as 0
+      makeBet({ result: "won", clv: 5.0 }),
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.count).toBe(2); // only the two with real CLV
+    expect(r?.avgClv).toBeCloseTo(4.0, 5);
+  });
+
+  it("skips NaN clv without crashing", () => {
+    const bets = [
+      makeBet({ result: "won", clv: NaN as unknown as number }), // excluded
+      makeBet({ result: "won", clv: 2.0 }),
+    ];
+    const r = computeClvStats(bets);
+    expect(r?.count).toBe(1);
+    expect(r?.avgClv).toBeCloseTo(2.0);
   });
 });

@@ -4,7 +4,8 @@ import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import BetHistoryShare from "@/components/performance/BetHistoryShare";
 import LiveCalibration from "@/components/performance/LiveCalibration";
-import { computeBetStats } from "@/lib/bet-metrics";
+import ClvChart from "@/components/performance/ClvChart";
+import { computeBetStats, computeClvStats } from "@/lib/bet-metrics";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 import { text } from "@/styles/components";
 
@@ -219,6 +220,10 @@ function LivePerformance() {
     );
   }, [stats.settled]);
 
+  // Live CLV — only surfaces once the closing-odds cron has caught up on
+  // settled bets. Before that, the card just stays hidden.
+  const clvStats = useMemo(() => computeClvStats(userBets), [userBets]);
+
   const { settled, won, pnl, totalStake, roi, winRate, avgEdge } = stats;
 
   if (settled.length === 0) return (
@@ -257,9 +262,21 @@ function LivePerformance() {
             <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>Brier</div>
           </div>
         )}
+        {clvStats && (
+          <div style={{ flex: 1, minWidth: 70, textAlign: "center" }}>
+            <div style={{
+              fontSize: fontSize.xl, fontWeight: fontWeight.bold, fontFamily: fontFamily.mono,
+              color: clvStats.avgClv > 0 ? "#6aad55" : clvStats.avgClv < 0 ? "#c47070" : color.goldShine,
+            }}>
+              {clvStats.avgClv >= 0 ? "+" : ""}{clvStats.avgClv.toFixed(2)}%
+            </div>
+            <div style={{ fontSize: fontSize.xs, color: color.textMuted }}>Ø CLV</div>
+          </div>
+        )}
       </div>
       <div style={{ fontSize: fontSize.xs, color: color.textFaint, marginTop: 8, textAlign: "center" }}>
         {settled.length} Wetten · Ø Edge {(avgEdge * 100).toFixed(1)}% · €{totalStake.toFixed(0)} Einsatz
+        {clvStats && ` · CLV aus ${clvStats.count} Wetten`}
       </div>
     </div>
   );
@@ -306,6 +323,9 @@ export default function PerformancePage() {
 
           {/* Live AI calibration from actual bets */}
           <LiveCalibration />
+
+          {/* Live CLV trend from actual bets */}
+          <ClvChart />
 
           {/* Past bets with share button */}
           <BetHistoryShare />
@@ -363,7 +383,7 @@ export default function PerformancePage() {
               <Stat label="Wetten" value={String(BACKTEST.bettingAvg.bets)} sub="Avg Odds" />
               <Stat label="Win Rate" value={`${BACKTEST.bettingAvg.wr}%`} good />
               <Stat label="ROI" value={`+${BACKTEST.bettingAvg.roi}%`} sub="nach 312 Bets" good />
-              <Stat label="CLV" value={`+${(BACKTEST.bettingAvg.clv * 100).toFixed(2)}%`} sub="Closing Line" good />
+              <Stat label="CLV (Sim.)" value={`+${(BACKTEST.bettingAvg.clv * 100).toFixed(2)}%`} sub="Backtest, nicht live" good />
             </div>
             <div style={{ ...S.small, padding: "8px 10px", background: "#6aad5510", borderRadius: 6, border: "1px solid #6aad5520" }}>
               Bei Max Odds: {BACKTEST.bettingMax.bets} Bets, {BACKTEST.bettingMax.wr}% WR, <strong style={{ color: "#6aad55" }}>+{BACKTEST.bettingMax.roi}% ROI</strong>

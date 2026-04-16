@@ -82,8 +82,16 @@ async function getPendingBetsForWindow(windowHours) {
   const windowEnd = new Date(now.getTime() + windowHours * 3_600_000);
   // We don't have kickoff on the bet row, so we join via live_odds
   // commence_time in the scoring step. Just get all pending bets here.
+  //
+  // Note: we deliberately do NOT filter out bets that already have
+  // closing_odds. The cron runs every 4h and the kickoff window is 2h —
+  // so for any given match at most one snapshot lands inside the window
+  // most of the time, but when two do, the LATER one (closer to kickoff)
+  // overwrites the earlier. Sharp-lines move most in the final 30min, so
+  // last-write-wins is more faithful to the "closing" semantic than the
+  // previous first-write-wins that locked in whatever we caught first.
   const resp = await fetch(
-    `${SUPA_URL}/rest/v1/bets?result=eq.pending&closing_odds=is.null&select=*`,
+    `${SUPA_URL}/rest/v1/bets?result=eq.pending&select=*`,
     { headers: SUPA_HEADERS },
   );
   if (!resp.ok) throw new Error(`Supabase GET bets: ${resp.status}`);
@@ -122,7 +130,7 @@ async function main() {
     getLiveOdds(),
   ]);
 
-  console.log(`📋 ${bets.length} pending bets without closing_odds`);
+  console.log(`📋 ${bets.length} pending bets (last-write-wins on closing_odds)`);
   console.log(`📊 ${liveOdds.length} live odds events\n`);
 
   if (bets.length === 0) {

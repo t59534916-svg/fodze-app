@@ -137,23 +137,40 @@ async function getPendingBets() {
   return resp.json();
 }
 
-async function settleBet(betId, result) {
+// Compute CLV from placed & closing odds. Returns null when either is missing
+// or out-of-range — we refuse to write 0 for missing data (that would pollute
+// the positive-CLV average with false zeros and make real edge invisible).
+function computeClv(oddsPlaced, closingOdds) {
+  const placed = Number(oddsPlaced);
+  const closing = Number(closingOdds);
+  if (!Number.isFinite(placed) || placed <= 1) return null;
+  if (!Number.isFinite(closing) || closing <= 1) return null;
+  return +((Math.log(placed / closing) * 100).toFixed(4));
+}
+
+async function settleBet(bet, result) {
   if (DRY) return;
-  const body = JSON.stringify({
+  // Recompute CLV on settlement — defense-in-depth. The snapshot-closing-odds
+  // cron normally sets clv atomically when it writes closing_odds, but this
+  // guarantees clv is in sync even if snapshot ran before a schema change, or
+  // if an admin edited closing_odds manually without updating clv.
+  const clv = computeClv(bet.odds_placed, bet.closing_odds);
+  const payload = {
     result,
     settled_at: new Date().toISOString(),
-  });
+    ...(clv !== null ? { clv } : {}),
+  };
   const resp = await fetch(
-    `${SUPA_URL}/rest/v1/bets?id=eq.${betId}`,
+    `${SUPA_URL}/rest/v1/bets?id=eq.${bet.id}`,
     {
       method: "PATCH",
       headers: { ...SUPA_HEADERS, Prefer: "return=minimal" },
-      body,
+      body: JSON.stringify(payload),
     },
   );
   if (!resp.ok) {
     const msg = await resp.text();
-    console.error(`  ⚠️ PATCH ${betId}: ${resp.status} ${msg}`);
+    console.error(`  ⚠️ PATCH ${bet.id}: ${resp.status} ${msg}`);
   }
 }
 
@@ -251,11 +268,13 @@ async function main() {
       ? ((Number(bet.odds_placed) - 1) * Number(bet.stake)).toFixed(2)
       : (-Number(bet.stake)).toFixed(2);
     const icon = result === "won" ? "✅" : "❌";
+    const clv = computeClv(bet.odds_placed, bet.closing_odds);
+    const clvTag = clv !== null ? ` · CLV ${clv >= 0 ? "+" : ""}${clv.toFixed(2)}%` : "";
     console.log(
-      `  ${icon} ${bet.home_team} ${scores.home}:${scores.away} ${bet.away_team} · ${bet.market} → ${result} (${pnl >= 0 ? "+" : ""}${pnl}€)`,
+      `  ${icon} ${bet.home_team} ${scores.home}:${scores.away} ${bet.away_team} · ${bet.market} → ${result} (${pnl >= 0 ? "+" : ""}${pnl}€)${clvTag}`,
     );
 
-    await settleBet(bet.id, result);
+    await settleBet(bet, result);
     settled++;
   }
 

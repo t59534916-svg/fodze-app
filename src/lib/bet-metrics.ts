@@ -161,3 +161,45 @@ export function computeCalibration(bets: PlacedBet[]): CalibrationResult | null 
     buckets,
   };
 }
+
+// ─── CLV (Closing Line Value) ───────────────────────────────────────
+
+export interface ClvStats {
+  /** Settled bets that have a finite CLV value. */
+  count: number;
+  /** Mean CLV in percent (signed). Positive = you beat the close. */
+  avgClv: number;
+  /** Share of bets with CLV > 0, in [0, 1]. */
+  positiveRate: number;
+  /** Sum of CLV — informational, mostly for a running-total chart line. */
+  totalClv: number;
+}
+
+/**
+ * Aggregate CLV stats over a bet list. Only settled bets with a finite `clv`
+ * are counted; the rest are ignored (NOT treated as 0 — that would pollute
+ * the signed average with phantom zeros and mask real edge).
+ *
+ * Returns `null` when no bets qualify, so the caller can render an
+ * empty-state ("need ≥5 bets for CLV trend") instead of a misleading 0%.
+ */
+export function computeClvStats(bets: PlacedBet[]): ClvStats | null {
+  const withClv = bets.filter(
+    (b) => isSettled(b) && typeof b.clv === "number" && Number.isFinite(b.clv),
+  );
+  if (withClv.length === 0) return null;
+  let sum = 0;
+  let positive = 0;
+  for (const b of withClv) {
+    const c = b.clv as number;
+    sum += c;
+    if (c > 0) positive++;
+  }
+  const n = withClv.length;
+  return {
+    count: n,
+    avgClv: sum / n,
+    positiveRate: positive / n,
+    totalClv: sum,
+  };
+}

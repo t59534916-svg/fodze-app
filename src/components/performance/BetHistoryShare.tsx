@@ -44,6 +44,14 @@ const S = {
     minWidth: 64,
     textAlign: "right" as const,
   }),
+  clv: (sign: 1 | -1 | 0) => ({
+    fontSize: 10,
+    fontFamily: fontFamily.mono,
+    fontWeight: fontWeight.medium,
+    color: sign > 0 ? color.value : sign < 0 ? color.warn : color.textFaint,
+    marginTop: 2,
+    textAlign: "right" as const,
+  }),
   shareBtn: {
     minWidth: 44,
     minHeight: 44,
@@ -225,8 +233,21 @@ export default function BetHistoryShare() {
                     {dateStr && ` · ${dateStr}`}
                   </div>
                 </div>
-                <div style={S.profit(won)}>
-                  {won ? "+" : "−"}€{Math.abs(profit).toFixed(0)}
+                <div>
+                  <div style={S.profit(won)}>
+                    {won ? "+" : "−"}€{Math.abs(profit).toFixed(0)}
+                  </div>
+                  {typeof bet.clv === "number" && Number.isFinite(bet.clv) && (
+                    <div
+                      style={S.clv(
+                        bet.clv > 0 ? 1 : bet.clv < 0 ? -1 : 0,
+                      )}
+                      title="CLV — positiv = du hast die Closing-Quote geschlagen"
+                    >
+                      CLV {bet.clv >= 0 ? "+" : ""}
+                      {bet.clv.toFixed(2)}%
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
