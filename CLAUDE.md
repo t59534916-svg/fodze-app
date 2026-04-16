@@ -1,565 +1,300 @@
-# CLAUDE.md — Entwickler-Guide für Claude Code
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App mit drei Prediction Engines:
-- **Standard**: 4-Modell Ensemble (Dixon-Coles + Elo + Logistic EWMA + Market) mit Bayesian Bootstrap Confidence
-- **@annafrick13 v1**: ML-Poisson Engine — Poisson GLM prädiktiert λH/λA → Dixon-Coles 15×15 Matrix → alle Märkte aus einer Quelle
-- **@annafrick13 v2**: LightGBM Tweedie → 14 npxG-Features + Monotonic Constraints → Dixon-Coles Matrix → Dual-Track Calibration → Goldilocks Guard (Brier 0.5808)
+Quantitative Fußball-Wettanalyse App für 21 Ligen. Drei Prediction Engines (Standard Ensemble, @annafrick13 v1 Poisson-ML, @annafrick13 v2 LightGBM Tweedie), Value-Bet-Detection mit Goldilocks-Guard (Edge 2.5–7.5%), Kelly-Staking, automatisches Bet-Settlement + CLV-Tracking.
 
-Vergleicht mit Buchmacher-Quoten, findet Value-Bets und berechnet Kelly-Einsätze.
+---
 
-## Projekt starten
+## Commands
 
+### Development
 ```bash
 npm install
 npm run dev       # http://localhost:3000
-npm run test      # 49 Tests (Engine + Poisson + Zod Schemas)
-npm run build     # Production Build
+npm run test      # 156 Tests (vitest)
+npm run test:watch
+npm run build     # Production Build (läuft auch in CI)
+npm run lint      # Next lint (warnings nur, non-blocking)
 ```
 
-## Architektur auf einen Blick
+### Single test file
+```bash
+npx vitest run tests/bet-metrics.test.ts
+npx vitest run --reporter=verbose tests/format.test.ts
+```
+
+### TypeScript check
+```bash
+./node_modules/.bin/tsc --noEmit
+```
+Zero errors in `src/` expected. Two pre-existing errors in `tests/dixon-coles.test.ts` are known and untouched.
+
+### Admin-Scripts (via node)
+
+| Script | Zweck | Wann |
+|---|---|---|
+| `scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API | Cron alle 4h (Fr-So + Mi) |
+| `scripts/snapshot-closing-odds.mjs` | Closing-odds für pending bets innerhalb 2h vor Kickoff — füllt `bets.closing_odds` + `bets.clv` | Im fetch-odds-Cron |
+| `scripts/fetch-results.mjs` | Auto-Settlement für alle 18 Ligen | Täglich 02:17 + 08:17 UTC |
+| `scripts/backfill-liga3-goals.mjs` | Goals-als-xG-Proxy für Liga 3 | Im settle-bets-Cron |
+| `scripts/backfill-footystats.mjs` | Echte xG von FootyStats (Skeleton, no-op ohne API-Key) | Im settle-bets-Cron |
+| `scripts/backfill-shots-xg.mjs` | CSV-Shots → per-Match xG (football-data.co.uk) | On demand |
+| `scripts/seed-matchday.mjs` | JSON → Supabase `matchdays` | Neuer Spieltag |
+| `scripts/generate-matchday.mjs --league X` | Fixtures → Matchday-Skelett | Vor Enrichment |
+| `scripts/seed-understat-2526.mjs` | Understat-Browser-JSON → Supabase xG-Historie | Manuell |
+| `scripts/update-matchday.mjs` | Live Understat-Scrape (nur Top-5-Ligen) | Blockiert — Understat SPA |
+| `scripts/backfill-xg.mjs` | Interaktiver Browser-Script-Guide | Für neue Saisons |
+| `scripts/spieltag.mjs` | Interaktiver 6-Schritt Spieltag-Wizard | Manueller Enrichment-Flow |
+| `scripts/value-alerts.mjs --threshold 5` | Telegram-Alerts bei Edge ≥ 5% | Optional, im fetch-odds-Cron |
+| `scripts/export-xg.mjs` | Supabase → lokale JSON-Backups | Vor Migrationen |
+
+Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo applicable). `.env.local` wird auto-geladen.
+
+### Python Tools (nur für Model-Retraining)
+```bash
+source tools/venv/bin/activate
+DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
+python3 tools/matchday-predict.py --all-leagues --json
+python3 tools/train-shots-xg.py
+```
+
+---
+
+## Architektur-Big-Picture
 
 ```
-Supabase (DB + Auth)
+Supabase (DB + Auth + RLS)
   ↕
-Next.js 14 App Router
-  ├── Contexts: AppContext (User/Liga) → MatchdayContext (Matches/Odds)
-  ├── Pages: / → /matchday → /matchday/combos → /anna → /anna-analysen → /simulator → /performance
-  ├── API: /api/anna (Groq/Claude Streaming), /api/matchday (Claude — nur Text, kein xG)
-  ├── Engines: dixon-coles.ts (Standard) + poisson-ml-engine.ts (v1) + poisson-ml-engine-v2.ts (v2)
-  └── Engine Registry: engine-registry.ts (Multi-Engine Dispatch)
+Next.js 14 App Router (alle pages "use client")
+  │
+  ├── AppContext (global: user, league, profile, bankroll, engine)
+  │      └── MatchdayContext (matches, odds, calcs) — hängt an AppContext
+  │
+  ├── Engines (hot path)
+  │      ensemble-v1  ← src/lib/dixon-coles.ts + ensemble.ts + calibration.ts
+  │      poisson-ml   ← src/lib/poisson-ml-engine.ts + poisson-regression.ts
+  │      poisson-ml-v2 ← src/lib/poisson-ml-engine-v2.ts + lgbm-runtime.ts
+  │      Alle 3 werden parallel in MatchdayContext.calcMatch berechnet und
+  │      im 2-Layer-Memo gecacht. `engine` Toggle ist dann microseconds.
+  │
+  ├── Shared Libs (pure functions, gut getestet)
+  │      bet-metrics.ts    ← betProfit, computeBetStats, computeCalibration
+  │      format.ts         ← fmtEuro, percent, matchKey, fmtDate*
+  │      market-labels.ts  ← MarketKey type, canonicalMarket, marketLabel
+  │      absence-parser.ts ← Verletzungs-Strings → PlayerProfile[]
+  │      elo-seeding.ts    ← Liga-Median-basierter Elo-Fallback
+  │      bet-share-card.ts ← Canvas 2D PNG Renderer (1080×1350)
+  │
+  ├── API-Routes
+  │      /api/anna         ← Groq/Claude Streaming SSE
+  │      /api/matchday     ← Matchday-Enrichment (nur Text, keine xG-Werte)
+  │      /api/seed-history ← Historischer xG-Seed (admin only)
+  │
+  └── Cron via GitHub Actions
+         fetch-odds.yml (alle 4h): odds + closing-odds-snapshot + value-alerts
+         settle-bets.yml (täglich): bet settlement + liga3-goals + footystats
+         ci.yml (push/PR): lint → typecheck → test → build
 ```
 
-## Wichtige Dateien
+### Engine-Hierarchy im Main-Path (MatchdayContext.calcMatch)
 
-| Datei | Was es tut | Wann anfassen |
-|-------|-----------|---------------|
-| `src/lib/dixon-coles.ts` | Prediction Engine (NICHT ändern ohne Tests) | Nur bei Modell-Verbesserungen |
-| `src/contexts/MatchdayContext.tsx` | Matchday State + calcMatch | Bei neuen Datenfeldern |
-| `src/contexts/AppContext.tsx` | User/Liga/Profil State | Bei neuen User-Settings |
-| `src/app/matchday/page.tsx` | Haupt-Analyseseite | Bei UI-Änderungen an Matchday |
-| `src/components/match/MatchDetail.tsx` | Tab-System (Überblick/Quoten/Statistik) | Bei neuen Analyse-Features |
-| `src/app/anna/page.tsx` | Ask Anna Chat | Bei AI-Flow-Änderungen |
-| `src/lib/anna-prompt.ts` | System-Prompt für Anna | Bei Prompt-Tuning |
-| `src/styles/tokens.ts` | Design Tokens (Source of Truth) | Bei Design-Änderungen |
-| `src/types/match.ts` | TypeScript Interfaces | Bei neuen Datenstrukturen |
-| `src/lib/poisson-ml-engine.ts` | @annafrick13 v1 (Poisson GLM) | Bei v1-Engine-Änderungen |
-| `src/lib/poisson-ml-engine-v2.ts` | @annafrick13 v2 (LightGBM Tweedie) | Bei v2-Engine-Änderungen |
-| `src/lib/lgbm-runtime.ts` | LightGBM Tree-Traversierung (Browser) | Bei Modell-Format-Änderungen |
-| `src/lib/poisson-regression.ts` | Poisson GLM Runtime (v1 λ predict) | Bei v1 Feature-Änderungen |
-| `src/lib/calibration.ts` | Isotonic Calibration + Dual-Track | Bei Kalibrierungs-Änderungen |
-| `src/lib/system-bets.ts` | Kombi-Engine (SGM + Akku + Kelly) | Bei Multi-Bet-Änderungen |
-| `src/lib/engine-registry.ts` | Engine-Definitionen + Dispatch | Bei neuen Engines |
-| `public/lgbm-model-v2.json` | Trainiertes LightGBM Modell (v2) | Nach Retraining |
-| `src/app/fuck-betting/page.tsx` | Anna's Analysen — quotenfreier Vollreport | Bei Report-Erweiterungen |
-| `src/lib/team-colors.ts` | Trikot-Farben (21 Ligen, ~350 Teams) | Bei Team-Änderungen |
-| `src/lib/team-resolver.ts` | FODZE↔CSV↔Understat Team-Name-Mapping (~350 Teams) | Bei neuen Teams/Ligen |
-| `src/lib/calibration.ts` | Per-League Kalibrierung (Platt + Isotonic, 18 Ligen) | Bei Kalibrierungs-Änderungen |
+1. Alle 3 Engines laufen immer parallel in `allEngineCalcs` (memo ohne `engine` in deps)
+2. `processed` wählt primary basierend auf `engine` + hängt `allEnginesMk` an (cheap)
+3. Fallback bei missing xG: engine returns null → primary = ensembleCalc
+4. Fallback bei missing xG-Historie: MatchdayContext.loadCached füllt `xg_h8` aus `team_xg_history` Summen oder Liga-Avg (× 0.55 home / 0.45 away)
 
-## Unterstützte Ligen (21)
+### Neue Seite hinzufügen
+1. `src/app/neue-seite/page.tsx` mit `"use client"`
+2. `<AppShell>` wrappen
+3. Navbar-Tab in `src/components/layout/Navbar.tsx` (optional — floating help icon existiert für Hilfe-Seiten)
 
-| Liga | Key | xG | Kalibrierung | Datenquelle |
-|------|-----|:--:|:------------:|-------------|
-| Bundesliga | `bundesliga` | ✅ | Per-League | Understat + CSV |
-| Premier League | `epl` | ✅ | Per-League | Understat + CSV |
-| La Liga | `la_liga` | ✅ | Per-League | Understat + CSV |
-| Serie A | `serie_a` | ✅ | Per-League | Understat + CSV |
-| Ligue 1 | `ligue_1` | ✅ | Per-League | Understat + CSV |
-| Eredivisie | `eredivisie` | ✅ | Per-League | Understat + CSV |
-| Championship | `championship` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| 2. Bundesliga | `bundesliga2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| 3. Liga | `liga3` | ✅ FootyStats | ❌ | FootyStats (echte xG) |
-| Champions League | `cl` | ❌ | ❌ | Placeholder |
-| Europa League | `el` | ❌ | ❌ | Placeholder |
-| Primeira Liga | `primeira_liga` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Jupiler Pro | `jupiler_pro` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Süper Lig | `super_lig` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| La Liga 2 | `la_liga2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Serie B | `serie_b` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Ligue 2 | `ligue_2` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Scottish Prem | `scottish_prem` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| Super League Greece | `greek_sl` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| League One | `league_one` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
-| League Two | `league_two` | ✅ Shots | Per-League | CSV Shots-to-xG Modell |
+### Neue Engine-Berechnung hinzufügen
+1. Funktion in `src/lib/dixon-coles.ts` exportieren
+2. In `MatchdayContext.tsx` → `computeAllEngines` einbinden
+3. In `MatchDetail.tsx` anzeigen (default View oder im collapsible `<details>`)
+4. Test in `tests/dixon-coles.test.ts` schreiben
 
-**Elo-Ratings**: 655 Teams aus 146.382 historischen Matches (football-data.co.uk CSVs, 25 Saisons)
-**Kalibrierung**: Platt-Params + Isotonic-Kurven per Liga (18 Ligen mit ≥300 Matches)
-**Shots-to-xG Modell**: `xG = -0.045 + 0.242×SOT + 0.065×SOFF` (R²=0.57, trainiert auf 3.283 Matches mit echtem Understat-xG)
-**Per-Match xG-History**: 7.350 Einträge in `team_xg_history` für 12 non-Understat-Ligen (source: `shots-model`)
-**xG-Quellen**: Understat (6 Top-Ligen, echte xG) → Shots-Modell (12 weitere Ligen, geschätzte xG aus Schussdaten) → FootyStats (3. Liga)
+---
+
+## Daten-Pipelines
+
+### xG-Coverage (Stand dieser Revision)
+
+| Layer | Ligen | Status |
+|---|---|---|
+| Understat (echte xG, 2017–25) | 6 Top-Ligen | 28.718 Einträge |
+| Shots-Modell (CSV, R²=0.57) | 12 Nebenligen + Top-5 2025/26 | ~8.000 Einträge |
+| Goals-Proxy (The-Odds-API scores) | 3. Liga | Automatisch via Cron |
+| FootyStats (echte xG) | 3. Liga | Skeleton — aktiviert sich bei `FOOTYSTATS_API_KEY` |
+| Liga-Avg Fallback | Teams ohne Historie | Runtime in MatchdayContext |
+
+**Fallback-Chain in loadTeamXGHistory** (`src/lib/supabase.ts`): Exact CSV-Name → fuzzy (längstes distinctives Token) → (in loadCached) Liga-Avg × 0.55/0.45.
+
+**xg_h8-Format (KRITISCH)**: SUMMEN über 8 Spiele, NICHT Durchschnitte. Faustregel: `xg_h8 / 8 ≈ 0.8–2.5` pro Spiel. Wert < 5.0 → wahrscheinlich Fehler.
+
+### Elo-System (src/lib/ensemble.ts + elo-seeding.ts)
+
+- 655 Teams aus 146.382 historischen Matches (football-data.co.uk, 25 Saisons)
+- Fallback für unbekannte Teams: `seedElo(league)` statt flat 1500
+- Liga-Tier-Defaults: BL 1730, EPL 1800, Liga 3 1250, League Two 1200 (-50 Promotion-Penalty)
+- Coverage bei aktuellen Matchdays: 84.9% real-Elo, 15.1% seeded
+
+### Team-Name-Resolution
+
+Drei Namensräume für dasselbe Team:
+- **FODZE** (App-intern): "FC Bayern München"
+- **CSV** (football-data.co.uk, Elo): "Bayern Munich"
+- **Understat** (team_xg_history): "Bayern Munich"
+
+Zwei Mapping-Systeme:
+- `src/lib/team-resolver.ts` → TEAM_REGISTRY (~330 Einträge, FODZE↔CSV↔Understat↔OddsAPI)
+- `src/lib/scrapers/team-map.ts` → TEAM_SCRAPER_MAP (Understat-spezifische Aliase)
+
+`fuzzyTeamMatch(a, b)` in team-resolver.ts fängt Substring-Matches + geteilte Wörter > 3 Chars ab — wird von mehreren Call-Sites genutzt (MatchdayContext live-odds-matching, snapshot-closing-odds.mjs).
+
+### Absences → Engine-Input
+
+`src/lib/absence-parser.ts` parst die `match.home.injuries` Free-Text-Strings (Format: `"Name (Pos, Reason), Name2 (Pos, Reason)"`). Deutsche Positions-Hints werden gemapped (TW→GK, IV→DEF, MF→MID, ST→FWD). Ergebnis geht als `absences: { home, away }` in v1/v2 + calcMatchEnhanced → `calcAbsenceImpact` skaliert λH/λA.
+
+### CLV-Tracking (neu)
+
+`bets.closing_odds` + `bets.clv` Columns. Der `snapshot-closing-odds.mjs` Cron läuft alle 4h und snapshoted sharp-Quoten für pending bets innerhalb 2h vor Kickoff. `CLV = log(odds_placed / closing_odds) × 100`. Positive CLV über Zeit = einziger Indikator echter Edge.
+
+---
 
 ## Konventionen
 
 ### Styling
-- **Inline Styles** mit Token-Referenzen (`color.gold`, `fontSize.sm`, `space[5]`)
-- **Kein Tailwind, kein CSS-in-JS** — alles über `src/styles/tokens.ts` + `components.ts`
+- Inline Styles mit Token-Referenzen (`color.gold`, `fontSize.sm`, `space[5]`)
+- Kein Tailwind, kein CSS-in-JS — alles über `src/styles/tokens.ts` + `components.ts`
 - Farben: Leather (#1a0f0a) + Gold (#d4b86a) Theme
 - Cards: `card()` Factory aus `components.ts`
 - Buttons: `button("gold" | "outline" | "ghost")`
-
-### Komponenten
-- **"use client"** auf allen Komponenten (Next.js Client Components)
-- Props typisieren mit Interfaces aus `@/types/match`
-- Shared Components in `src/components/shared/`
-- Seitenspezifische in `src/components/match/`, `anna/`, `home/`, `matchday/`
+- Badges: `badge("value" | "warn" | "gold" | "neutral" | "info")`
 
 ### State
 - **AppContext**: User, Liga, Profil, Bankroll, Engine-Auswahl — global
-- **MatchdayContext**: Matchday-Daten, Odds, berechnete Matches — überlebt Navigation
-- **sessionStorage**: Combo-Auswahl — überlebt Seitenwechsel
+- **MatchdayContext**: Matchday-Daten, Odds, calcs — überlebt Navigation
 - **Lokaler State**: UI-State (selectedMatch, showTips, tab)
 
-### Neue Seite hinzufügen
-1. `src/app/neue-seite/page.tsx` erstellen
-2. `<AppShell>` wrappen
-3. Navbar-Tab in `src/components/layout/Navbar.tsx` hinzufügen (falls nötig)
+### Commit / Deploy
+- **Vercel Hobby Plan** blockiert Commits mit `Co-Authored-By` Trailer. NIEMALS dran hängen.
+- Vercel auto-deployed bei push auf `main`.
+- Service-Worker `public/sw.js` nutzt Network-First Strategy (Cache-Version bumpen bei jedem Deploy).
 
-### Neue Berechnung hinzufügen
-1. Funktion in `src/lib/dixon-coles.ts` exportieren
-2. In `MatchdayContext.tsx` → `calcMatch()` einbinden
-3. In `MatchDetail.tsx` anzeigen (passendem Tab)
-4. Test in `tests/dixon-coles.test.ts` schreiben
+---
 
-## xG-Daten Format
-
-**KRITISCH**: xG-Werte sind **SUMMEN** über 8 Spiele, NICHT Durchschnitte!
-
-```
-xg_h8 = 14.2  ← Summe xG der letzten 8 HEIMSPIELE (Bereich 5-25)
-xga_h8 = 8.5  ← Summe xGA kassiert in letzten 8 HEIMSPIELEN
-xg_a8 = 10.8  ← Summe xG der letzten 8 AUSWÄRTSSPIELE
-xga_a8 = 12.1 ← Summe xGA in letzten 8 AUSWÄRTSSPIELEN
-```
-
-Faustregel: Wert / 8 ≈ 0.8–2.5 pro Spiel. Wenn < 5.0 → wahrscheinlich Durchschnitt!
-
-## AI-Integration
-
-```
-Priority: GROQ_API_KEY (kostenlos) → CLAUDE_API_KEY (bezahlt) → Offline (Templates)
-```
-
-- **Groq**: Llama 3.3 70B, SSE Streaming, OpenAI-kompatibel → transformiert zu Anthropic-Format
-- **Claude**: Sonnet 4, native SSE
-- **Offline**: `generateOfflineAnalysis()` in anna/page.tsx — rein aus berechneten Daten
-
-## Tests
+## Tests (156 total, 10 files)
 
 ```bash
-npm run test              # Alle Tests
+npm run test              # alle Tests
 npm run test:watch        # Watch-Mode
-npx vitest run --reporter=verbose  # Detailliert
+npx vitest run tests/bet-metrics.test.ts  # einzelne Datei
 ```
 
-Tests decken ab:
-- LEAGUES Konfiguration (21 Ligen)
-- xG-Daten Validierung
-- Vig-Removal (Overround-Berechnung)
-- Dixon-Coles λ-Berechnung + Score-Matrix
-- Kelly-Criterion Staking
-- Home-Factor Lookup
-- Poisson GLM λ-Prediction (9 Features, Clamping, Dimension Guard)
-- Feature-Sync TS↔Python (Rest Days, SoS, Derby)
+Coverage-Hotspots:
+- `dixon-coles.test.ts` — λ-Berechnung, Vig-Removal, Kelly, Home-Factor
+- `bet-metrics.test.ts` — betProfit (inkl. NaN-Guard), computeBetStats, computeCalibration (Brier-Buckets)
+- `format.test.ts` — fmtEuro, safeDate (garbage-Input-Schutz), percent, matchKey
+- `market-labels.test.ts` — canonicalMarket (DE + EN + legacy Aliase)
+- `absence-parser.test.ts` — Position-Hints, returning-Player-Skip, Klammern-Nesting
+- `elo-seeding.test.ts` — Liga-Tier-Defaults, Promotion-Penalty, Cache
+- `team-resolver.test.ts` — fuzzyTeamMatch (kritisch, 3 Call-Sites)
+- `lgbm-runtime.test.ts` + `poisson-regression.test.ts` — Model-Runtime
+- `schemas.test.ts` — Zod Matchday-JSON Validation
 
-## Prediction Engines
+**NICHT getestet**: React-Contexts (MatchdayContext, AppContext), Components (MatchDetail, BetHistoryShare, etc.), API-Routes, Hooks, Pages, Scripts.
 
-### Standard (ensemble-v1)
-4-Modell Ensemble: Dixon-Coles (5%) + Elo (12%) + Logistic (64%) + Market (20%). Blended 1X2-Wahrscheinlichkeiten. O25 aus Matrix, 1X2 aus Ensemble.
-
-### @annafrick13 v1 (poisson-ml)
-ML-Poisson GLM → Dixon-Coles Matrix → ALLE Märkte aus einer Quelle.
-
-**Pipeline:** Supabase xG History → EWMA → SoS-Adjust → 9 Features → Poisson GLM → λH, λA → 15×15 Matrix
-
-**Training:** `python3 tools/retrain_all.py` → `public/ensemble-model.json`
-
-### @annafrick13 v2 (poisson-ml-v2)
-LightGBM Tweedie → Monotonic Constraints → Dixon-Coles Matrix → Dual-Track Calibration.
-
-**Pipeline:** Understat npxG → EWMA → SoS → 14 Features → LightGBM Tweedie (Optuna) → λH, λA → optimiertes ρ → 15×15 Matrix → Track A (Display) + Track B (Kelly)
-
-**Features (14):**
-| # | Name | Beschreibung | Mono H/A |
-|---|------|-------------|----------|
-| 0 | npxg_diff_ewma | Non-Penalty xG Differenz (EWMA) | +1 / -1 |
-| 1 | npxga_diff_ewma | Defensive npxG Differenz | -1 / +1 |
-| 2 | elo_diff | (Elo H - Elo A) / 400 | +1 / -1 |
-| 3 | total_npxg | Kombinierte Angriffsstaerke | — |
-| 4 | home_factor | Liga/Team Heimfaktor | +1 / -1 |
-| 5 | league_avg | Liga-Durchschnitt Tore/Spiel | — |
-| 6 | rest_days_diff | (Rest Home - Rest Away) / 7 | +1 / -1 |
-| 7 | sos_strength | SoS-Korrektur Differenz | — |
-| 8 | is_derby | Binaer (25 Derby-Paarungen) | — |
-| 9 | npxg_momentum | Akute Form vs. Saison-Baseline | +1 / -1 |
-| 10 | npxg_volatility | Konsistenz (Std 8-Spiele) | — |
-| 11 | h2h_npxg_diff | Letzte 5 H2H-Begegnungen | — |
-| 12 | ppda_ratio_diff | Pressing-Intensitaet (EWMA) | — |
-| 13 | deep_completions_diff | Final-Third Qualitaet (EWMA) | +1 / -1 |
-
-**Guardrails:**
-- Monotonic Constraints (physisch unmoeglich unreale Extreme zu produzieren)
-- Lambda Clamping [0.3, 4.5]
-- Goldilocks Edge Guard: 2.5% - 7.5% (< = Rauschen, > = fehlende Info)
-- Dual-Track Divergenz-Warnung (Track A +EV, Track B -EV = overconfident)
-- Volatilitaets-Dampener in Kombiwetten (Kelly -15% bis -45%)
-- Feature-Dimension Guard (14≠14 → null)
-- Kein LLM-Daten Fallback (ohne History → null)
-
-**Training:**
-```bash
-source tools/venv/bin/activate
-DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
-```
-Output: `public/lgbm-model-v2.json` (Tree-Struktur + Golden Tests, ~300 KB)
-
-**Matchday Predictions:**
-```bash
-python3 tools/matchday-predict.py --analyse          # Naechster Spieltag
-python3 tools/matchday-predict.py --all-leagues --json  # JSON Export
-python3 tools/matchday-enrich.py --all-leagues          # + Wetter + Schiedsrichter
-```
-
-## Anna's Analysen (/fuck-betting)
-
-Quotenfreier Vollreport über ALLE geladenen Ligen. Erreichbar über den "Anna's Analysen" Tile auf der Startseite.
-
-**Engine-Hierarchie:**
-1. **@annafrick13 v2** — wenn LightGBM-Modell geladen UND per-Match xG-History vorhanden
-2. **Standard** (`calcLambdas`) — wenn v2 `null` zurückgibt oder kein Modell/History
-3. **Liga-Durchschnitt** — wenn gar keine xG-Daten (z.B. 3. Liga), mit "Ohne xG"-Warnung
-
-**Datenfluss:**
-```
-Supabase matchdays → loadLatestMatchday() pro Liga
-  → loadTeamXGHistory() für EWMA-Features (v2)
-  → calcMatchPoissonMLv2() || calcLambdas() → buildMatrix()
-  → deriveAllMarkets() + alle Spezial-Märkte → MatchReport
-```
-
-**Report-Sektionen (30+):**
-1X2, Double Chance, DNB, Goals O/U 1.5-5.5, BTTS, Clean Sheet, Win to Nil,
-Team Goals, Exact Team Goals, Odd/Even, Race to 2 Goals, HT 1X2, HT Goals O/U,
-HT Correct Scores, HT/FT, 2nd Half Markets, Goal in Both Halves, Score Matrix
-Heatmap (7x7), Correct Score FT, Winning Margin, Asian Handicap, Yellow Cards,
-First Goal Timing, xG Comparison Bar, Form Visual
-
-**Badges im Match-Header:**
-- `@annafrick13` (grün) — v2 Engine aktiv
-- `Ohne xG` (rot) — keine xG-Daten, Liga-Durchschnitt als Fallback
-
-## Team-Daten System
-
-### Team Colors (`src/lib/team-colors.ts`)
-`[primary, secondary]` Hex-Paare für Trikot-SVG. Abgedeckte Ligen:
-Bundesliga, 2. Bundesliga, 3. Liga, Premier League, Championship,
-La Liga, La Liga 2, Serie A, Serie B, Ligue 1, Ligue 2, Eredivisie,
-Primeira Liga, Jupiler Pro, Süper Lig, Scottish Premiership,
-Super League Greece, League One, League Two.
-Alias-Einträge für Kurzformen (z.B. "QPR", "West Brom").
-
-### Team Resolver (`src/lib/team-resolver.ts`)
-Mapped zwischen drei Namensräumen:
-- **FODZE**: "FC Bayern München" (App-intern)
-- **CSV**: "Bayern Munich" (football-data.co.uk, Elo)
-- **Understat**: "Bayern Munich" (Supabase xG History)
-
-Resolution: exact FODZE → exact CSV → exact Understat → case-insensitive → substring.
-
-### Team Scraper Map (`src/lib/scrapers/team-map.ts`)
-Zusätzliches Mapping für Scraper-Kontexte (Understat HTML → FODZE Name).
-
-## CI/CD
-
-GitHub Actions (`.github/workflows/ci.yml`):
-- Lint → TypeCheck → Test → Build
-- Triggered auf Push/PR zu `main`
-- Lint + TypeCheck dürfen feilen (continue-on-error)
-- Tests + Build müssen bestehen
-
-## Type System
-
-### TeamData — Strikte xG-Keys (kein Index-Signatur)
-`TeamData` hat explizite Properties (`xg_h8`, `xga_h8`, `xg_a8`, `xga_a8`) statt `[key: string]: any`. Dynamischer Key-Zugriff (`t[xk]`) wurde durch explizite Property-Zugriffe ersetzt.
-
-### MatchCalc — Interface Segregation
-`ProcessedMatch.calc` ist `MatchCalc | null` mit strukturell getyptem `enh`-Feld. Die Engine gibt `EnhancedResult` zurück, das via `as MatchCalc` assertion zugewiesen wird. Core-Fields (lambdaH, mk, matrix, ciH, formH, tagCorrections) sind strikt typisiert, Engine-Erweiterungen via `Record<string, any>` intersection erlaubt.
-
-### OddsData — Index-Signatur für parseFloat(o[k])
-`OddsData` hat typisierte Haupt-Keys (`h`, `d`, `a`, `o25`) plus Index-Signatur `[key: string]: string | OddsSharpData | number | undefined` für den dynamischen `parseFloat(String(o[k]))` Zugriff.
+---
 
 ## Bekannte Einschränkungen
 
-- `MatchCalc.enh` nutzt `Record<string, any> &` Intersection — ein Kompromiss weil `Markets` (Engine-intern) und `MarketProbs` (types/match.ts) strukturell identisch aber nominell verschieden sind
-- Standalone-Seiten (Simulator, SGP, Season-Sim) haben eigene Inline-Engines die nicht den zentralen dixon-coles.ts nutzen
-- Kein E2E Testing — nur Unit-Tests für die Engine
-- Anna's Analysen nutzt v2 ohne SoS-Ratings und Absences (diese kommen nur über MatchdayContext-Flow)
-- Team-Resolver: Teams die in mehreren Ligen spielen (Auf-/Abstieg) haben den letzten Eintrag als Default-Liga
-- **WICHTIG**: Vercel Hobby Plan — KEIN `Co-Authored-By` in Commits! Blockiert Deployment.
-- Ligen ohne Understat-xG (PT, BE, TR, SP2, I2, F2, SC, GR, E2, E3) nutzen nur ensemble-v1 (Standard-Engine). Poisson-ML v1/v2 verweigern ohne xG-History.
-- ~9 Teams (Aufsteiger/Neulinge) haben Default-Elo 1500 mangels historischer CSV-Daten
-- Champions League / Europa League sind Placeholder (wechselnde Teams, keine konsistente Kalibrierung)
+- **Kein E2E-Testing** — nur Unit-Tests (React Testing Library nicht installiert)
+- **Standalone-Seiten** (`/simulator`, `/sgp`, `/season-sim`) haben Inline-Engines die nicht `dixon-coles.ts` nutzen
+- **`fuck-betting/page.tsx` (~1500 LOC)** — eigene Engine-Selection-Logik, nicht über MatchdayContext
+- **Champions/Europa League**: Placeholder (wechselnde Teams, keine konsistente Kalibrierung)
+- **Lineup-aware Predictions**: Design-doc in `docs/LINEUP-INTEGRATION.md`, nicht implementiert (Sofascore blockt 403, freie Sources zu brittle)
+- **Team-Resolver**: Teams mit Auf-/Abstieg haben den letzten Eintrag als Default-Liga — ok für xG, Elo wird über League-Hint aufgelöst
 
-## Datenbank
+---
 
-```sql
--- Wichtigste Tabellen:
-matchdays          -- Spieltag-JSON pro Liga (JSONB)
-odds_snapshots     -- Quotenverlauf mit Timestamps
-bets               -- Platzierte Wetten + P&L
-profiles           -- Bankroll, Risikoprofil
-live_odds          -- Auto-Import via GitHub Actions Cron
-team_xg_history    -- 36.068 per-Match xG-Einträge (2017-2026)
-                   -- 28.718 echte xG (Understat, 6 Ligen, 2017-2025)
-                   -- 7.350 geschätzte xG (Shots-Modell, 12 Ligen, 2025/26)
-                   -- Felder: team, opponent, league, venue, match_date, xg, xga, goals_for, goals_against, source
-upcoming_fixtures  -- Auto-Spielplan aus The-Odds-API (piggybacked auf fetch-odds.mjs)
-                   -- Felder: league, event_id, home_team, away_team, commence_time
-```
-
-**Standings**: Keine eigene Tabelle — wird client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`). Zeigt W/U/N/Tore/Punkte/Position an.
-
-RLS aktiv: User sehen alles, ändern nur eigene Daten.
-
-## Admin Workflow — Spieltag-Analyse Schritt für Schritt
-
-### Übersicht
-
-Ein neuer Spieltag durchläuft **6 Schritte**. Die Workflow-Seite `/workflow` hat Prompts und Scripts zum Copy-Paste.
+## Supabase-Tabellen
 
 ```
-1. Spielplan holen    → AI: Paarungen, Anstoßzeiten, Kontext
-2. xG-Daten holen    → Understat Browser-Script (DETERMINISTISCH, kein AI)
-3. Verletzungen       → 3 AIs parallel befragen + Cross-Check
-4. JSON bauen         → Alle Daten im FODZE-Format zusammenführen
-5. In DB seeden       → JSON per Script/App nach Supabase
-6. Quoten eingeben    → Buchmacher-Quoten → Value Bets + Kelly
+matchdays          — Spieltag-JSON pro Liga (JSONB), label, date, created_by
+odds_snapshots     — Quotenverlauf mit Timestamps (source: manual/live/import)
+bets               — id, match_key, home_team, away_team, market, odds_placed, stake,
+                     model_prob, edge, result, closing_odds, clv, placed_at, settled_at
+profiles           — Bankroll, risk_profile (K/M/A), display_name, prediction_engine
+live_odds          — Auto-Import (sharp_h/d/a, best_*, commence_time) — ersetzt bei jedem Fetch
+team_xg_history    — Per-Match xG (team, opponent, league, venue, match_date, xg, xga,
+                     goals_for, goals_against, source)
+                     Sources: "understat" | "shots-model" | "goals-proxy" | "footystats"
+upcoming_fixtures  — Fixture-Spielplan (aus fetch-odds.mjs piggybacked)
 ```
 
-### Schritt 1: Spielplan holen (AUTOMATISCH)
+Standings werden client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`). RLS aktiv — User lesen alles, schreiben nur eigene Rows.
 
-**Was:** Paarungen + Anstoßzeiten werden automatisch aus The-Odds-API gezogen.
+---
 
-**Automatisch (empfohlen):**
-```bash
-# 1. fetch-odds.mjs speichert Fixtures automatisch mit (GitHub Actions Cron)
-# 2. Matchday-Skelett generieren:
-node scripts/generate-matchday.mjs --league bundesliga
-# → Erzeugt matchday-bundesliga-auto.json mit allen Paarungen + Anstoßzeiten
-```
+## Prediction Engines — Details
 
-**Manuell (Fallback):** Prompt an Claude/Gemini/ChatGPT:
-```
-Gib mir alle Spiele der [LIGA] am [SPIELTAG] [DATUM].
-Format: Heim vs Gast (HH:MM), Tabellenposition, Kontext.
-Quellen: kicker.de, sofascore.com
-```
+### Standard (ensemble-v1)
+4-Modell Blend aus `public/ensemble-model.json`: Dixon-Coles (6%) + Elo (22%) + Logistic (51%) + Market (20%). 1X2-Wahrscheinlichkeiten aus Ensemble, O25 aus Dixon-Coles Matrix.
 
-**Tabelle:** Wird automatisch aus `team_xg_history` berechnet und in Anna's Analysen angezeigt (Position-Badges + klappbare Tabelle pro Liga).
+### @annafrick13 v1 (poisson-ml)
+Poisson GLM (9 Features) → Dixon-Coles 15×15 Matrix → alle Märkte konsistent. Refuses to predict ohne per-Match xG-Historie (kein GIGO).
 
-**Oder:** `npm run spieltag` (interaktiver Wizard)
+### @annafrick13 v2 (poisson-ml-v2)
+LightGBM Tweedie, **21 Features** (npxG diff/momentum/volatility, Elo, home factor, rest days, SoS, h2h, PPDA, deep completions, setpiece/late-game/losing-state xG shares), Monotonic Constraints auf 10/14 physisch-eindeutige Features, Optuna-tuned ρ=-0.094, Dual-Track Calibration (display roh vs. Kelly isotonisch). Declared OOS Brier: **0.5844** auf 1.752 Matches.
 
-### Schritt 2: xG-Daten holen (DETERMINISTISCH)
+Guardrails:
+- Lambda Clamping [0.3, 4.5]
+- Goldilocks Edge Guard 2.5–7.5% (< = Rauschen, > = fehlende Info)
+- Dual-Track Divergenz-Warnung
+- Feature-Dimension Guard
+- Kein LLM-Daten Fallback (ohne History → null)
 
-**KRITISCH: Kein AI! Nur Understat-Daten aus dem Browser.**
+Retraining: `tools/retrain_v2.py` → `public/lgbm-model-v2.json` (~300 KB).
 
-1. Öffne `https://understat.com/league/Bundesliga` (oder EPL/La_liga/Serie_A/Ligue_1)
-2. F12 → Console → Script einfügen:
+---
 
-```javascript
-// ═══ FODZE xG Fetcher v2 (with per-match history for EWMA) ═══
-const result = {};
-Object.keys(teamsData).forEach(id => {
-  const t = teamsData[id];
-  const home = t.history.filter(g => g.h_a === 'h');
-  const away = t.history.filter(g => g.h_a === 'a');
-  const hL8 = home.slice(-8), aL8 = away.slice(-8);
-  result[t.title] = {
-    xg_h8:  +hL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
-    xga_h8: +hL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
-    xg_a8:  +aL8.reduce((s,g) => s + parseFloat(g.xG), 0).toFixed(1),
-    xga_a8: +aL8.reduce((s,g) => s + parseFloat(g.xGA), 0).toFixed(1),
-    xg_h_history: hL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
-    xg_a_history: aL8.map(g => ({ xg: +parseFloat(g.xG).toFixed(2), xga: +parseFloat(g.xGA).toFixed(2), date: g.datetime?.split(' ')[0] || '' })),
-  };
-});
-copy(JSON.stringify(result, null, 2));
-console.log('✅ xG-Daten in Clipboard kopiert!');
-```
-
-3. Daten sind im Clipboard → in Schritt 4 einfügen
-
-**Validierung:** `xg_h8 / 8 ≈ 0.8–2.5` pro Spiel. Wenn < 5.0 → wahrscheinlich Durchschnitt statt Summe!
-
-**Für 2. Bundesliga / 3. Liga:** Kein Understat. Tore als Proxy: `xg_h8 = avg_goals * 8`.
-
-**Alternativ automatisiert:**
-```bash
-npm run update-xg -- --league bundesliga --season 2025
-```
-Scraped Understat per HTTP, berechnet xG-Summen, upserted per-Match History nach Supabase.
-
-### Schritt 3: Verletzungen & Kontext
-
-**Sende denselben Prompt an 3 AIs parallel** (Claude + Gemini + ChatGPT):
+## Admin Workflow — Neuer Spieltag
 
 ```
-Du bist ein Fußball-Datenanalyst. Recherchiere für diese Spiele:
-[SPIELE HIER]
-
-Pro Spiel:
-1. VERLETZUNGEN & SPERREN (Name, Position, Grund)
-2. FORM (letzte 5 Spiele: W/D/L)
-3. SCHIEDSRICHTER (Name, Karten-Durchschnitt als Dezimalzahl!)
-4. KONTEXT (Derby? Abstiegskampf? CL-Sandwich?)
-
-Quellen: sofascore.com, transfermarkt.de, kicker.de
-Antworte als JSON.
+1. Fixtures holen     → node scripts/fetch-odds.mjs  (auto via Cron, oder manuell)
+2. Matchday-Skelett   → node scripts/generate-matchday.mjs --league bundesliga
+3. xG-Daten anfügen   → Understat Browser-Script ODER seed-understat-2526.mjs
+4. Enrichment         → Verletzungen/Form/Kontext per AI recherchieren + ins JSON
+5. Seed                → node scripts/seed-matchday.mjs --file X.json --league Y
+6. Quoten              → In App unter /matchday eingeben → Goldilocks-Filter
 ```
 
-**Cross-Check — WICHTIG: Bei Widersprüchen den Admin fragen!**
+Alternativ: `npm run spieltag` — interaktiver Wizard durch alle 6 Schritte.
 
-Claude führt den Cross-Check durch und kategorisiert:
-- ✅ 3/3 AIs nennen es → **sicher** — direkt übernehmen
-- ⚠️ 2/3 → **wahrscheinlich** — übernehmen, aber im JSON als unsicher markieren
-- ❌ 1/3 → **fraglich** — weglassen
-- 🔴 **Widersprüche** → **ADMIN FRAGEN!**
+Nach Spielende:
+- **Auto-Settlement**: Cron ruft `fetch-results.mjs` täglich — pending bets werden settled, `bets.result` + `settled_at` befüllt
+- **CLV**: `snapshot-closing-odds.mjs` hat vorher closing-Quoten snapshotted → `clv` fällt automatisch mit an
 
-**Wann den Admin fragen (nicht still entscheiden):**
-- Tabellenpositionen weichen >3 Plätze ab zwischen den Quellen
-- Ein AI sagt "verletzt", ein anderes "fit" für denselben Spieler
-- Form-Serien widersprechen sich komplett (z.B. "3 Siege" vs "3 Niederlagen")
-- Trainerwechsel oder Sperren nur von 1 Quelle genannt, aber spielentscheidend
-- Taktische Infos (Rotation, Sandwich) widersprechen sich
-- Schiedsrichter-Zuordnung unterschiedlich
+---
 
-**Format der Rückfrage an den Admin:**
-```
-⚠️ Widerspruch bei [SPIEL]:
-- Quelle A: [Info A]
-- Quelle B: [Info B]
-- Quelle C: [Info C]
-→ Was stimmt? Oder weglassen?
-```
+## AI-Integration
 
-Claude fasst ALLE Widersprüche gesammelt zusammen (nicht einzeln fragen), damit der Admin einmal entscheiden kann.
+Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templates)
 
-### Schritt 4: JSON zusammenbauen
+- **Groq**: Llama 3.3 70B, SSE, OpenAI-kompatibel → transformiert zu Anthropic-Format
+- **Claude**: Sonnet 4, native SSE
+- **Offline**: `generateOfflineAnalysis()` in `anna/page.tsx` — rein aus berechneten Daten
 
-Alle Daten ins FODZE-Format. Template:
+---
 
-```json
-{
-  "league": "Bundesliga",
-  "matchday": "Spieltag 28",
-  "date": "2026-04-04",
-  "matches": [
-    {
-      "home": {
-        "name": "VfB Stuttgart",
-        "xg_h8": 14.2,
-        "xga_h8": 8.5,
-        "games": 8,
-        "form": "W W D L W",
-        "injuries": "Undav (Muskel), Millot (Gelb-Rot-Sperre)",
-        "yellow_risk": "Karazor auf 4 Gelben"
-      },
-      "away": {
-        "name": "SC Freiburg",
-        "xg_a8": 10.8,
-        "xga_a8": 12.1,
-        "games": 8,
-        "form": "L W W D W",
-        "injuries": "",
-        "yellow_risk": ""
-      },
-      "tags": [],
-      "context": "Stuttgart braucht Punkte für CL-Platz",
-      "referee": "Stegemann, Ø 4.2 Karten/Spiel",
-      "kickoff": "2026-04-04 15:30"
-    }
-  ]
-}
-```
+## Zusätzliche Docs
 
-**Kickoff-Format:** `"YYYY-MM-DD HH:MM"` (mit Datum!) oder `"HH:MM"` (dann wird `date` vom Spieltag prepended).
-
-**Häufige Fehler:**
-- ❌ `xg_h8: 1.5` — Durchschnitt statt Summe
-- ❌ `xg_h8: 0` — Fehlt komplett
-- ❌ Schiedsrichter ohne Dezimal: `"Ø 4"` statt `"Ø 4.2"`
-- ✅ `xg_h8: 14.2` → `14.2 / 8 = 1.78 pro Spiel` → plausibel
-
-### Schritt 5: In Supabase seeden
-
-**Option A — CLI (empfohlen):**
-```bash
-node scripts/seed-matchday.mjs --file spieltag.json --league bundesliga
-```
-Flags: `--dry` (nur validieren), `--label "Custom"`, `--date "YYYY-MM-DD"`
-
-**Option B — In der App:**
-1. Liga wählen → "Import (JSON)" → JSON pasten → "ANALYSIEREN" → "SPEICHERN"
-
-**Was passiert:** JSON wird in Supabase `matchdays`-Tabelle geschrieben. Die App lädt automatisch den neuesten Spieltag pro Liga.
-
-### Schritt 6: Quoten eingeben
-
-1. App öffnen → Spieltag-Seite → Spiel aufklappen
-2. Unter "DEINE QUOTEN": 1, X, 2, Ü2.5, U2.5, BTTS
-3. Grün = Value Bet (Edge positiv), Kelly wird automatisch berechnet
-
-**Edge-Grading:**
-- **A**: Edge ≥ 8% (starker Value)
-- **B**: Edge 5–8% (gut)
-- **C**: Edge 3–5% (marginal)
-- **D/F**: Edge < 3% (skip)
-
-## Alle Admin-Scripts
-
-| Script | Befehl | Was es tut |
-|--------|--------|-----------|
-| `spieltag.mjs` | `npm run spieltag` | Interaktiver 6-Schritt Wizard |
-| `update-matchday.mjs` | `npm run update-xg` | Understat scrape → Supabase upsert |
-| `backfill-xg.mjs` | `npm run backfill` | Historisches xG Backfill (Browser-Script) |
-| `export-xg.mjs` | `npm run export-xg` | Supabase → lokale JSON-Backups |
-| `fetch-results.mjs` | `npm run fetch-results` | Ergebnisse holen, Wetten abrechnen |
-| `fetch-odds.mjs` | `node scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API |
-| `generate-matchday.mjs` | `node scripts/generate-matchday.mjs --league bundesliga` | Fixtures → Matchday-JSON Skelett |
-| `value-alerts.mjs` | `node scripts/value-alerts.mjs` | Telegram-Alerts bei Edge ≥ 5% |
-| `seed-matchday.mjs` | `node scripts/seed-matchday.mjs` | JSON → Supabase einfügen |
-| `matchday-predict.py` | `python3 tools/matchday-predict.py` | LightGBM Prediction (alle Features) |
-| `matchday-enrich.py` | `python3 tools/matchday-enrich.py` | + Schiedsrichter + Wetter |
-| `retrain_v2.py` | `python3 tools/retrain_v2.py` | LightGBM Modell neu trainieren |
-| `train-shots-xg.py` | `python3 tools/train-shots-xg.py` | Shots→xG Regression trainieren (R²=0.57) |
-| `backfill-shots-xg.mjs` | `node scripts/backfill-shots-xg.mjs --all` | CSV Schuss-Daten → per-Match xG nach Supabase |
-
-## Python-Tools (Fortgeschritten)
-
-### matchday-predict.py — Vollständige Prediction-Pipeline
-```bash
-source tools/venv/bin/activate
-python3 tools/matchday-predict.py --analyse              # Nächster Spieltag
-python3 tools/matchday-predict.py --all-leagues --json    # JSON Export
-```
-Scraped Understat live → Elo berechnen → 14-Feature-Vektor → LightGBM → Dixon-Coles Matrix → Wahrscheinlichkeiten.
-
-### matchday-enrich.py — Anreicherung
-```bash
-python3 tools/matchday-enrich.py --all-leagues
-```
-Fügt Schiedsrichter (Transfermarkt) + Wetter (Open-Meteo) hinzu.
-
-### retrain_v2.py — Modell-Training
-```bash
-source tools/venv/bin/activate
-DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
-```
-Output: `public/lgbm-model-v2.json` (~300 KB). Monatlich oder nach Saisonwechsel.
-
-### Backfill-Methode (historische xG)
-Understat blockiert automatisiertes Scraping (SPA). Stattdessen:
-1. `npm run backfill` zeigt Browser-Console-Script pro Liga/Saison
-2. Admin öffnet Understat → führt Script aus → JSON ins Terminal
-3. Wird validiert und nach Supabase geseeded
-4. Backup: `npm run export-xg`
+- `docs/ARCHITECTURE.md` — tiefer Architektur-Überblick
+- `docs/ENGINE.md` — Engine-Internals, Training, Backtest-Methodik
+- `docs/HANDBUCH.md` — End-User Handbuch (auch als `/handbuch` In-App)
+- `docs/LINEUP-INTEGRATION.md` — Design für Lineup-aware Predictions (nicht implementiert)
+- `docs/DESIGN-HANDOFF.md` — Design-System-Spec
