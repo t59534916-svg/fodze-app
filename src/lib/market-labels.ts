@@ -28,11 +28,11 @@ export function canonicalMarket(raw: string | null | undefined): MarketKey | nul
   if (!raw) return null;
   const s = String(raw).trim().toLowerCase();
   switch (s) {
-    case "1": case "h": case "home":
+    case "1": case "h": case "home": case "heim":
       return "1";
-    case "x": case "d": case "draw":
+    case "x": case "d": case "draw": case "unent.": case "unent": case "remis":
       return "X";
-    case "2": case "a": case "away":
+    case "2": case "a": case "away": case "ausw.": case "ausw": case "gast":
       return "2";
     case "o25": case "ü2.5": case "o2.5": case "over2.5":
       return "o25";

@@ -20,8 +20,13 @@ import type { PlacedBet } from "@/types/match";
  * settled rows).
  */
 export function betProfit(bet: PlacedBet): number {
-  const stake = Number(bet.stake) || 0;
-  const odds = Number(bet.odds_placed) || 0;
+  const stake = Number(bet.stake);
+  const odds = Number(bet.odds_placed);
+  // Guard against non-finite odds/stake (corrupt DB row) — returning 0 is
+  // safer than reporting a phantom loss driven by NaN→0 coercion.
+  if (!Number.isFinite(stake) || !Number.isFinite(odds) || stake <= 0 || odds <= 0) {
+    return 0;
+  }
   if (bet.result === "won") return (odds - 1) * stake;
   if (bet.result === "lost") return -stake;
   return 0;
@@ -61,16 +66,12 @@ export function computeBetStats(bets: PlacedBet[]): BetStats {
   for (const b of bets) {
     if (!isSettled(b)) continue;
     settled.push(b);
-    const stake = Number(b.stake) || 0;
-    totalStake += stake;
+    const stake = Number(b.stake);
+    if (Number.isFinite(stake) && stake > 0) totalStake += stake;
     edgeSum += b.edge || 0;
-    if (b.result === "won") {
-      won.push(b);
-      pnl += (Number(b.odds_placed) - 1) * stake;
-    } else {
-      lost.push(b);
-      pnl -= stake;
-    }
+    pnl += betProfit(b); // defensive — handles NaN odds/stake gracefully
+    if (b.result === "won") won.push(b);
+    else lost.push(b);
   }
 
   const n = settled.length;

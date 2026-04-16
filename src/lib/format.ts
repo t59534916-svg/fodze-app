@@ -30,11 +30,13 @@ export function safeDate(iso?: string | null): Date | null {
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
-/** "12.04" — short day + month, German locale. */
+/** "12.04" — short day + month, German locale.
+ *  Node/browser Intl sometimes emits a trailing "." ("12.04." in newer ICU);
+ *  strip it so the output is stable across environments. */
 export function fmtDateShort(iso?: string | null): string {
   const d = safeDate(iso);
   if (!d) return "";
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }).replace(/\.$/, "");
 }
 
 /** "12.04.2026" — full German short date. */
