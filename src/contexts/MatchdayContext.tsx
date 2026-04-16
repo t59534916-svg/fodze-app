@@ -91,7 +91,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       }
       const matchdayData = validation.data ?? cached.data;
 
-      // Enrich matches with per-match xG history from Supabase (for EWMA decay)
+      // Enrich matches with per-match xG history from Supabase (for EWMA decay).
+      // Also fills xg_h8/xga_h8 summary values from the history when the
+      // matchday JSON was generated without them (the `generate-matchday.mjs`
+      // script only produces fixtures+odds skeletons with xg_h8=0). Without
+      // this fallback the calcMatch guard `if (!h.xg_h8) return null` would
+      // bail out and no analysis would render.
       if (matchdayData.matches) {
         for (const match of matchdayData.matches) {
           // Resolve team name to Understat name via mapping
@@ -103,12 +108,27 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           if (match.home?.name && !match.home.xg_h_history?.length) {
             const understatName = resolveTeam(match.home.name);
             const hist = await loadTeamXGHistory(supabase, understatName, lg, "home", 8);
-            if (hist.length > 0) match.home.xg_h_history = toXGHistoryEntries(hist);
+            if (hist.length > 0) {
+              match.home.xg_h_history = toXGHistoryEntries(hist);
+              // Backfill xg summaries from history if the matchday JSON lacks them
+              if (!match.home.xg_h8) {
+                match.home.xg_h8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
+                match.home.xga_h8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
+                match.home.games = hist.length;
+              }
+            }
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
             const understatName = resolveTeam(match.away.name);
             const hist = await loadTeamXGHistory(supabase, understatName, lg, "away", 8);
-            if (hist.length > 0) match.away.xg_a_history = toXGHistoryEntries(hist);
+            if (hist.length > 0) {
+              match.away.xg_a_history = toXGHistoryEntries(hist);
+              if (!match.away.xg_a8) {
+                match.away.xg_a8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
+                match.away.xga_a8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
+                match.away.games = hist.length;
+              }
+            }
           }
         }
       }
