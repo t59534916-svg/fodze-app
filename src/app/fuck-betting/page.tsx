@@ -17,6 +17,7 @@ import { isLGBMModelLoaded, getLGBMRho, getTeamSeasonFeatures } from "@/lib/lgbm
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { resolveTeam } from "@/lib/team-resolver";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
+import { parseAbsences } from "@/lib/absence-parser";
 import type { StandingsRow, LiveOdds } from "@/lib/supabase";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
@@ -1188,6 +1189,17 @@ export default function FuckBettingPage() {
         let engine: "annafrick13-v2" | "standard" = "standard";
         let effectiveRho = -0.05;
 
+        // Parse injuries → structured absences (mirrors MatchdayContext.calcMatch:289-300).
+        // Without this, fuck-betting's predictions ignore suspended stars — the
+        // Goldilocks gate then rejects legitimate edges because the model didn't
+        // see the absence hit on λ.
+        const homeAbsences = parseAbsences(h.injuries, h.name || "");
+        const awayAbsences = parseAbsences(a.injuries, a.name || "");
+        const absences =
+          homeAbsences.length > 0 || awayAbsences.length > 0
+            ? { home: homeAbsences, away: awayAbsences }
+            : undefined;
+
         // Try v2: needs LightGBM model + per-match xG history
         const hHist = h.xg_h_history;
         const aHist = a.xg_a_history;
@@ -1202,6 +1214,7 @@ export default function FuckBettingPage() {
             homeTeam: h.name, awayTeam: a.name,
             fraction: 0.25,
             sosRatings: leagueSos,
+            absences,
           });
           if (v2Result) {
             lambdaH = v2Result.lambdaH;
