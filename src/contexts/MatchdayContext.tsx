@@ -97,9 +97,19 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       // script only produces fixtures+odds skeletons with xg_h8=0). Without
       // this fallback the calcMatch guard `if (!h.xg_h8) return null` would
       // bail out and no analysis would render.
+      //
+      // For teams with NO xG history (e.g. 3. Liga, newly promoted teams
+      // without football-data coverage), we synthesize league-average xG
+      // summaries so the engine can still run — same pattern as fuck-betting.
+      // The engine will then rely more heavily on Elo + odds since the xG
+      // signal is neutralized. Match is flagged implicitly by lacking
+      // xg_h_history (engines fall back to simpler pipelines).
       if (matchdayData.matches) {
+        const lgConfig = LEAGUES[lg] || LEAGUES.bundesliga;
+        const fallbackXG = lgConfig.avg * 8 * 0.55; // home scores ~55% of league total
+        const fallbackXGA = lgConfig.avg * 8 * 0.45;
+
         for (const match of matchdayData.matches) {
-          // Resolve team name to Understat name via mapping
           const resolveTeam = (name: string) => {
             const mapped = TEAM_SCRAPER_MAP[name];
             return mapped?.understat || name;
@@ -110,12 +120,16 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
             const hist = await loadTeamXGHistory(supabase, understatName, lg, "home", 8);
             if (hist.length > 0) {
               match.home.xg_h_history = toXGHistoryEntries(hist);
-              // Backfill xg summaries from history if the matchday JSON lacks them
               if (!match.home.xg_h8) {
                 match.home.xg_h8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
                 match.home.xga_h8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
                 match.home.games = hist.length;
               }
+            } else if (!match.home.xg_h8) {
+              // No history + no explicit xG → league-average fallback
+              match.home.xg_h8 = +fallbackXG.toFixed(2);
+              match.home.xga_h8 = +fallbackXGA.toFixed(2);
+              match.home.games = 8;
             }
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
@@ -128,6 +142,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
                 match.away.xga_a8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
                 match.away.games = hist.length;
               }
+            } else if (!match.away.xg_a8) {
+              // Away teams historically score ~45% of home, concede ~55%
+              match.away.xg_a8 = +fallbackXGA.toFixed(2);
+              match.away.xga_a8 = +fallbackXG.toFixed(2);
+              match.away.games = 8;
             }
           }
         }

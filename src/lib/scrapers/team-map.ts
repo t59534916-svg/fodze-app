@@ -108,6 +108,9 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   // Pisa: Promoted 2025/26, no Understat history yet — DB lookup returns 0.
   "Pisa":                 { understat: "Pisa", league: "serie_a" },
 
+  // La Liga — accent variants
+  "Atlético Madrid":      { understat: "Atletico Madrid", league: "la_liga" },
+
   // ─── Ligue 1 (Understat) ───────────────────────────────────
   "Paris Saint-Germain":  { understat: "Paris Saint Germain", league: "ligue_1" },
   "AS Monaco":            { understat: "Monaco", league: "ligue_1" },
@@ -120,15 +123,15 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
 
   // ─── 2. Bundesliga (FBref only) ────────────────────────────
   "FC Schalke 04":        { fbref: "/en/squads/c539e393/Schalke-04-Stats", league: "bundesliga2" },
-  "Fortuna Düsseldorf":   { fbref: "/en/squads/b1278397/Fortuna-Dusseldorf-Stats", league: "bundesliga2" },
+  "Fortuna Düsseldorf":   { understat: "Fortuna Dusseldorf", fbref: "/en/squads/b1278397/Fortuna-Dusseldorf-Stats", league: "bundesliga2" },
   "Hertha BSC":           { fbref: "/en/squads/2818f8bc/Hertha-BSC-Stats", league: "bundesliga2" },
   "Hamburger SV":         { fbref: "/en/squads/febe5e84/Hamburger-SV-Stats", league: "bundesliga2" },
   "1. FC Köln":           { understat: "FC Cologne", fbref: "/en/squads/bc357bf7/Koln-Stats", league: "bundesliga" },
   "Hannover 96":          { fbref: "/en/squads/60b5e41f/Hannover-96-Stats", league: "bundesliga2" },
   "SV Darmstadt 98":      { fbref: "/en/squads/6a399165/Darmstadt-98-Stats", league: "bundesliga2" },
   "SC Paderborn":         { fbref: "/en/squads/3a4e3fe6/Paderborn-07-Stats", league: "bundesliga2" },
-  "Karlsruher SC":        { fbref: "/en/squads/ecd11ca2/Karlsruher-SC-Stats", league: "bundesliga2" },
-  "1. FC Nürnberg":       { fbref: "/en/squads/6dc1d32e/Nurnberg-Stats", league: "bundesliga2" },
+  "Karlsruher SC":        { understat: "Karlsruhe", fbref: "/en/squads/ecd11ca2/Karlsruher-SC-Stats", league: "bundesliga2" },
+  "1. FC Nürnberg":       { understat: "Nurnberg", fbref: "/en/squads/6dc1d32e/Nurnberg-Stats", league: "bundesliga2" },
 
   // ─── 3. Liga (FBref only, limited data) ─────────────────────
   "Dynamo Dresden":       { fbref: "/en/squads/5c16702a/Dynamo-Dresden-Stats", league: "liga3" },
@@ -158,6 +161,30 @@ export const TEAM_SCRAPER_MAP: Record<string, TeamSource> = {
   "AEK Athens":           { understat: "AEK", league: "greek_sl" },
   "Levadiakos":           { understat: "Levadeiakos", league: "greek_sl" },
   "Volos FC":             { understat: "Volos NFC", league: "greek_sl" },
+
+  // ─── 2. Bundesliga — alt-spelling alias (without "1. FC" prefix)
+  "1. FC Nurnberg":       { understat: "Nurnberg", league: "bundesliga2" },
+
+  // ─── Championship aliases ──────────────────────────────────────
+  "Derby County":         { understat: "Derby", league: "championship" },
+  "Queens Park Rangers":  { understat: "QPR", league: "championship" },
+  "West Bromwich Albion": { understat: "West Brom", league: "championship" },
+
+  // ─── League One / Two aliases ──────────────────────────────────
+  "Bolton Wanderers":     { understat: "Bolton", league: "league_one" },
+  "Peterborough United":  { understat: "Peterboro", league: "league_one" },
+  "Wigan Athletic":       { understat: "Wigan", league: "league_one" },
+  "Wycombe Wanderers":    { understat: "Wycombe", league: "league_one" },
+  "Crewe Alexandra":      { understat: "Crewe", league: "league_two" },
+  "Oldham Athletic":      { understat: "Oldham", league: "league_two" },
+
+  // ─── Jupiler Pro aliases ───────────────────────────────────────
+  "Union Saint-Gilloise": { understat: "St. Gilloise", league: "jupiler_pro" },
+  "SV Zulte-Waregem":     { understat: "Waregem", league: "jupiler_pro" },
+  "RAAL La Louvière":     { understat: "RAAL La Louviere", league: "jupiler_pro" },
+
+  // ─── Serie B umlaut fix ────────────────────────────────────────
+  "Südtirol":             { understat: "Sudtirol", league: "serie_b" },
 };
 
 /**
