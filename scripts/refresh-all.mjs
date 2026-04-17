@@ -35,11 +35,28 @@
  */
 
 import { spawn } from "child_process";
+import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
+
+// Load .env.local so the pipeline works under `npm run refresh` (which
+// doesn't source env files). Each child script also loads it, but by
+// injecting into process.env here we guarantee even steps without their
+// own loader (e.g. fetch-odds.mjs) see the keys.
+const envPath = resolve(REPO_ROOT, ".env.local");
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq > 0 && !process.env[t.slice(0, eq)]) {
+      process.env[t.slice(0, eq)] = t.slice(eq + 1);
+    }
+  }
+}
 
 // Mirror src/lib/dixon-coles.ts LEAGUES — kept in sync manually since .mjs
 // can't import TS. Check against audit output if you add a league.
