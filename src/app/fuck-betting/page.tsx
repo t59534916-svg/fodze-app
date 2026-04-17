@@ -999,7 +999,8 @@ export default function FuckBettingPage() {
     phase: "idle" as "idle" | "data" | "compute" | "done",
     leaguesDone: 0,
     totalLeagues: 0,
-    currentLabel: "",
+    inFlight: [] as string[], // which leagues are currently fetching
+    failed: [] as string[],   // which leagues timed out or errored
   });
 
   // Load all leagues with data + enrich with xG history for @annafrick13 v2
@@ -1013,41 +1014,65 @@ export default function FuckBettingPage() {
 
       const {
         loadLatestMatchday,
-        loadAllTeamXGHistory,        // NEW: batched per-league, replaces N+1 loadTeamXGHistory calls
+        loadAllTeamXGHistory,        // batched per-league, replaces N+1 loadTeamXGHistory calls
         toXGHistoryEntries,
-        loadLeagueStandings,
         loadLiveOdds,
       } = await import("@/lib/supabase");
+      const { computeStandings } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
 
       setProgress({
         phase: "data",
         leaguesDone: 0,
         totalLeagues: leagueKeys.length,
-        currentLabel: leagueKeys.length > 0 ? (LEAGUES[leagueKeys[0]]?.name || leagueKeys[0]) : "",
+        inFlight: leagueKeys.map((k) => LEAGUES[k]?.name || k),
+        failed: [],
       });
 
-      // Per-league pipeline — run all in parallel but commit state per
-      // league as it lands so the UI fills in progressively. Previously
-      // we awaited Promise.all then setState once, meaning the spinner
-      // blocked until the SLOWEST league (worst-case ~8s) finished.
+      // Per-league pipeline — all parallel, each with a hard per-league
+      // timeout so one hung query doesn't block the page forever.
+      // Previous version had no timeout: if Supabase pool-queued any of
+      // the 76 concurrent requests, the user would see "stuck at League X"
+      // with no recovery.
       const resolveUnderstat = (name: string) => {
         const mapped = TEAM_SCRAPER_MAP[name];
         return mapped?.understat || name;
       };
 
+      const LEAGUE_TIMEOUT_MS = 15_000;
+      const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+        Promise.race([
+          p,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`timeout ${ms}ms: ${label}`)), ms),
+          ),
+        ]);
+
       await Promise.all(
         leagueKeys.map(async (key) => {
+          const leagueName = LEAGUES[key]?.name || key;
+          let succeeded = false;
           try {
-            // One roundtrip per league covers: matchday, all xG rows for
-            // both venues, standings, live odds. 4 queries per league
-            // instead of ~24 (1 matchday + 2×N team-xG + SoS + standings + odds).
-            const [md, leagueXG, standingRows, odds] = await Promise.all([
-              loadLatestMatchday(supabase, key),
-              loadAllTeamXGHistory(supabase, key, 3000),
-              loadLeagueStandings(supabase, key),
-              loadLiveOdds(supabase, key).catch(() => [] as LiveOdds[]),
-            ]);
+            // 3 queries per league (was 4): we derive standings from the
+            // same xG rows we already fetched. loadLeagueStandings → loadLeagueXGHistory
+            // was a redundant duplicate fetch of the same underlying table.
+            const [md, leagueXG, odds] = await withTimeout(
+              Promise.all([
+                loadLatestMatchday(supabase, key),
+                loadAllTeamXGHistory(supabase, key, 3000),
+                loadLiveOdds(supabase, key).catch(() => [] as LiveOdds[]),
+              ]),
+              LEAGUE_TIMEOUT_MS,
+              leagueName,
+            );
+
+            // Derive standings from the home-perspective rows of the same
+            // dataset — identical to what loadLeagueStandings was doing
+            // internally, but without a second network roundtrip.
+            const homeRowsForStandings = leagueXG
+              .filter((r: any) => r.venue === "home")
+              .filter((r: any) => r.match_date >= "2025-07-01");
+            const standingRows = computeStandings(homeRowsForStandings);
 
             if (md) {
               const data = md.data as MatchdayData;
@@ -1166,19 +1191,20 @@ export default function FuckBettingPage() {
                 }
                 return next;
               });
+              succeeded = true;
             }
-          } catch (e) {
-            console.warn(`[fuck-betting] league ${key} failed:`, e);
+          } catch (e: any) {
+            // Timeout or unexpected error — league is skipped, not blocking.
+            // Logged so admin can check which league's Supabase query is slow.
+            console.warn(`[fuck-betting] league ${key} (${leagueName}) skipped:`, e?.message || e);
           } finally {
-            // Progress is advanced per-league regardless of success/failure
-            // so the bar always reaches 100%.
+            // Progress always advances — even timeouts/errors. Bar ALWAYS
+            // reaches 100% so "stuck" is impossible.
             setProgress((prev) => ({
               ...prev,
               leaguesDone: prev.leaguesDone + 1,
-              currentLabel:
-                prev.leaguesDone + 1 < leagueKeys.length
-                  ? LEAGUES[leagueKeys[prev.leaguesDone + 1]]?.name || leagueKeys[prev.leaguesDone + 1]
-                  : "Matrizen berechnen…",
+              inFlight: prev.inFlight.filter((n) => n !== leagueName),
+              failed: succeeded ? prev.failed : [...prev.failed, leagueName],
             }));
           }
         }),
@@ -1576,9 +1602,7 @@ export default function FuckBettingPage() {
           <div style={{ fontSize: 13, marginBottom: 8, color: "#d4b86a" }}>
             {progress.phase === "compute"
               ? "Berechne Dixon-Coles Matrizen…"
-              : progress.phase === "data"
-              ? `Lade ${progress.currentLabel}`
-              : "Starte…"}
+              : "Lade Daten aller Ligen"}
           </div>
           <div style={{ fontSize: 11, marginBottom: 12 }}>
             {progress.phase === "compute"
@@ -1602,11 +1626,18 @@ export default function FuckBettingPage() {
               transition: "width 0.3s ease",
             }} />
           </div>
-          {/* Partial league render hint — we already have data for some
-              leagues by the time compute phase kicks in */}
-          {allData.length > 0 && progress.phase !== "compute" && (
-            <div style={{ fontSize: 10, marginTop: 10, color: "#a8907060" }}>
-              Ligen fertig: {allData.map(d => LEAGUES[d.league]?.name || d.league).join(" · ")}
+          {/* Still-pending list — shows exactly which league is slow so
+              "stuck" is never a mystery. Empty once compute starts. */}
+          {progress.phase === "data" && progress.inFlight.length > 0 && (
+            <div style={{ fontSize: 10, marginTop: 10, color: "#a8907090" }}>
+              Läuft noch: {progress.inFlight.join(" · ")}
+            </div>
+          )}
+          {/* Failed leagues — timed out or errored, visible so admin sees
+              which data source needs attention. Skipped, not blocking. */}
+          {progress.failed.length > 0 && (
+            <div style={{ fontSize: 10, marginTop: 6, color: "#e0707090" }}>
+              Übersprungen (Timeout/Fehler): {progress.failed.join(" · ")}
             </div>
           )}
         </div>
