@@ -192,6 +192,30 @@ export async function loadLeagueXGHistory(
 }
 
 /**
+ * Load ALL team_xg_history rows (home + away perspectives) for a league.
+ * Used by the fuck-betting loader to batch-enrich matches — one query per
+ * league instead of N per team. Caller buckets by (team, venue) in JS.
+ *
+ * Limit is generous (3000) because each team plays ~20 games per season
+ * × 2 perspectives × 2 seasons = 80 rows/team × ~20 teams = ~1600 rows.
+ * Drops to default if more rows exist (recent first, by match_date desc).
+ */
+export async function loadAllTeamXGHistory(
+  supabase: SupabaseClient,
+  league: string,
+  limit: number = 3000
+): Promise<TeamXGMatch[]> {
+  const { data, error } = await supabase
+    .from("team_xg_history")
+    .select("*")
+    .eq("league", league)
+    .order("match_date", { ascending: false })
+    .limit(limit);
+  if (error) { console.error("loadAllTeamXGHistory error:", error); return []; }
+  return data || [];
+}
+
+/**
  * Convert Supabase TeamXGMatch rows to engine-compatible XGHistoryEntry format.
  * This bridges the Understat data to calcMatchEnhanced()'s hHistory/aHistory params.
  */

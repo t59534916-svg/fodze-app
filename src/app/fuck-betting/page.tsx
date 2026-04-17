@@ -991,113 +991,205 @@ export default function FuckBettingPage() {
   const [sosMap, setSosMap] = useState<Map<string, SoSRatings>>(new Map());
   const [oddsMap, setOddsMap] = useState<Map<string, LiveOdds>>(new Map());
   const [loading, setLoading] = useState(true);
+  // Loading progress — surfaced in the header so the user sees which league
+  // is being fetched and how far along we are. Previously a static
+  // "Lade Daten..." spinner gave zero feedback for the 3-8s the load takes
+  // across 19 leagues.
+  const [progress, setProgress] = useState({
+    phase: "idle" as "idle" | "data" | "compute" | "done",
+    leaguesDone: 0,
+    totalLeagues: 0,
+    currentLabel: "",
+  });
 
   // Load all leagues with data + enrich with xG history for @annafrick13 v2
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { loadLatestMatchday, loadTeamXGHistory, toXGHistoryEntries, loadLeagueStandings, loadLiveOdds } = await import("@/lib/supabase");
+      setAllData([]);
+      setStandings(new Map());
+      setSosMap(new Map());
+      setOddsMap(new Map());
+
+      const {
+        loadLatestMatchday,
+        loadAllTeamXGHistory,        // NEW: batched per-league, replaces N+1 loadTeamXGHistory calls
+        toXGHistoryEntries,
+        loadLeagueStandings,
+        loadLiveOdds,
+      } = await import("@/lib/supabase");
       const leagueKeys = Object.keys(LEAGUES).filter(k => leagueStatus[k]);
-      const results = await Promise.all(leagueKeys.map(async (key) => {
-        const md = await loadLatestMatchday(supabase, key);
-        if (!md) return null;
-        const data = md.data as MatchdayData;
 
-        // Enrich each match with per-match xG history from Supabase (needed
-        // for v2 EWMA). ALSO backfill xg_h8/xga_h8 summaries from the history
-        // when the matchday JSON was generated without them (generate-matchday
-        // produces fixture+odds skeletons with xg_h8=0). Without this backfill
-        // the match would show "Ohne xG" even though real history exists.
-        // Mirrors the fix in MatchdayContext.loadCached.
-        const ld = LEAGUES[key];
-        const fallbackXG = ld ? ld.avg * 8 * 0.55 : 12;
-        const fallbackXGA = ld ? ld.avg * 8 * 0.45 : 10;
+      setProgress({
+        phase: "data",
+        leaguesDone: 0,
+        totalLeagues: leagueKeys.length,
+        currentLabel: leagueKeys.length > 0 ? (LEAGUES[leagueKeys[0]]?.name || leagueKeys[0]) : "",
+      });
 
-        if (data.matches) {
-          await Promise.all(data.matches.map(async (match) => {
-            const resolveTeam = (name: string) => {
-              const mapped = TEAM_SCRAPER_MAP[name];
-              return mapped?.understat || name;
-            };
-            if (match.home?.name && !match.home.xg_h_history?.length) {
-              const understatName = resolveTeam(match.home.name);
-              const hist = await loadTeamXGHistory(supabase, understatName, key, "home", 8);
-              if (hist.length > 0) {
-                match.home.xg_h_history = toXGHistoryEntries(hist);
-                if (!match.home.xg_h8) {
-                  match.home.xg_h8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
-                  match.home.xga_h8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
-                  match.home.games = hist.length;
-                }
-              } else if (!match.home.xg_h8) {
-                // No history → league-average synthesis so v2/standard can still run
-                match.home.xg_h8 = +fallbackXG.toFixed(2);
-                match.home.xga_h8 = +fallbackXGA.toFixed(2);
-                match.home.games = 8;
-              }
-            }
-            if (match.away?.name && !match.away.xg_a_history?.length) {
-              const understatName = resolveTeam(match.away.name);
-              const hist = await loadTeamXGHistory(supabase, understatName, key, "away", 8);
-              if (hist.length > 0) {
-                match.away.xg_a_history = toXGHistoryEntries(hist);
-                if (!match.away.xg_a8) {
-                  match.away.xg_a8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
-                  match.away.xga_a8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
-                  match.away.games = hist.length;
-                }
-              } else if (!match.away.xg_a8) {
-                match.away.xg_a8 = +fallbackXGA.toFixed(2);
-                match.away.xga_a8 = +fallbackXG.toFixed(2);
-                match.away.games = 8;
-              }
-            }
-          }));
-        }
+      // Per-league pipeline — run all in parallel but commit state per
+      // league as it lands so the UI fills in progressively. Previously
+      // we awaited Promise.all then setState once, meaning the spinner
+      // blocked until the SLOWEST league (worst-case ~8s) finished.
+      const resolveUnderstat = (name: string) => {
+        const mapped = TEAM_SCRAPER_MAP[name];
+        return mapped?.understat || name;
+      };
 
-        return { league: key, data };
-      }));
-      const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
-      setAllData(validResults);
-
-      // Load standings + SoS for each league in parallel
-      const standingsMap = new Map<string, StandingsRow[]>();
-      const sosResults = new Map<string, SoSRatings>();
-      const { loadLeagueXGHistory } = await import("@/lib/supabase");
-      await Promise.all(validResults.map(async ({ league }) => {
-        if (!standingsMap.has(league)) {
-          const rows = await loadLeagueStandings(supabase, league);
-          standingsMap.set(league, rows);
-        }
-        // SoS: load all league matches, compute opponent-quality ratings
-        if (!sosResults.has(league)) {
+      await Promise.all(
+        leagueKeys.map(async (key) => {
           try {
-            const leagueXG = await loadLeagueXGHistory(supabase, league);
-            if (leagueXG.length > 0) {
-              const ld = LEAGUES[league] || LEAGUES.bundesliga;
-              const sosMatches = leagueXG.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
-              sosResults.set(league, computeSoSRatings(sosMatches, ld.avg));
-            }
-          } catch { /* SoS optional */ }
-        }
-      }));
-      setStandings(standingsMap);
-      setSosMap(sosResults);
+            // One roundtrip per league covers: matchday, all xG rows for
+            // both venues, standings, live odds. 4 queries per league
+            // instead of ~24 (1 matchday + 2×N team-xG + SoS + standings + odds).
+            const [md, leagueXG, standingRows, odds] = await Promise.all([
+              loadLatestMatchday(supabase, key),
+              loadAllTeamXGHistory(supabase, key, 3000),
+              loadLeagueStandings(supabase, key),
+              loadLiveOdds(supabase, key).catch(() => [] as LiveOdds[]),
+            ]);
 
-      // Load live odds for each league and build a fuzzy-match map
-      const allOdds = new Map<string, LiveOdds>();
-      await Promise.all(validResults.map(async ({ league }) => {
-        try {
-          const odds = await loadLiveOdds(supabase, league);
-          for (const o of odds) {
-            // Key: normalize team names for fuzzy matching
-            const key = `${o.home_team.toLowerCase()}|${o.away_team.toLowerCase()}`;
-            allOdds.set(key, o);
+            if (md) {
+              const data = md.data as MatchdayData;
+              const ld = LEAGUES[key];
+              const fallbackXG = ld ? ld.avg * 8 * 0.55 : 12;
+              const fallbackXGA = ld ? ld.avg * 8 * 0.45 : 10;
+
+              // Bucket xG rows by (team, venue), keep last 8 per bucket.
+              // Data came back ordered by match_date DESC so slice(0,8)
+              // is already "last 8 matches newest-first".
+              const byTeamVenue = new Map<string, typeof leagueXG>();
+              for (const r of leagueXG) {
+                const k = `${r.team}|${r.venue}`;
+                let bucket = byTeamVenue.get(k);
+                if (!bucket) { bucket = []; byTeamVenue.set(k, bucket); }
+                if (bucket.length < 8) bucket.push(r);
+              }
+              const lookupHist = (name: string, venue: "home" | "away") => {
+                // Exact Understat name match, case-insensitive fallback,
+                // substring fallback. Same tiered logic as loadTeamXGHistory
+                // but against the in-memory bucket.
+                const understatName = resolveUnderstat(name);
+                let found = byTeamVenue.get(`${understatName}|${venue}`);
+                if (found?.length) return found;
+                const lower = understatName.toLowerCase();
+                for (const [k, v] of byTeamVenue.entries()) {
+                  const [t, ven] = k.split("|");
+                  if (ven !== venue) continue;
+                  if (t.toLowerCase() === lower) return v;
+                }
+                // Substring (length-guarded)
+                for (const [k, v] of byTeamVenue.entries()) {
+                  const [t, ven] = k.split("|");
+                  if (ven !== venue) continue;
+                  const tl = t.toLowerCase();
+                  if ((tl.includes(lower) || lower.includes(tl)) && tl.length > 3 && lower.length > 3) {
+                    return v;
+                  }
+                }
+                return null;
+              };
+
+              if (data.matches) {
+                for (const match of data.matches) {
+                  if (match.home?.name && !match.home.xg_h_history?.length) {
+                    const hist = lookupHist(match.home.name, "home");
+                    if (hist && hist.length > 0) {
+                      // Reverse to chronological order (oldest-first) for the
+                      // engine EWMA — matches what loadTeamXGHistory did via
+                      // .reverse() after ASC query.
+                      const chrono = [...hist].reverse();
+                      match.home.xg_h_history = toXGHistoryEntries(chrono);
+                      if (!match.home.xg_h8) {
+                        match.home.xg_h8 = +chrono.reduce((s, g) => s + Number(g.xg || 0), 0).toFixed(2);
+                        match.home.xga_h8 = +chrono.reduce((s, g) => s + Number(g.xga || 0), 0).toFixed(2);
+                        match.home.games = chrono.length;
+                      }
+                    } else if (!match.home.xg_h8) {
+                      match.home.xg_h8 = +fallbackXG.toFixed(2);
+                      match.home.xga_h8 = +fallbackXGA.toFixed(2);
+                      match.home.games = 8;
+                    }
+                  }
+                  if (match.away?.name && !match.away.xg_a_history?.length) {
+                    const hist = lookupHist(match.away.name, "away");
+                    if (hist && hist.length > 0) {
+                      const chrono = [...hist].reverse();
+                      match.away.xg_a_history = toXGHistoryEntries(chrono);
+                      if (!match.away.xg_a8) {
+                        match.away.xg_a8 = +chrono.reduce((s, g) => s + Number(g.xg || 0), 0).toFixed(2);
+                        match.away.xga_a8 = +chrono.reduce((s, g) => s + Number(g.xga || 0), 0).toFixed(2);
+                        match.away.games = chrono.length;
+                      }
+                    } else if (!match.away.xg_a8) {
+                      match.away.xg_a8 = +fallbackXGA.toFixed(2);
+                      match.away.xga_a8 = +fallbackXG.toFixed(2);
+                      match.away.games = 8;
+                    }
+                  }
+                }
+              }
+
+              // SoS from the home-perspective rows within the same dataset —
+              // no extra query.
+              if (ld) {
+                const homeRows = leagueXG.filter((r) => r.venue === "home");
+                if (homeRows.length > 0) {
+                  const sosMatches = homeRows.map((m) => ({
+                    team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga,
+                  }));
+                  setSosMap((prev) => {
+                    const next = new Map(prev);
+                    next.set(key, computeSoSRatings(sosMatches, ld.avg));
+                    return next;
+                  });
+                }
+              }
+
+              // Incremental state: commit this league's data as it's ready.
+              setAllData((prev) => {
+                // Preserve league order by key to keep the UI stable across
+                // re-renders (otherwise leagues would appear in load-order).
+                const next = [...prev, { league: key, data }];
+                next.sort((a, b) => leagueKeys.indexOf(a.league) - leagueKeys.indexOf(b.league));
+                return next;
+              });
+              setStandings((prev) => {
+                const next = new Map(prev);
+                next.set(key, standingRows);
+                return next;
+              });
+              setOddsMap((prev) => {
+                const next = new Map(prev);
+                for (const o of odds) {
+                  next.set(`${o.home_team.toLowerCase()}|${o.away_team.toLowerCase()}`, o);
+                }
+                return next;
+              });
+            }
+          } catch (e) {
+            console.warn(`[fuck-betting] league ${key} failed:`, e);
+          } finally {
+            // Progress is advanced per-league regardless of success/failure
+            // so the bar always reaches 100%.
+            setProgress((prev) => ({
+              ...prev,
+              leaguesDone: prev.leaguesDone + 1,
+              currentLabel:
+                prev.leaguesDone + 1 < leagueKeys.length
+                  ? LEAGUES[leagueKeys[prev.leaguesDone + 1]]?.name || leagueKeys[prev.leaguesDone + 1]
+                  : "Matrizen berechnen…",
+            }));
           }
-        } catch { /* odds optional */ }
-      }));
-      setOddsMap(allOdds);
+        }),
+      );
+
+      setProgress((prev) => ({ ...prev, phase: "compute" }));
+      // One microtask to let React paint the "compute" phase before the
+      // heavy useMemo kicks in. Without this the UI appears frozen.
+      await new Promise((r) => setTimeout(r, 0));
       setLoading(false);
+      setProgress((prev) => ({ ...prev, phase: "done" }));
     })();
   }, [supabase, leagueStatus]);
 
@@ -1140,6 +1232,12 @@ export default function FuckBettingPage() {
 
   // Build reports for all matches
   const reports = useMemo(() => {
+    // Skip compute while data is still streaming in. Without this, every
+    // per-league setAllData() call re-runs this heavy loop from scratch
+    // (N=19 leagues × ~10 matches × full matrix build) even though the
+    // UI only renders reports AFTER loading flips to false. We were paying
+    // ~19× the compute cost for zero visible benefit.
+    if (loading) return [];
     const today = new Date().toISOString().slice(0, 10);
     const result: MatchReport[] = [];
 
@@ -1425,7 +1523,7 @@ export default function FuckBettingPage() {
     });
 
     return result;
-  }, [allData, standings, sosMap, oddsMap]);
+  }, [allData, standings, sosMap, oddsMap, loading]);
 
   // Group by league, then by date within each league
   const groupedByLeague = useMemo(() => {
@@ -1474,9 +1572,43 @@ export default function FuckBettingPage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: "center", padding: 40, color: "#a89070" }}>
-          <div style={{ fontSize: 14, marginBottom: 8 }}>Lade Daten aller Ligen...</div>
-          <div style={{ fontSize: 10 }}>Dixon-Coles Matrix wird berechnet</div>
+        <div style={{ textAlign: "center", padding: 32, color: "#a89070" }}>
+          <div style={{ fontSize: 13, marginBottom: 8, color: "#d4b86a" }}>
+            {progress.phase === "compute"
+              ? "Berechne Dixon-Coles Matrizen…"
+              : progress.phase === "data"
+              ? `Lade ${progress.currentLabel}`
+              : "Starte…"}
+          </div>
+          <div style={{ fontSize: 11, marginBottom: 12 }}>
+            {progress.phase === "compute"
+              ? "Ensemble läuft — letzter Schritt"
+              : `${progress.leaguesDone} von ${progress.totalLeagues} Ligen bereit`}
+          </div>
+          {/* Progress bar */}
+          <div style={{
+            maxWidth: 360, height: 6, margin: "0 auto",
+            background: "#2a1f15", borderRadius: 3, overflow: "hidden",
+            border: "1px solid #c4a26520",
+          }}>
+            <div style={{
+              height: "100%",
+              width: progress.phase === "compute"
+                ? "100%"
+                : progress.totalLeagues > 0
+                ? `${(progress.leaguesDone / progress.totalLeagues) * 100}%`
+                : "0%",
+              background: "linear-gradient(90deg, #8a6a3a, #d4b86a)",
+              transition: "width 0.3s ease",
+            }} />
+          </div>
+          {/* Partial league render hint — we already have data for some
+              leagues by the time compute phase kicks in */}
+          {allData.length > 0 && progress.phase !== "compute" && (
+            <div style={{ fontSize: 10, marginTop: 10, color: "#a8907060" }}>
+              Ligen fertig: {allData.map(d => LEAGUES[d.league]?.name || d.league).join(" · ")}
+            </div>
+          )}
         </div>
       ) : reports.length === 0 ? (
         <div style={{ textAlign: "center", padding: 40, color: "#a89070" }}>
