@@ -32,6 +32,7 @@ import {
   findOpenLigaMatch,
   inferMatchdayLabel,
 } from './_lib/matchday-enrich.mjs';
+import { fetchMultipleTeamInjuries } from './_lib/transfermarkt-scrape.mjs';
 
 // ─── Load .env.local ──────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -61,6 +62,11 @@ function getArg(name) {
 }
 const DRY = args.includes('--dry');
 const SEED = args.includes('--seed');
+// Opt-in: scrape Transfermarkt for injuries + yellow-risk per team.
+// Costs ~1.5s per team (20s-40s for a full matchday) but populates the
+// fields parseAbsences() + calcAbsenceImpact() actually use. Requires
+// GROQ_API_KEY in .env.local for HTML→JSON normalisation.
+const INJURIES = args.includes('--injuries');
 const league = getArg('league');
 const days = parseInt(getArg('days') || '7', 10);
 
@@ -210,7 +216,7 @@ function summarizeXG(entries) {
 // ─── Build Matchday JSON ──────────────────────────────────────────
 function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
   if (fixtures.length === 0) return null;
-  const { standings = [], leagueSize = 18, openLigaMatches = [] } = ctx;
+  const { standings = [], leagueSize = 18, openLigaMatches = [], injuriesByTeam = new Map() } = ctx;
 
   // Real matchday label from OpenLigaDB when available (German leagues),
   // otherwise the "auto" fallback. Users see "30. Spieltag" in the app
@@ -230,6 +236,8 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
   let tagsApplied = 0;
   let standingsMatched = 0;
   let h2hFound = 0;
+  let injuriesHome = 0;
+  let injuriesAway = 0;
 
   const matchday = {
     league: LEAGUE_NAMES[league] || league,
@@ -301,6 +309,17 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
           findOpenLigaMatch(openLigaMatches, homeFodze, awayFodze)
         : null;
 
+      // Injuries from Transfermarkt scrape (populated only when the
+      // --injuries flag is used; otherwise the Map is empty).
+      const homeInj = injuriesByTeam.get(homeFodze);
+      const awayInj = injuriesByTeam.get(awayFodze);
+      const homeInjuries = homeInj?.injuries || "";
+      const awayInjuries = awayInj?.injuries || "";
+      const homeYellowRisk = homeInj?.yellow_risk || "";
+      const awayYellowRisk = awayInj?.yellow_risk || "";
+      if (homeInjuries) injuriesHome++;
+      if (awayInjuries) injuriesAway++;
+
       return {
         home: {
           name: homeFodze,
@@ -308,8 +327,8 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
           xga_h8: homeXG?.xga ?? 0,
           games: homeXG?.games ?? 8,
           form: homeForm,
-          injuries: "",      // filled only via --ai flag (needs CLAUDE_API_KEY)
-          yellow_risk: "",   // same
+          injuries: homeInjuries,
+          yellow_risk: homeYellowRisk,
           ...(homeStanding ? {
             standings_pos: homeStanding.pos,
             standings_points: homeStanding.points,
@@ -323,8 +342,8 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
           xga_a8: awayXG?.xga ?? 0,
           games: awayXG?.games ?? 8,
           form: awayForm,
-          injuries: "",
-          yellow_risk: "",
+          injuries: awayInjuries,
+          yellow_risk: awayYellowRisk,
           ...(awayStanding ? {
             standings_pos: awayStanding.pos,
             standings_points: awayStanding.points,
@@ -334,7 +353,7 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
         },
         tags: derivedTags,
         context: "",
-        referee: "",         // OpenLigaDB doesn't expose refs; --ai fills it
+        referee: "",         // not available from TM or OpenLigaDB; future work
         kickoff,
         ...(h2h.length > 0 ? { h2h } : {}),
         ...(oldMatch ? { _openliga_match_id: oldMatch.matchID } : {}),
@@ -349,8 +368,10 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       tags_applied: `${tagsApplied}/${fixtures.length}`,
       standings_matched: `${standingsMatched}/${fixtures.length}`,
       h2h_found: `${h2hFound}/${fixtures.length}`,
+      home_injuries: `${injuriesHome}/${fixtures.length}`,
+      away_injuries: `${injuriesAway}/${fixtures.length}`,
       matchday_label_source: olLabel ? "openligadb" : "auto-fallback",
-      source: "team_xg_history (Understat/shots-model/goals-proxy) + OpenLigaDB",
+      source: "team_xg_history (Understat/shots-model/goals-proxy) + OpenLigaDB" + (injuriesByTeam.size > 0 ? " + Transfermarkt" : ""),
       enriched_at: new Date().toISOString(),
     },
   };
@@ -421,10 +442,39 @@ async function main() {
     console.log(`   ${activeStandings.length} Teams in der aktuellen Saisontabelle (Liga-Size für Tags)`);
   }
 
+  // Optional: fetch injury + suspension data per team from Transfermarkt.
+  // Opt-in because it's slow (~1.5s/team for rate-limit politeness) and
+  // needs GROQ_API_KEY. Without --injuries flag, injuries/yellow_risk
+  // stay empty strings (same as before this commit).
+  let injuriesByTeam = new Map();
+  if (INJURIES) {
+    const uniqueTeams = new Set();
+    for (const f of fixtures) {
+      const h = resolveName(f.home_team);
+      const a = resolveName(f.away_team);
+      if (h) uniqueTeams.add(h);
+      if (a) uniqueTeams.add(a);
+    }
+    const teamList = Array.from(uniqueTeams);
+    console.log(`   🏥 Injuries: fetching ${teamList.length} teams from Transfermarkt…`);
+    injuriesByTeam = await fetchMultipleTeamInjuries(
+      teamList,
+      (done, total, name, status) => {
+        const icon = status === "ok" ? "✓" : status === "no-id-mapping" ? "·" : "⚠";
+        process.stdout.write(`\r      ${done}/${total} ${icon} ${name.padEnd(30).slice(0, 30)}  `);
+      },
+    );
+    const okCount = Array.from(injuriesByTeam.values()).filter((r) => r.status === "ok").length;
+    const noMap = Array.from(injuriesByTeam.values()).filter((r) => r.status === "no-id-mapping").length;
+    process.stdout.write("\r" + " ".repeat(80) + "\r");
+    console.log(`      → ${okCount} OK, ${noMap} ohne TM-ID-Mapping, ${teamList.length - okCount - noMap} andere Fehler`);
+  }
+
   const matchday = buildMatchdayJSON(fixtures, xgHistory, {
     standings: activeStandings,
     leagueSize,
     openLigaMatches,
+    injuriesByTeam,
   });
 
   // Print summary with enrichment status per match. Badge slots:
@@ -438,14 +488,17 @@ async function main() {
     const hPos = m.home.standings_pos ? String(m.home.standings_pos).padStart(2, " ") : "··";
     const aPos = m.away.standings_pos ? String(m.away.standings_pos).padStart(2, " ") : "··";
     const h2h = m.h2h?.length ? `H2H×${m.h2h.length}` : "       ";
+    const injBadge = (m.home.injuries || m.away.injuries)
+      ? `🏥${m.home.injuries ? m.home.injuries.split(",").length : 0}v${m.away.injuries ? m.away.injuries.split(",").length : 0}`
+      : "       ";
     const tags = m.tags.length ? ` [${m.tags.join(",")}]` : "";
     console.log(
-      `   ${hXG}${aXG} ${hForm}${aForm} ${hPos}v${aPos} ${h2h} ${m.home.name} vs ${m.away.name} (${m.kickoff})${tags}`,
+      `   ${hXG}${aXG} ${hForm}${aForm} ${hPos}v${aPos} ${h2h} ${injBadge} ${m.home.name} vs ${m.away.name} (${m.kickoff})${tags}`,
     );
   }
   const e = matchday._enrichment;
   console.log(
-    `\n   xG: ${e.home_xg}/${e.away_xg}  ·  Form: ${e.home_form}/${e.away_form}  ·  Tags: ${e.tags_applied}  ·  Standings: ${e.standings_matched}  ·  H2H: ${e.h2h_found}  ·  Label: ${e.matchday_label_source}\n`,
+    `\n   xG: ${e.home_xg}/${e.away_xg}  ·  Form: ${e.home_form}/${e.away_form}  ·  Tags: ${e.tags_applied}  ·  Standings: ${e.standings_matched}  ·  H2H: ${e.h2h_found}  ·  Injuries: ${e.home_injuries}/${e.away_injuries}  ·  Label: ${e.matchday_label_source}\n`,
   );
 
   // Write JSON file

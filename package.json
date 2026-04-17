@@ -15,6 +15,7 @@
     "fetch-results": "node scripts/fetch-results.mjs",
     "update-xg": "node scripts/update-matchday.mjs",
     "refresh": "node scripts/refresh-all.mjs",
+    "refresh:full": "node scripts/refresh-all.mjs --injuries",
     "refresh:quick": "node scripts/refresh-all.mjs --skip-matchday",
     "refresh:odds": "node scripts/fetch-odds.mjs",
     "audit": "node scripts/audit-data-quality.mjs"

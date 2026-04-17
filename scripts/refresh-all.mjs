@@ -56,6 +56,10 @@ const SKIP_ODDS = args.includes("--skip-odds");
 const SKIP_MATCHDAY = args.includes("--skip-matchday");
 const QUIET = args.includes("--quiet");
 const SKIP_AUDIT = args.includes("--skip-audit");
+// Opt-in: propagate --injuries to generate-matchday so each team gets a
+// Transfermarkt scrape. Adds ~3s/team but populates the `injuries` field
+// the absence-parser + calcAbsenceImpact actually use.
+const WITH_INJURIES = args.includes("--injuries");
 
 // ─── Runner ─────────────────────────────────────────────────────────
 
@@ -112,7 +116,7 @@ const phases = [
   {
     name: "matchdays",
     emoji: "📅",
-    description: "Matchdays generieren + seeden (pro Liga)",
+    description: `Matchdays generieren + seeden (pro Liga)${WITH_INJURIES ? " + Injuries scrape" : ""}`,
     skip: () => SKIP_MATCHDAY,
     run: async () => {
       let ok = 0, fail = 0, skipped = 0;
@@ -120,7 +124,7 @@ const phases = [
         try {
           await runScript(
             "scripts/generate-matchday.mjs",
-            ["--league", lg, "--seed"],
+            ["--league", lg, "--seed", ...(WITH_INJURIES ? ["--injuries"] : [])],
             `generate-matchday ${lg}`,
           );
           ok++;
