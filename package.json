@@ -13,7 +13,11 @@
     "backfill": "node scripts/backfill-xg.mjs",
     "export-xg": "node scripts/export-xg.mjs",
     "fetch-results": "node scripts/fetch-results.mjs",
-    "update-xg": "node scripts/update-matchday.mjs"
+    "update-xg": "node scripts/update-matchday.mjs",
+    "refresh": "node scripts/refresh-all.mjs",
+    "refresh:quick": "node scripts/refresh-all.mjs --skip-matchday",
+    "refresh:odds": "node scripts/fetch-odds.mjs",
+    "audit": "node scripts/audit-data-quality.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
