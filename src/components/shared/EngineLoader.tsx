@@ -2,6 +2,12 @@
 import { useEffect, useState } from "react";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 
+/** Path to the hero image shown during loading. Save your image here:
+ *  /Users/vonlinck/Desktop/fodze-app-master/public/calculating-data.jpg
+ *  If the file isn't present, the component falls back to the matrix
+ *  animation only — never breaks the page. */
+const HERO_IMAGE_SRC = "/calculating-data.jpg";
+
 // ═══════════════════════════════════════════════════════════════════════
 // EngineLoader — cool wait-animation for the Dixon-Coles / Ensemble engine.
 //
@@ -73,6 +79,7 @@ export default function EngineLoader({
   title,
 }: EngineLoaderProps) {
   const [tickIdx, setTickIdx] = useState(0);
+  const [heroFailed, setHeroFailed] = useState(false);
 
   // Cycle through phase-appropriate tech-lingo every 2.5s.
   // The array changes with phase, so the index naturally refers to the
@@ -105,7 +112,30 @@ export default function EngineLoader({
       {/* Scoped keyframes — no global CSS pollution. */}
       <style>{keyframes}</style>
 
-      <DixonMatrixAnimation />
+      {/* Hero image — "the analyst crunching the numbers". Full image is
+          kept visible via aspect-ratio box + object-fit: contain so nothing
+          ever crops, regardless of the source image's exact dimensions.
+          Falls back gracefully to the matrix animation when the file is
+          missing (404). The aspect-ratio box reserves the slot so there's
+          no layout shift during the ~100ms it takes the 160KB JPEG to land. */}
+      {!heroFailed && (
+        <div style={styles.heroWrap}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={HERO_IMAGE_SRC}
+            alt=""
+            aria-hidden="true"
+            style={styles.heroImage}
+            onError={() => setHeroFailed(true)}
+            draggable={false}
+            loading="eager"
+          />
+        </div>
+      )}
+
+      {/* Matrix is the fallback when the hero 404s. When the hero exists,
+          the matrix is hidden — single strong visual beats two weaker ones. */}
+      {heroFailed && <DixonMatrixAnimation />}
 
       <div style={styles.title}>{titleText}</div>
       <div style={styles.subtitle}>{subtitle}</div>
@@ -204,6 +234,24 @@ const keyframes = `
     15%, 85% { opacity: 1; transform: translateY(0); }
     100% { opacity: 0; transform: translateY(-4px); }
   }
+  @keyframes engineHeroGlow {
+    0%, 100% {
+      box-shadow:
+        0 12px 32px rgba(212, 184, 106, 0.18),
+        0 0 0 1px rgba(212, 184, 106, 0.35),
+        0 0 28px rgba(212, 184, 106, 0.12);
+    }
+    50% {
+      box-shadow:
+        0 14px 38px rgba(212, 184, 106, 0.28),
+        0 0 0 1px rgba(212, 184, 106, 0.55),
+        0 0 42px rgba(212, 184, 106, 0.22);
+    }
+  }
+  @keyframes engineHeroFadeIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to   { opacity: 1; transform: scale(1); }
+  }
 `;
 
 // ─── Styles ─────────────────────────────────────────────────────────
@@ -215,6 +263,34 @@ const styles: Record<string, React.CSSProperties> = {
     color: color.textMuted,
     userSelect: "none",
   },
+  heroWrap: {
+    // Gold gradient frame achieved via a 2px padding on a gradient
+    // background — cleaner than two nested borders.
+    maxWidth: 360,
+    margin: "0 auto",
+    marginBottom: space[5],
+    padding: 2,
+    background: `linear-gradient(135deg, ${color.goldDark}, ${color.gold}, ${color.goldLight}, ${color.gold}, ${color.goldDark})`,
+    borderRadius: radius.md,
+    // Pulsing gold glow — matches the matrix pulse rhythm thematically.
+    animation:
+      "engineHeroGlow 3.4s ease-in-out infinite, engineHeroFadeIn 0.6s ease-out",
+    transition: "opacity 0.35s ease",
+  } as React.CSSProperties,
+  heroImage: {
+    display: "block",
+    width: "100%",
+    // Image is 1:1 (800×800) — box reserves the slot so there's no
+    // layout shift while the 160KB JPEG flies in from public/.
+    aspectRatio: "1 / 1",
+    // object-fit: contain guarantees the FULL image is visible — nothing
+    // crops even if source dimensions ever change. The inner radius is
+    // slightly smaller than heroWrap so the gold frame is always visible.
+    objectFit: "contain" as const,
+    borderRadius: radius.md - 2,
+    background: color.leather3,
+    userSelect: "none",
+  } as React.CSSProperties,
   matrix: {
     display: "grid",
     gridTemplateColumns: `repeat(${GRID_SIZE}, ${CELL}px)`,
