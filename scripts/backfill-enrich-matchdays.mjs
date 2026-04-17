@@ -27,7 +27,11 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { lookupTeamXG, deriveForm, deriveTags } from "./_lib/matchday-enrich.mjs";
+import {
+  lookupTeamXG, deriveForm, deriveTags,
+  computeStandingsFromXG, findStanding, deriveStandingsTags,
+  deriveH2H, loadOpenLigaDBSeason, findOpenLigaMatch, inferMatchdayLabel,
+} from "./_lib/matchday-enrich.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
@@ -123,8 +127,13 @@ function summarizeXG(entries) {
 // Enrich a single stored matchday JSON. Never mutates the input; returns
 // a fresh object. Preserves any fields already populated (injuries, context,
 // referee) — we're only FILLING IN the empty ones, not overwriting.
-function enrichMatchday(md, xgHistory) {
+//
+// `ctx` carries league-wide enrichment inputs computed once upstream:
+//   { standings, leagueSize, openLigaMatches, leagueKey }
+// This avoids re-loading them per matchday of the same league.
+function enrichMatchday(md, xgHistory, ctx = {}) {
   if (!md?.matches?.length) return { updated: md, stats: null };
+  const { standings = [], leagueSize = 18, openLigaMatches = [] } = ctx;
 
   // For DERBY/ROTATION detection we need the full fixture list of this
   // matchday. The stored shape uses m.home.name / m.away.name / m.kickoff
@@ -140,6 +149,8 @@ function enrichMatchday(md, xgHistory) {
   let xgFilled = 0;
   let formFilled = 0;
   let tagsFilled = 0;
+  let standingsFilled = 0;
+  let h2hFilled = 0;
   const updatedMatches = md.matches.map((m) => {
     const homeName = m.home?.name;
     const awayName = m.away?.name;
@@ -151,9 +162,18 @@ function enrichMatchday(md, xgHistory) {
     const needAwayXG = !(m.away?.xg_a8) || !(m.away?.xg_a_history?.length);
     const needHomeForm = !m.home?.form;
     const needAwayForm = !m.away?.form;
-    const needTags = !Array.isArray(m.tags) || m.tags.length === 0;
+    // Tags: only add STANDINGS-derived ones if existing tags don't already
+    // include them. ROTATION can't be inferred from stored matchday alone
+    // (needs league-wide fixture density) so we keep existing tags intact.
+    const existingTags = Array.isArray(m.tags) ? m.tags : [];
+    const needStandings = !m.home?.standings_pos || !m.away?.standings_pos;
+    const needH2H = !Array.isArray(m.h2h) || m.h2h.length === 0;
 
-    let homeXG = null, awayXG = null, homeForm = null, awayForm = null, tags = null;
+    let homeXG = null, awayXG = null, homeForm = null, awayForm = null;
+    let newTags = [...existingTags];
+    let h2h = null;
+    let homeStanding = null, awayStanding = null;
+
     if (needHomeXG) {
       const entries = lookupTeamXG(xgHistory, [homeName], "home", 8);
       homeXG = summarizeXG(entries);
@@ -164,20 +184,49 @@ function enrichMatchday(md, xgHistory) {
     }
     if (needHomeForm) homeForm = deriveForm(xgHistory, [homeName]);
     if (needAwayForm) awayForm = deriveForm(xgHistory, [awayName]);
-    if (needTags) {
-      const f = allFixtures.find(
-        (x) => x.home_team === homeName && x.away_team === awayName,
+
+    // Standings lookup — deterministic, cheap, always attempt even if existing
+    // values look present (they might be stale from an earlier season).
+    if (standings.length > 0) {
+      homeStanding = findStanding(standings, [homeName]);
+      awayStanding = findStanding(standings, [awayName]);
+      if (homeStanding && awayStanding) standingsFilled++;
+      // Standings-derived tags (MEISTERKAMPF / ABSTIEGSKAMPF) — merge
+      // unique with existing tags.
+      const stTags = deriveStandingsTags(
+        homeStanding?.pos, awayStanding?.pos, leagueSize,
       );
-      tags = f ? deriveTags(f, allFixtures) : [];
+      for (const t of stTags) if (!newTags.includes(t)) newTags.push(t);
     }
 
+    // DERBY from fixture data (in case existing tags missed it)
+    if (existingTags.length === 0) {
+      const fx = allFixtures.find(
+        (x) => x.home_team === homeName && x.away_team === awayName,
+      );
+      if (fx) {
+        const dTags = deriveTags(fx, allFixtures);
+        for (const t of dTags) if (!newTags.includes(t)) newTags.push(t);
+      }
+    }
+
+    if (needH2H && xgHistory.length > 0) {
+      h2h = deriveH2H(xgHistory, [homeName], [awayName], 5);
+      if (h2h.length > 0) h2hFilled++;
+    }
+
+    // OpenLigaDB match-ID join (only for German leagues where openLigaMatches
+    // is non-empty) — useful for future data enrichment joins.
+    const oldMatch = openLigaMatches.length > 0
+      ? findOpenLigaMatch(openLigaMatches, homeName, awayName)
+      : null;
+
     if (homeXG) xgFilled++;
-    else if (!needHomeXG) xgFilled++; // already present
+    else if (!needHomeXG) xgFilled++;
     if (homeForm) formFilled++;
     else if (!needHomeForm) formFilled++;
-    if (tags && tags.length > 0) tagsFilled++;
+    if (newTags.length > 0) tagsFilled++;
 
-    // Merge — fresh object, never mutate input
     return {
       ...m,
       home: {
@@ -189,6 +238,11 @@ function enrichMatchday(md, xgHistory) {
           xg_h_history: homeXG.history,
         } : {}),
         ...(homeForm ? { form: homeForm } : {}),
+        ...(homeStanding ? {
+          standings_pos: homeStanding.pos,
+          standings_points: homeStanding.points,
+          standings_gd: homeStanding.gd,
+        } : {}),
       },
       away: {
         ...m.away,
@@ -199,8 +253,15 @@ function enrichMatchday(md, xgHistory) {
           xg_a_history: awayXG.history,
         } : {}),
         ...(awayForm ? { form: awayForm } : {}),
+        ...(awayStanding ? {
+          standings_pos: awayStanding.pos,
+          standings_points: awayStanding.points,
+          standings_gd: awayStanding.gd,
+        } : {}),
       },
-      ...(tags && tags.length > 0 ? { tags } : {}),
+      ...(newTags.length > 0 ? { tags: newTags } : {}),
+      ...(h2h && h2h.length > 0 ? { h2h } : {}),
+      ...(oldMatch ? { _openliga_match_id: oldMatch.matchID } : {}),
     };
   });
 
@@ -213,6 +274,8 @@ function enrichMatchday(md, xgHistory) {
       home_form: `${updatedMatches.filter(m => m.home?.form).length}/${md.matches.length}`,
       away_form: `${updatedMatches.filter(m => m.away?.form).length}/${md.matches.length}`,
       tags_applied: `${updatedMatches.filter(m => Array.isArray(m.tags) && m.tags.length > 0).length}/${md.matches.length}`,
+      standings_matched: `${standingsFilled}/${md.matches.length}`,
+      h2h_found: `${h2hFilled}/${md.matches.length}`,
       source: "retroactive backfill-enrich-matchdays",
       enriched_at: new Date().toISOString(),
     },
@@ -249,11 +312,35 @@ async function main() {
 
   for (const [league, mds] of Object.entries(byLeague)) {
     const xgHistory = await loadLeagueXGHistory(league);
-    console.log(`─── ${league.padEnd(20)} ${mds.length} Matchdays · ${xgHistory.length} xG-Einträge`);
+    // Compute per-league standings + OpenLigaDB labels ONCE, reuse across
+    // all matchdays of this league. Major perf win when enriching many
+    // historical matchdays in a single run.
+    const seasonStart = "2025-07-01";
+    const currentSeasonXG = xgHistory.filter((r) => (r.match_date || "") >= seasonStart);
+    const rawStandings = computeStandingsFromXG(currentSeasonXG);
+    // Prune to teams appearing in any of THIS league's matchdays so the
+    // "bottom 3" / "top 3" thresholds match actual league size.
+    const activeTeams = new Set();
+    for (const md of mds) {
+      for (const m of md.data?.matches || []) {
+        if (m.home?.name) activeTeams.add(m.home.name);
+        if (m.away?.name) activeTeams.add(m.away.name);
+      }
+    }
+    const standings = rawStandings.filter((s) =>
+      Array.from(activeTeams).some((t) => !!findStanding([s], [t])),
+    );
+    standings.forEach((s, i) => { s.pos = i + 1; });
+    const leagueSize = standings.length || 18;
+    const openLigaMatches = await loadOpenLigaDBSeason(league);
+    const ctx = { standings, leagueSize, openLigaMatches, leagueKey: league };
+    console.log(
+      `─── ${league.padEnd(20)} ${mds.length} Matchdays · ${xgHistory.length} xG · ${standings.length} Tabelle${openLigaMatches.length ? ` · ${openLigaMatches.length} OpenLigaDB` : ""}`,
+    );
 
     for (const md of mds) {
       try {
-        const { updated, stats } = enrichMatchday(md.data, xgHistory);
+        const { updated, stats } = enrichMatchday(md.data, xgHistory, ctx);
         await updateMatchdayData(md.id, updated);
         const [h_xg] = stats.home_xg.split("/");
         const [h_form] = stats.home_form.split("/");
@@ -264,7 +351,7 @@ async function main() {
         totalForm += Number(h_form);
         totalTags += Number(tags);
         console.log(
-          `     ✓ ${md.matchday_label?.slice(0, 24).padEnd(24)}  xG ${stats.home_xg}  Form ${stats.home_form}  Tags ${stats.tags_applied}`,
+          `     ✓ ${md.matchday_label?.slice(0, 24).padEnd(24)}  xG ${stats.home_xg}  Form ${stats.home_form}  Tags ${stats.tags_applied}  Stand ${stats.standings_matched}  H2H ${stats.h2h_found}`,
         );
       } catch (e) {
         errored++;

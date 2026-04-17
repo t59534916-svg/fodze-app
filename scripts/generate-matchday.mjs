@@ -24,6 +24,13 @@ import {
   lookupTeamXG as lookupTeamXGShared,
   deriveForm,
   deriveTags,
+  computeStandingsFromXG,
+  findStanding,
+  deriveStandingsTags,
+  deriveH2H,
+  loadOpenLigaDBSeason,
+  findOpenLigaMatch,
+  inferMatchdayLabel,
 } from './_lib/matchday-enrich.mjs';
 
 // ─── Load .env.local ──────────────────────────────────────────────
@@ -201,24 +208,32 @@ function summarizeXG(entries) {
 }
 
 // ─── Build Matchday JSON ──────────────────────────────────────────
-function buildMatchdayJSON(fixtures, xgHistory) {
+function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
   if (fixtures.length === 0) return null;
+  const { standings = [], leagueSize = 18, openLigaMatches = [] } = ctx;
 
-  // Determine matchday label from first fixture date
+  // Real matchday label from OpenLigaDB when available (German leagues),
+  // otherwise the "auto" fallback. Users see "30. Spieltag" in the app
+  // header instead of the previous uninformative "Spieltag (auto)".
   const firstDate = fixtures[0].commence_time.slice(0, 10);
-  const dates = [...new Set(fixtures.map(f => f.commence_time.slice(0, 10)))];
+  const olLabel = openLigaMatches.length > 0
+    ? inferMatchdayLabel(openLigaMatches, new Date(firstDate + "T12:00:00"))
+    : null;
+  const matchdayLabel = olLabel || "Spieltag (auto)";
 
-  // Coverage counters for the final log line — users see at a glance whether
-  // enrichment landed (or whether they need to seed xG data first).
+  // Coverage counters for the final log line — users see at a glance
+  // what landed (xG, form, tags, standings, H2H).
   let enrichedHome = 0;
   let enrichedAway = 0;
   let formHome = 0;
   let formAway = 0;
   let tagsApplied = 0;
+  let standingsMatched = 0;
+  let h2hFound = 0;
 
   const matchday = {
     league: LEAGUE_NAMES[league] || league,
-    matchday: `Spieltag (auto)`,
+    matchday: matchdayLabel,
     date: firstDate,
     matches: fixtures.map(f => {
       const homeApi = f.home_team;
@@ -253,11 +268,38 @@ function buildMatchdayJSON(fixtures, xgHistory) {
       if (homeForm) formHome++;
       if (awayForm) formAway++;
 
-      // Derive tags: DERBY via rivalry map, ROTATION via fixture density.
-      // Engine's applyTagCorrections() multiplies λ by TAG_MAP[tag] so these
-      // only fire when present — never fired before because tags was [].
-      const derivedTags = deriveTags(f, fixtures);
+      // Standings positions — used for MEISTERKAMPF / ABSTIEGSKAMPF tags
+      // (real λ-multipliers per TAG_MAP in dixon-coles.ts) and for display.
+      const homeStanding = findStanding(standings, [homeApi, homeFodze]);
+      const awayStanding = findStanding(standings, [awayApi, awayFodze]);
+      if (homeStanding && awayStanding) standingsMatched++;
+      const standingsTags = deriveStandingsTags(
+        homeStanding?.pos, awayStanding?.pos, leagueSize,
+      );
+
+      // Head-to-Head — last 5 direct meetings, newest-first. Engine doesn't
+      // use it yet but /matchday UI shows it and users rely on it.
+      const h2h = xgHistory.length > 0
+        ? deriveH2H(xgHistory, [homeApi, homeFodze], [awayApi, awayFodze], 5)
+        : [];
+      if (h2h.length > 0) h2hFound++;
+
+      // Combined tags: DERBY + ROTATION (fixture-based) + MEISTERKAMPF /
+      // ABSTIEGSKAMPF (standings-based). All map to TAG_MAP multipliers,
+      // so they all actually move λ.
+      const derivedTags = [
+        ...deriveTags(f, fixtures),
+        ...standingsTags,
+      ];
       if (derivedTags.length > 0) tagsApplied++;
+
+      // OpenLigaDB join — for German leagues we confirm/upgrade the kickoff
+      // and expose the source matchID so future enrichment (official
+      // goals-scored, viewers, weather) can join back.
+      const oldMatch = openLigaMatches.length > 0
+        ? findOpenLigaMatch(openLigaMatches, homeApi, awayApi) ||
+          findOpenLigaMatch(openLigaMatches, homeFodze, awayFodze)
+        : null;
 
       return {
         home: {
@@ -266,8 +308,13 @@ function buildMatchdayJSON(fixtures, xgHistory) {
           xga_h8: homeXG?.xga ?? 0,
           games: homeXG?.games ?? 8,
           form: homeForm,
-          injuries: "",
-          yellow_risk: "",
+          injuries: "",      // filled only via --ai flag (needs CLAUDE_API_KEY)
+          yellow_risk: "",   // same
+          ...(homeStanding ? {
+            standings_pos: homeStanding.pos,
+            standings_points: homeStanding.points,
+            standings_gd: homeStanding.gd,
+          } : {}),
           ...(homeXG ? { xg_h_history: homeXG.history } : {}),
         },
         away: {
@@ -278,12 +325,19 @@ function buildMatchdayJSON(fixtures, xgHistory) {
           form: awayForm,
           injuries: "",
           yellow_risk: "",
+          ...(awayStanding ? {
+            standings_pos: awayStanding.pos,
+            standings_points: awayStanding.points,
+            standings_gd: awayStanding.gd,
+          } : {}),
           ...(awayXG ? { xg_a_history: awayXG.history } : {}),
         },
         tags: derivedTags,
         context: "",
-        referee: "",
+        referee: "",         // OpenLigaDB doesn't expose refs; --ai fills it
         kickoff,
+        ...(h2h.length > 0 ? { h2h } : {}),
+        ...(oldMatch ? { _openliga_match_id: oldMatch.matchID } : {}),
       };
     }),
     // Attached to the JSON for debugging — not used by the engine.
@@ -293,7 +347,10 @@ function buildMatchdayJSON(fixtures, xgHistory) {
       home_form: `${formHome}/${fixtures.length}`,
       away_form: `${formAway}/${fixtures.length}`,
       tags_applied: `${tagsApplied}/${fixtures.length}`,
-      source: "team_xg_history (Understat/shots-model/goals-proxy)",
+      standings_matched: `${standingsMatched}/${fixtures.length}`,
+      h2h_found: `${h2hFound}/${fixtures.length}`,
+      matchday_label_source: olLabel ? "openligadb" : "auto-fallback",
+      source: "team_xg_history (Understat/shots-model/goals-proxy) + OpenLigaDB",
       enriched_at: new Date().toISOString(),
     },
   };
@@ -308,12 +365,19 @@ async function main() {
   console.log(`   Fenster: nächste ${days} Tage`);
   console.log();
 
-  const [fixtures, xgHistory] = await Promise.all([
+  // Kick off the three network fetches in parallel. xgHistory covers
+  // form + H2H + standings, OpenLigaDB gives real matchday labels for
+  // German leagues (no-op for other leagues — returns []).
+  const [fixtures, xgHistory, openLigaMatches] = await Promise.all([
     loadFixtures(),
     loadLeagueXGHistory(league),
+    loadOpenLigaDBSeason(league),
   ]);
   console.log(`   ${fixtures.length} Fixtures gefunden`);
   console.log(`   ${xgHistory.length} xG-Einträge für diese Liga im team_xg_history`);
+  if (openLigaMatches.length > 0) {
+    console.log(`   ${openLigaMatches.length} OpenLigaDB-Matches (für echte Matchday-Labels)`);
+  }
 
   if (fixtures.length === 0) {
     console.log('   ⚠ Keine anstehenden Spiele. Wurde fetch-odds.mjs schon ausgeführt?');
@@ -328,23 +392,60 @@ async function main() {
     );
   }
 
-  const matchday = buildMatchdayJSON(fixtures, xgHistory);
+  // Derive league-wide standings from the CURRENT season only so position
+  // counts reflect reality (the full 2-season dataset has promoted/relegated
+  // teams that inflate the count, making "bottom 3" meaningless). Season
+  // boundary matches what loadLeagueStandings uses in supabase.ts.
+  const seasonStart = "2025-07-01";
+  const currentSeasonXG = xgHistory.filter((r) => (r.match_date || "") >= seasonStart);
+  // Further prune to teams that actually play in this upcoming matchday —
+  // filters any lingering non-current-season rows that slipped through.
+  const currentTeams = new Set();
+  for (const f of fixtures) {
+    if (f.home_team) currentTeams.add(f.home_team);
+    if (f.away_team) currentTeams.add(f.away_team);
+  }
+  const standings = computeStandingsFromXG(currentSeasonXG);
+  // Position 1..N counting teams that matter for relegation/title context.
+  // Prune + renumber.
+  const activeStandings = standings.filter((s) => {
+    // Keep if the team name matches any current team (via fuzzy match).
+    // findStanding-style: exact → normalized → substring.
+    const candidates = Array.from(currentTeams);
+    const lookedUp = findStanding([s], candidates);
+    return !!lookedUp;
+  });
+  activeStandings.forEach((s, i) => { s.pos = i + 1; });
+  const leagueSize = activeStandings.length || 18;
+  if (activeStandings.length > 0) {
+    console.log(`   ${activeStandings.length} Teams in der aktuellen Saisontabelle (Liga-Size für Tags)`);
+  }
 
-  // Print summary with enrichment status per match. Two-char badge:
-  // [0] xG present, [1] form present. Tags shown inline when non-empty.
+  const matchday = buildMatchdayJSON(fixtures, xgHistory, {
+    standings: activeStandings,
+    leagueSize,
+    openLigaMatches,
+  });
+
+  // Print summary with enrichment status per match. Badge slots:
+  //   xG home / xG away / form home / form away / standings / h2h
+  // Tags shown inline when non-empty.
   for (const m of matchday.matches) {
     const hXG = m.home.xg_h_history ? "✓" : "·";
     const aXG = m.away.xg_a_history ? "✓" : "·";
     const hForm = m.home.form ? "✓" : "·";
     const aForm = m.away.form ? "✓" : "·";
+    const hPos = m.home.standings_pos ? String(m.home.standings_pos).padStart(2, " ") : "··";
+    const aPos = m.away.standings_pos ? String(m.away.standings_pos).padStart(2, " ") : "··";
+    const h2h = m.h2h?.length ? `H2H×${m.h2h.length}` : "       ";
     const tags = m.tags.length ? ` [${m.tags.join(",")}]` : "";
     console.log(
-      `   ${hXG}${aXG}·${hForm}${aForm} ${m.home.name} vs ${m.away.name} (${m.kickoff})${tags}`,
+      `   ${hXG}${aXG} ${hForm}${aForm} ${hPos}v${aPos} ${h2h} ${m.home.name} vs ${m.away.name} (${m.kickoff})${tags}`,
     );
   }
   const e = matchday._enrichment;
   console.log(
-    `\n   xG: ${e.home_xg} home / ${e.away_xg} away  ·  Form: ${e.home_form} / ${e.away_form}  ·  Tags: ${e.tags_applied}\n`,
+    `\n   xG: ${e.home_xg}/${e.away_xg}  ·  Form: ${e.home_form}/${e.away_form}  ·  Tags: ${e.tags_applied}  ·  Standings: ${e.standings_matched}  ·  H2H: ${e.h2h_found}  ·  Label: ${e.matchday_label_source}\n`,
   );
 
   // Write JSON file

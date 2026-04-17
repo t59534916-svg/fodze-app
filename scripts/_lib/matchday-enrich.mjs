@@ -332,3 +332,261 @@ export function enrichMatch(match, xgHistory, allFixtures) {
     tags: deriveTags(match, allFixtures),
   };
 }
+
+// ─── 5. Standings computation (JS clone of computeStandings) ────────
+
+/**
+ * Build a league table from team_xg_history rows. Mirrors
+ * src/lib/supabase.ts:computeStandings pure-logic so script code
+ * doesn't have to import TS. Only rows with a finite goals_for /
+ * goals_against count — rows lacking actual results (e.g. future
+ * fixtures slipped into the dataset) are ignored.
+ *
+ * Returns: Array of { team, played, won, drawn, lost, gf, ga, gd,
+ * points, pos } sorted by position. `team` uses whatever the source
+ * name space is (Understat for top-5, football-data.co.uk for shots-
+ * model, Odds-API for goals-proxy) — callers match on it via
+ * normalizeTeamName.
+ */
+export function computeStandingsFromXG(xgRows) {
+  const stats = new Map();
+  const ensure = (t) => {
+    if (!stats.has(t)) stats.set(t, { w: 0, d: 0, l: 0, gf: 0, ga: 0 });
+    return stats.get(t);
+  };
+
+  // The dataset contains TWO rows per match (home + away perspective).
+  // Use only the home-perspective rows so each match is counted once.
+  // goals_for on a home row = actual home goals; goals_against = away goals.
+  for (const m of xgRows) {
+    if (m.venue !== "home") continue;
+    const gH = Number(m.goals_for);
+    const gA = Number(m.goals_against);
+    if (!Number.isFinite(gH) || !Number.isFinite(gA)) continue;
+
+    const home = ensure(m.team);
+    home.gf += gH; home.ga += gA;
+    if (gH > gA) home.w++;
+    else if (gH === gA) home.d++;
+    else home.l++;
+
+    if (m.opponent) {
+      const away = ensure(m.opponent);
+      away.gf += gA; away.ga += gH;
+      if (gA > gH) away.w++;
+      else if (gA === gH) away.d++;
+      else away.l++;
+    }
+  }
+
+  const rows = Array.from(stats.entries()).map(([team, s]) => ({
+    team,
+    played: s.w + s.d + s.l,
+    won: s.w,
+    drawn: s.d,
+    lost: s.l,
+    gf: s.gf,
+    ga: s.ga,
+    gd: s.gf - s.ga,
+    points: s.w * 3 + s.d,
+  }));
+  rows.sort((a, b) => b.points - a.points || b.gd - a.gd || b.gf - a.gf);
+  rows.forEach((r, i) => { r.pos = i + 1; });
+  return rows;
+}
+
+/**
+ * Find a team's position in the computed standings by fuzzy-matching the
+ * name. Returns { pos, played, gd, points } or null.
+ */
+export function findStanding(standings, teamNames) {
+  const cands = (Array.isArray(teamNames) ? teamNames : [teamNames]).filter(Boolean);
+  if (!standings?.length || !cands.length) return null;
+  const normCands = cands.map(normalizeTeamName).filter((n) => n.length >= 3);
+  for (const r of standings) {
+    if (cands.includes(r.team)) return r;
+  }
+  for (const r of standings) {
+    const lower = r.team.toLowerCase();
+    if (cands.some((c) => c.toLowerCase() === lower)) return r;
+  }
+  for (const r of standings) {
+    const nt = normalizeTeamName(r.team);
+    if (normCands.some((nc) => nt === nc)) return r;
+  }
+  for (const r of standings) {
+    const nt = normalizeTeamName(r.team);
+    if (nt.length < 4) continue;
+    if (normCands.some((nc) => nc.length >= 4 && (nt.includes(nc) || nc.includes(nt)))) return r;
+  }
+  return null;
+}
+
+// ─── 6. Standings-driven context tags ───────────────────────────────
+
+/**
+ * Given the positions of home + away in the league table, compute tags
+ * that the engine's TAG_MAP recognises. These actually move λ, unlike
+ * display-only tags:
+ *   ABSTIEGSKAMPF  — both in bottom 3 → both λ +6%
+ *   MEISTERKAMPF   — both in top 3 → both λ +3%
+ *
+ * The MUST_WIN_HOME / TOP_VS_BOTTOM tags are intentionally NOT emitted:
+ * TAG_MAP in src/lib/dixon-coles.ts doesn't have entries for them, so
+ * emitting them would be cargo-cult clutter.
+ */
+export function deriveStandingsTags(homePos, awayPos, leagueSize = 18) {
+  const tags = [];
+  if (homePos == null || awayPos == null) return tags;
+  const relZone = Math.max(3, leagueSize - 15); // top-5 leagues: bottom 3
+  const titleZone = 3;
+  if (homePos > leagueSize - relZone && awayPos > leagueSize - relZone) {
+    tags.push("ABSTIEGSKAMPF");
+  }
+  if (homePos <= titleZone && awayPos <= titleZone) {
+    tags.push("MEISTERKAMPF");
+  }
+  return tags;
+}
+
+// ─── 7. Head-to-Head ────────────────────────────────────────────────
+
+/**
+ * Last N meetings between home and away across the xG history dataset.
+ * Uses goals_for/goals_against on the home-perspective row — when the
+ * home row's team matches `home` (exact or normalized), we have the
+ * right directional view. Returns newest-first.
+ *
+ * Result shape:
+ *   [{ date, gf, ga, result: "W"|"D"|"L" (from home's perspective) }]
+ */
+export function deriveH2H(xgRows, homeNames, awayNames, n = 5) {
+  const homeCands = (Array.isArray(homeNames) ? homeNames : [homeNames]).filter(Boolean);
+  const awayCands = (Array.isArray(awayNames) ? awayNames : [awayNames]).filter(Boolean);
+  if (!xgRows?.length || !homeCands.length || !awayCands.length) return [];
+
+  const normH = homeCands.map(normalizeTeamName).filter((s) => s.length >= 3);
+  const normA = awayCands.map(normalizeTeamName).filter((s) => s.length >= 3);
+
+  const matchName = (name, norms) => {
+    const lower = name.toLowerCase();
+    if (homeCands.includes(name) || awayCands.includes(name)) return true;
+    const nt = normalizeTeamName(name);
+    return norms.some((nc) => nt === nc || (nc.length >= 4 && nt.length >= 4 && (nt.includes(nc) || nc.includes(nt))));
+  };
+
+  // Look at ALL meetings between these two teams in either direction.
+  // Take home-perspective rows only so we don't double-count each match.
+  const meetings = xgRows.filter((r) => r.venue === "home" && (
+    (matchName(r.team, normH) && matchName(r.opponent || "", normA)) ||
+    (matchName(r.team, normA) && matchName(r.opponent || "", normH))
+  ));
+
+  meetings.sort((a, b) => new Date(b.match_date).getTime() - new Date(a.match_date).getTime());
+
+  return meetings.slice(0, n).map((m) => {
+    const homePerspective = matchName(m.team, normH);
+    const gf = homePerspective ? Number(m.goals_for ?? m.xg ?? 0) : Number(m.goals_against ?? m.xga ?? 0);
+    const ga = homePerspective ? Number(m.goals_against ?? m.xga ?? 0) : Number(m.goals_for ?? m.xg ?? 0);
+    let result = "D";
+    if (Number.isFinite(gf) && Number.isFinite(ga)) {
+      if (gf > ga) result = "W";
+      else if (gf < ga) result = "L";
+    }
+    return {
+      date: m.match_date,
+      venue: homePerspective ? "home" : "away",
+      gf,
+      ga,
+      result,
+    };
+  });
+}
+
+// ─── 8. OpenLigaDB integration (German leagues only) ────────────────
+
+// Map FODZE league keys to OpenLigaDB shortcuts. Only the three German
+// divisions are covered — openligadb doesn't serve other countries.
+const OPENLIGA_MAP = {
+  bundesliga: "bl1",
+  bundesliga2: "bl2",
+  liga3: "bl3",
+};
+
+/**
+ * Compute the current German football season year per OpenLigaDB convention:
+ * the season starting in August 2025 is indexed as "2025" (runs until
+ * May 2026). So from Aug-Dec we use this year; Jan-Jul we use last year.
+ */
+function currentGermanFootballSeason() {
+  const d = new Date();
+  const y = d.getFullYear();
+  // Month is 0-indexed; 7 = August. Before August we're in prev season.
+  return d.getMonth() >= 7 ? String(y) : String(y - 1);
+}
+
+/**
+ * Fetch the current-season matches from OpenLigaDB for a FODZE league.
+ * Returns [] for non-German leagues or on network failure. Never throws.
+ *
+ * Each match has { matchID, matchDateTime, group:{groupName, groupOrderID},
+ *   team1:{teamName}, team2:{teamName}, matchIsFinished, matchResults, ... }.
+ * The `group.groupName` is the real matchday label ("30. Spieltag") and
+ * `groupOrderID` is the matchday number.
+ */
+export async function loadOpenLigaDBSeason(leagueKey, season = currentGermanFootballSeason()) {
+  const shortcut = OPENLIGA_MAP[leagueKey];
+  if (!shortcut) return [];
+  try {
+    // Season convention: "2025" = 2025/26 German football season
+    const url = `https://api.openligadb.de/getmatchdata/${shortcut}/${season}`;
+    const resp = await fetch(url);
+    if (!resp.ok) return [];
+    return await resp.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find the OpenLigaDB entry matching a given home/away pair. Used to pull
+ * the real matchday label + confirm kickoff + get the matchID for joins.
+ */
+export function findOpenLigaMatch(openLigaMatches, homeName, awayName) {
+  if (!openLigaMatches?.length || !homeName || !awayName) return null;
+  const nh = normalizeTeamName(homeName);
+  const na = normalizeTeamName(awayName);
+  return openLigaMatches.find((m) => {
+    const t1 = normalizeTeamName(m.team1?.teamName || "");
+    const t2 = normalizeTeamName(m.team2?.teamName || "");
+    if (!t1 || !t2) return false;
+    if (t1 === nh && t2 === na) return true;
+    if (t1.length >= 4 && t2.length >= 4 && nh.length >= 4 && na.length >= 4) {
+      if ((t1.includes(nh) || nh.includes(t1)) && (t2.includes(na) || na.includes(t2))) return true;
+    }
+    return false;
+  }) || null;
+}
+
+/**
+ * Find the most-populous matchday label among matches scheduled in the
+ * next ~10 days. Avoids returning "34. Spieltag" when we're actually
+ * querying mid-round for the upcoming round — takes the MAJORITY label.
+ */
+export function inferMatchdayLabel(openLigaMatches, aroundDate = new Date()) {
+  if (!openLigaMatches?.length) return null;
+  const start = aroundDate.getTime();
+  const windowEnd = start + 10 * 86400_000;
+  const upcoming = openLigaMatches.filter((m) => {
+    const t = new Date(m.matchDateTime || m.matchDateTimeUTC || "").getTime();
+    return Number.isFinite(t) && t >= start - 86400_000 && t <= windowEnd;
+  });
+  const labelCounts = new Map();
+  for (const m of upcoming) {
+    const label = m.group?.groupName;
+    if (!label) continue;
+    labelCounts.set(label, (labelCounts.get(label) || 0) + 1);
+  }
+  if (labelCounts.size === 0) return null;
+  return Array.from(labelCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+}
