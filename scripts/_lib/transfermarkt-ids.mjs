@@ -414,27 +414,83 @@ export const TRANSFERMARKT_IDS = {
 
 };
 
+import { TRANSFERMARKT_ALIASES } from "./transfermarkt-aliases.mjs";
+
 /**
- * Normalise a FODZE team name to match this map's keys. Light touch —
- * strips common prefixes that drift ("TSG 1899 Hoffenheim" vs "TSG
- * Hoffenheim") and does case-insensitive + substring fallback.
+ * Normalise a team name for comparison: lowercase, strip accents/umlauts
+ * (ö→o, ü→u, ß→ss), drop punctuation, remove common club prefixes
+ * (FC, SC, VfB, …). This handles the typical drift between data sources
+ * that use German, English, or local naming variants.
+ */
+function norm(name) {
+  return String(name || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/ß/g, "ss")
+    .replace(/[.,'"´`]/g, "")
+    .replace(/\b(fc|sc|sv|ss|afc|cf|cd|ud|ca|ad|rcd|sd|rc|ec|kf|ogc|as|og|nk|tsg|tsv|vfb|vfl|rb|1)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Normalise a FODZE team name to match this map's keys.
+ * Tiered lookup:
+ *   1. Exact match in TRANSFERMARKT_IDS
+ *   2. TRANSFERMARKT_ALIASES bridge (FODZE/Odds-API → TM canonical)
+ *   3. Case-insensitive exact (for IDS + aliases)
+ *   4. Normalised equality (umlauts, prefixes stripped)
+ *   5. Normalised substring (both directions, length-guarded, longest wins)
  */
 export function resolveTransfermarktRef(teamName) {
   if (!teamName) return null;
+
+  // 1. Exact match in the generated ID map
   if (TRANSFERMARKT_IDS[teamName]) return TRANSFERMARKT_IDS[teamName];
+
+  // 2. Alias table bridges common name drift (Sporting Lisbon → Sporting
+  //    Lissabon, Nice → OGC Nizza, Zaragoza → Real Saragossa, etc.).
+  //    Aliases are maintained manually in transfermarkt-aliases.mjs so
+  //    regenerating the ID map doesn't blow them away.
+  const aliased = TRANSFERMARKT_ALIASES[teamName];
+  if (aliased && TRANSFERMARKT_IDS[aliased]) return TRANSFERMARKT_IDS[aliased];
+
+  // 3. Case-insensitive exact
   const lower = teamName.toLowerCase();
   for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
     if (k.toLowerCase() === lower) return v;
   }
-  // Substring match after stripping common club prefixes
-  const cleaned = teamName.replace(/\b(FC|SC|SV|TSG|VfB|VfL|RB|1\.)\b\s*/g, "").trim().toLowerCase();
-  if (cleaned.length >= 4) {
+  for (const [k, v] of Object.entries(TRANSFERMARKT_ALIASES)) {
+    if (k.toLowerCase() === lower && TRANSFERMARKT_IDS[v]) return TRANSFERMARKT_IDS[v];
+  }
+
+  // 4. Normalised equality — strips umlauts + common club prefixes
+  const nIn = norm(teamName);
+  if (nIn.length >= 3) {
     for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
-      const kc = k.replace(/\b(FC|SC|SV|TSG|VfB|VfL|RB|1\.)\b\s*/g, "").trim().toLowerCase();
-      if (kc === cleaned || (kc.length >= 4 && (kc.includes(cleaned) || cleaned.includes(kc)))) {
-        return v;
-      }
+      if (norm(k) === nIn) return v;
+    }
+    for (const [k, v] of Object.entries(TRANSFERMARKT_ALIASES)) {
+      if (norm(k) === nIn && TRANSFERMARKT_IDS[v]) return TRANSFERMARKT_IDS[v];
     }
   }
+
+  // 5. Normalised substring — both directions, length-guarded to ≥4
+  //    chars so "fc" / "sc" don't match every team. Longest-overlap wins
+  //    so "Nice" doesn't accidentally pick up "Venice".
+  if (nIn.length >= 4) {
+    let best = null;
+    let bestLen = 0;
+    for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
+      const nK = norm(k);
+      if (nK.length < 4) continue;
+      if (nK === nIn || nK.includes(nIn) || nIn.includes(nK)) {
+        const overlap = Math.min(nK.length, nIn.length);
+        if (overlap > bestLen) { best = v; bestLen = overlap; }
+      }
+    }
+    if (best) return best;
+  }
+
   return null;
 }
