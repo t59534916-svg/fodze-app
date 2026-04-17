@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import Kit from "@/components/shared/Kit";
+import EngineLoader from "@/components/shared/EngineLoader";
 import { TEAM_COLORS } from "@/lib/team-colors";
 import {
   LEAGUES, getHomeFactor, buildMatrix, deriveAllMarkets, queryMatrix,
@@ -1598,49 +1599,13 @@ export default function FuckBettingPage() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: "center", padding: 32, color: "#a89070" }}>
-          <div style={{ fontSize: 13, marginBottom: 8, color: "#d4b86a" }}>
-            {progress.phase === "compute"
-              ? "Berechne Dixon-Coles Matrizen…"
-              : "Lade Daten aller Ligen"}
-          </div>
-          <div style={{ fontSize: 11, marginBottom: 12 }}>
-            {progress.phase === "compute"
-              ? "Ensemble läuft — letzter Schritt"
-              : `${progress.leaguesDone} von ${progress.totalLeagues} Ligen bereit`}
-          </div>
-          {/* Progress bar */}
-          <div style={{
-            maxWidth: 360, height: 6, margin: "0 auto",
-            background: "#2a1f15", borderRadius: 3, overflow: "hidden",
-            border: "1px solid #c4a26520",
-          }}>
-            <div style={{
-              height: "100%",
-              width: progress.phase === "compute"
-                ? "100%"
-                : progress.totalLeagues > 0
-                ? `${(progress.leaguesDone / progress.totalLeagues) * 100}%`
-                : "0%",
-              background: "linear-gradient(90deg, #8a6a3a, #d4b86a)",
-              transition: "width 0.3s ease",
-            }} />
-          </div>
-          {/* Still-pending list — shows exactly which league is slow so
-              "stuck" is never a mystery. Empty once compute starts. */}
-          {progress.phase === "data" && progress.inFlight.length > 0 && (
-            <div style={{ fontSize: 10, marginTop: 10, color: "#a8907090" }}>
-              Läuft noch: {progress.inFlight.join(" · ")}
-            </div>
-          )}
-          {/* Failed leagues — timed out or errored, visible so admin sees
-              which data source needs attention. Skipped, not blocking. */}
-          {progress.failed.length > 0 && (
-            <div style={{ fontSize: 10, marginTop: 6, color: "#e0707090" }}>
-              Übersprungen (Timeout/Fehler): {progress.failed.join(" · ")}
-            </div>
-          )}
-        </div>
+        <EngineLoader
+          phase={progress.phase}
+          leaguesDone={progress.leaguesDone}
+          totalLeagues={progress.totalLeagues}
+          inFlight={progress.inFlight}
+          failed={progress.failed}
+        />
       ) : reports.length === 0 ? (
         <div style={{ textAlign: "center", padding: 40, color: "#a89070" }}>
           <div style={{ fontSize: 14 }}>Keine Spieldaten verfügbar</div>
