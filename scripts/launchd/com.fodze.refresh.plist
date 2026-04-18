@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FODZE Daily Refresh — macOS launchd agent
+  ═════════════════════════════════════════
+
+  Runs `npm run refresh` daily at 07:30 local time. If your Mac is asleep
+  at that moment, launchd will catch up as soon as it wakes (RunAtLoad=false
+  + StartCalendarInterval with a specific hour/minute = fire once when the
+  next matching minute occurs).
+
+  For the full (with-injuries) refresh, use the separate
+  com.fodze.refresh.full.plist (runs Wed+Fri evenings, when the heavy
+  ~25-min Transfermarkt scrape is worth it for weekend preview).
+
+  Install:
+    # 1. Update the paths below — the NODE_PATH and WorkingDirectory need
+    #    to match your actual install. See scripts/launchd/install.sh.
+    # 2. Copy to the LaunchAgents folder:
+    cp scripts/launchd/com.fodze.refresh.plist ~/Library/LaunchAgents/
+    # 3. Load:
+    launchctl load ~/Library/LaunchAgents/com.fodze.refresh.plist
+    # 4. Verify it's registered:
+    launchctl list | grep com.fodze
+
+  Logs: ~/Library/Logs/fodze-refresh.log  (and .err)
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.fodze.refresh.plist
+    rm ~/Library/LaunchAgents/com.fodze.refresh.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fodze.refresh</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <!-- `source` the full env into the shell, then cd into the repo and
+         run refresh. npm, node, and git must be in PATH — see install.sh
+         for how we build a minimal PATH that covers Homebrew + nvm. -->
+    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; npm run refresh</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_PATH__</string>
+
+  <!-- Fire daily at 07:30 local. Good pre-coffee spot: odds have refreshed
+       from overnight The-Odds-API crons elsewhere, and the matchday data
+       is ready before the first morning glance at the app. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>7</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <!-- If the Mac was asleep at 7:30, run as soon as it wakes next. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fodze-refresh.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fodze-refresh.err</string>
+
+  <!-- Prevent the process from being SIGKILLed if we've been running for
+       a while (full refresh can take 25 min with injuries) -->
+  <key>ExitTimeOut</key>
+  <integer>2400</integer>
+</dict>
+</plist>

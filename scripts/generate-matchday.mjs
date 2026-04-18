@@ -468,6 +468,28 @@ async function main() {
     const noMap = Array.from(injuriesByTeam.values()).filter((r) => r.status === "no-id-mapping").length;
     process.stdout.write("\r" + " ".repeat(80) + "\r");
     console.log(`      → ${okCount} OK, ${noMap} ohne TM-ID-Mapping, ${teamList.length - okCount - noMap} andere Fehler`);
+
+    // Auto-alias-learner: append any no-id-mapping teams to a log file
+    // so a human can later review + add aliases in one go. We intentionally
+    // don't auto-write to transfermarkt-aliases.mjs — finding the right TM
+    // canonical name for a given FODZE name still needs manual judgement
+    // (e.g. is "Sporting" → Sporting Lissabon or Sporting Gijón?).
+    if (noMap > 0) {
+      const todoPath = resolve(__dirname, "..", "missing-tm-aliases.log");
+      const lines = [];
+      for (const [team, r] of injuriesByTeam.entries()) {
+        if (r.status === "no-id-mapping") {
+          lines.push(`${new Date().toISOString()}\t${league}\t${team}`);
+        }
+      }
+      try {
+        const existing = existsSync(todoPath) ? readFileSync(todoPath, "utf-8") : "";
+        writeFileSync(todoPath, existing + lines.join("\n") + "\n");
+        console.log(`      → ${lines.length} ungemappte Teams geloggt nach missing-tm-aliases.log`);
+      } catch {
+        // Logging is best-effort — don't crash the pipeline over it.
+      }
+    }
   }
 
   const matchday = buildMatchdayJSON(fixtures, xgHistory, {

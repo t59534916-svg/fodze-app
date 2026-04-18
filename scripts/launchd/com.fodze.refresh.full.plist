@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FODZE Full Weekly Refresh — macOS launchd agent (with TM injuries)
+  ═══════════════════════════════════════════════════════════════════
+  Runs `npm run refresh:full` on Tuesday 19:00 + Friday 19:00 local.
+  Takes ~25 min. Scrapes Transfermarkt for injuries across 362 teams.
+  Output is ready for the weekend's matches the next morning.
+
+  Twice-weekly instead of daily because:
+    - Transfermarkt scrape is rate-limited; running daily burns goodwill
+    - Groq free tier is 500K tokens/day — full run uses ~350K, so one
+      run/day is safe but two might overflow
+    - Injuries don't change hour-to-hour; twice a week is plenty
+
+  Install: see install.sh in the same folder.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fodze.refresh.full</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; npm run refresh:full</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO_PATH__</string>
+
+  <!-- Tuesday (weekday=2) + Friday (weekday=5) at 19:00 -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Weekday</key>
+      <integer>2</integer>
+      <key>Hour</key>
+      <integer>19</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Weekday</key>
+      <integer>5</integer>
+      <key>Hour</key>
+      <integer>19</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fodze-refresh-full.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fodze-refresh-full.err</string>
+
+  <key>ExitTimeOut</key>
+  <integer>2400</integer>
+</dict>
+</plist>

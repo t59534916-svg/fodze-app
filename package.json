@@ -18,7 +18,9 @@
     "refresh:full": "node scripts/refresh-all.mjs --injuries",
     "refresh:quick": "node scripts/refresh-all.mjs --skip-matchday",
     "refresh:odds": "node scripts/fetch-odds.mjs",
-    "audit": "node scripts/audit-data-quality.mjs"
+    "audit": "node scripts/audit-data-quality.mjs",
+    "health": "node scripts/health-check.mjs",
+    "suggest-aliases": "node scripts/suggest-tm-aliases.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
