@@ -49,6 +49,18 @@ export const color = {
   borderFocus: "#d4b86a60",
 } as const;
 
+// Alpha tints of goldMid (#c4a265) — previously scattered as inline
+// `#c4a26570`/`#c4a26510` literals across MatchDetail/OddsInput/etc.
+// The `${color.goldMid}70` template pattern still works, but this table
+// gives direct-reference ergonomics for the common steps.
+export const goldAlpha = {
+  a08: "#c4a26508", a10: "#c4a26510", a12: "#c4a26512",
+  a15: "#c4a26515", a20: "#c4a26520", a30: "#c4a26530",
+  a35: "#c4a26535", a40: "#c4a26540", a50: "#c4a26550",
+  a55: "#c4a26555", a60: "#c4a26560", a65: "#c4a26565",
+  a70: "#c4a26570", a80: "#c4a26580", a90: "#c4a26590",
+} as const;
+
 // ─── Typography ──────────────────────────────────────────────────────
 
 export const fontSize = {

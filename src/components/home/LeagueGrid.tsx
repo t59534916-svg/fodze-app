@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { LEAGUES } from "@/lib/dixon-coles";
 import { useApp } from "@/contexts/AppContext";
+import { color } from "@/styles/tokens";
 
 const FLAG: Record<string, string> = {
   bundesliga: "🇩🇪", bundesliga2: "🇩🇪", liga3: "🇩🇪", epl: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
@@ -51,7 +52,7 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 10, color: "#c4a26570", letterSpacing: 0.5, marginBottom: 10, fontWeight: 600 }}>LIGA WÄHLEN</div>
+      <div style={{ fontSize: 10, color: `${color.goldMid}70`, letterSpacing: 0.5, marginBottom: 10, fontWeight: 600 }}>LIGA WÄHLEN</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {Object.entries(LEAGUES).map(([key, val]) => {
           const info = leagueStatus[key];
@@ -68,39 +69,39 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
                 padding: "12px", borderRadius: 10, cursor: "pointer",
                 minHeight: 72, width: "100%", textAlign: "left" as const,
                 border: isSelected ? "1.5px solid #d4b86a" : showHeute ? "1.5px solid #d4b86a40" : "1px solid #c4a26515",
-                background: isSelected ? "#c4a26512" : "#0d070530",
+                background: isSelected ? `${color.goldMid}12` : "#0d070530",
                 opacity: hasData ? 1 : 0.45,
                 position: "relative",
               }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 20 }}>{FLAG[key] || "⚽"}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{val.name}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: color.text }}>{val.name}</div>
                   {hasData ? (
-                    <div style={{ fontSize: 10, color: "#c4a26570", marginTop: 2 }}>
+                    <div style={{ fontSize: 10, color: `${color.goldMid}70`, marginTop: 2 }}>
                       {info.label} · {formatDate(info.date)}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 10, color: "#c4a26550", marginTop: 2 }}>Keine Daten</div>
+                    <div style={{ fontSize: 10, color: `${color.goldMid}50`, marginTop: 2 }}>Keine Daten</div>
                   )}
                 </div>
                 {showHeute && (
                   <span style={{
                     fontSize: 8, fontWeight: 700, color: "#1a0f0a",
-                    background: "#d4b86a", padding: "2px 6px", borderRadius: 10,
+                    background: color.gold, padding: "2px 6px", borderRadius: 10,
                     letterSpacing: 0.5, flexShrink: 0,
                   }}>HEUTE</span>
                 )}
                 {showMorgen && (
                   <span style={{
-                    fontSize: 8, fontWeight: 700, color: "#d4b86a",
-                    background: "#d4b86a20", padding: "2px 6px", borderRadius: 10,
+                    fontSize: 8, fontWeight: 700, color: color.gold,
+                    background: `${color.gold}20`, padding: "2px 6px", borderRadius: 10,
                     letterSpacing: 0.5, flexShrink: 0,
                     border: "1px solid #d4b86a40",
                   }}>MORGEN</span>
                 )}
                 {hasData && !showHeute && !showMorgen && (
-                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#6aad55", flexShrink: 0 }} aria-hidden="true" />
+                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: color.value, flexShrink: 0 }} aria-hidden="true" />
                 )}
               </div>
             </button>
@@ -122,14 +123,14 @@ export default function LeagueGrid({ onLoadLeague }: { onLoadLeague: (key: strin
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/anna-avatar-1.jpg" alt="" width={32} height={32} style={{ borderRadius: "50%", objectFit: "cover", border: "1.5px solid #d4b86a40" }} />
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#d4b86a" }}>Anna&apos;s Analysen</div>
-              <div style={{ fontSize: 10, color: "#a89070", marginTop: 2 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: color.gold }}>Anna&apos;s Analysen</div>
+              <div style={{ fontSize: 10, color: color.textMuted, marginTop: 2 }}>
                 {leaguesWithData > 0
                   ? `Alle Spiele · Voller Report · Ohne Quoten`
                   : "Keine Daten"}
               </div>
             </div>
-            {leaguesWithData > 0 && <div style={{ fontSize: 10, color: "#d4b86a", fontWeight: 600 }}>{leaguesWithData} Ligen</div>}
+            {leaguesWithData > 0 && <div style={{ fontSize: 10, color: color.gold, fontWeight: 600 }}>{leaguesWithData} Ligen</div>}
           </div>
         </button>
       </div>

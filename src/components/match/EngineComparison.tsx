@@ -1,5 +1,6 @@
 "use client";
 import { ENGINES, type PredictionEngine } from "@/lib/engine-registry";
+import { color } from "@/styles/tokens";
 
 // ─── Types ───────────────────────────────────────────────────────
 // Minimal shape we need from each engine's mk. Keeps this component
@@ -49,7 +50,7 @@ const S = {
   section: {
     marginTop: 12,
     padding: 10,
-    background: "#c4a26508",
+    background: `${color.goldMid}08`,
     border: "1px solid #c4a26520",
     borderRadius: 8,
   } as React.CSSProperties,
@@ -62,7 +63,7 @@ const S = {
   title: {
     fontSize: 10,
     fontWeight: 700,
-    color: "#d4b86a",
+    color: color.gold,
     letterSpacing: 0.6,
   } as React.CSSProperties,
   divergeBadge: (divergent: boolean) => ({
@@ -70,9 +71,9 @@ const S = {
     fontWeight: 600,
     padding: "2px 6px",
     borderRadius: 10,
-    border: `1px solid ${divergent ? "#c47070" : "#6aad55"}40`,
+    border: `1px solid ${divergent ? color.warn : color.value}40`,
     background: divergent ? "#c4707020" : "#6aad5520",
-    color: divergent ? "#c47070" : "#6aad55",
+    color: divergent ? color.warn : color.value,
     letterSpacing: 0.3,
   }),
   grid: {
@@ -88,14 +89,14 @@ const S = {
   // a thin gold left-border via box-shadow on the cells (works without
   // breaking the grid layout). See activeRowCell.
   activeRowCell: (active: boolean): React.CSSProperties => ({
-    background: active ? "#d4b86a12" : "transparent",
+    background: active ? `${color.gold}12` : "transparent",
     borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
     borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
     padding: "4px 6px",
     margin: "-3px 0",   // collapse the grid row-gap so the band looks continuous
   }),
   activeRowFirstCell: (active: boolean): React.CSSProperties => ({
-    background: active ? "#d4b86a12" : "transparent",
+    background: active ? `${color.gold}12` : "transparent",
     borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
     borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
     borderLeft: active ? "2px solid #d4b86a" : "2px solid transparent",
@@ -103,7 +104,7 @@ const S = {
     margin: "-3px 0",
   }),
   activeRowLastCell: (active: boolean): React.CSSProperties => ({
-    background: active ? "#d4b86a12" : "transparent",
+    background: active ? `${color.gold}12` : "transparent",
     borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
     borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
     borderRight: active ? "1px solid #d4b86a40" : "1px solid transparent",
@@ -112,7 +113,7 @@ const S = {
   }),
   colHead: {
     fontSize: 9,
-    color: "#c4a26580",
+    color: `${color.goldMid}80`,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
     textAlign: "right" as const,
@@ -120,7 +121,7 @@ const S = {
   } as React.CSSProperties,
   colHeadFirst: {
     fontSize: 9,
-    color: "#c4a26580",
+    color: `${color.goldMid}80`,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
     fontWeight: 600,
@@ -128,24 +129,24 @@ const S = {
   engineCell: (active: boolean) => ({
     fontSize: 11,
     fontWeight: active ? 700 : 500,
-    color: active ? "#d4b86a" : "#ede4d4",
+    color: active ? color.gold : color.text,
   }),
   probCell: (active: boolean, diverges: boolean) => ({
     fontSize: 11,
     fontWeight: active ? 700 : 500,
     fontFamily: "SF Mono, Consolas, monospace",
-    color: active ? "#d4b86a" : diverges ? "#c47070" : "#c4a265",
+    color: active ? color.gold : diverges ? color.warn : "#c4a265",
     textAlign: "right" as const,
     fontVariantNumeric: "tabular-nums" as const,
   }),
   empty: {
     fontSize: 10,
-    color: "#c4a26560",
+    color: `${color.goldMid}60`,
     fontStyle: "italic" as const,
   },
   hint: {
     fontSize: 9,
-    color: "#c4a26560",
+    color: `${color.goldMid}60`,
     marginTop: 6,
     lineHeight: 1.4,
   } as React.CSSProperties,
