@@ -1,25 +1,11 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase";
+import { LEAGUES } from "@/lib/dixon-coles";
 
-// ─── Inline engine (lightweight, no TS imports) ─────────────────────
-
-const RHO = -0.05, MAX_GOALS = 15; // Full 15×15 matrix for accuracy
-const LEAGUES: Record<string, { name: string; hf: number; avg: number }> = {
-  bundesliga: { name: "Bundesliga", hf: 1.28, avg: 1.38 },
-  bundesliga2: { name: "2. Bundesliga", hf: 1.29, avg: 1.35 },
-  liga3: { name: "3. Liga", hf: 1.22, avg: 1.40 },
-  epl: { name: "Premier League", hf: 1.22, avg: 1.35 },
-  la_liga: { name: "La Liga", hf: 1.30, avg: 1.25 },
-  serie_a: { name: "Serie A", hf: 1.27, avg: 1.32 },
-};
-
-function poissonPMF(k: number, lam: number) {
-  if (lam <= 0) return k === 0 ? 1 : 0;
-  let logP = -lam + k * Math.log(lam);
-  for (let i = 2; i <= k; i++) logP -= Math.log(i);
-  return Math.exp(logP);
-}
+// Season-sim uses Monte Carlo sampling (not matrix math), so it doesn't
+// need poissonPMF / buildMatrix / RHO / MAX_GOALS. LEAGUES comes from the
+// canonical source (19 leagues, not a 6-league local copy).
 
 function simMatch(lamH: number, lamA: number): [number, number] {
   // Fast Poisson sampling via inverse CDF

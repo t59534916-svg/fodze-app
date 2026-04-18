@@ -1,48 +1,24 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { createClient, loadLiveOdds } from "@/lib/supabase";
-import { LEAGUES, TEAM_HOME_FACTORS, getHomeFactor } from "@/lib/dixon-coles";
+import { LEAGUES, TEAM_HOME_FACTORS, getHomeFactor, buildMatrix, vigAdjust } from "@/lib/dixon-coles";
 import AppShell from "@/components/layout/AppShell";
 
-// ─── Inline Dixon-Coles (minimal, no TS imports needed) ──────────────
-
-const RHO = -0.05, MAX_GOALS = 15;
-
-// ─── Vig Removal Helpers ─────────────────────────────────────────────
-
+// Vig-removal helpers — return fair odds (inverse of vigAdjust probs).
+// Kept local because SGP uses fair-odds output, not probabilities.
 function removeVig1X2(h: number, d: number, a: number) {
-  const total = 1/h + 1/d + 1/a;
-  return { h: 1/(1/h/total), d: 1/(1/d/total), a: 1/(1/a/total) };
+  const { probs } = vigAdjust([h, d, a]);
+  return { h: 1 / probs[0], d: 1 / probs[1], a: 1 / probs[2] };
 }
 function removeVigOU(over: number, under: number) {
-  const total = 1/over + 1/under;
-  return { over: 1/(1/over/total), under: 1/(1/under/total) };
+  const { probs } = vigAdjust([over, under]);
+  return { over: 1 / probs[0], under: 1 / probs[1] };
 }
 
-function poissonPMF(k: number, lam: number) {
-  if (lam <= 0) return k === 0 ? 1 : 0;
-  let logP = -lam + k * Math.log(lam);
-  for (let i = 2; i <= k; i++) logP -= Math.log(i);
-  return Math.exp(logP);
-}
-
-function buildMatrix(lamH: number, lamA: number) {
-  const mx = Array.from({ length: MAX_GOALS }, () => Array(MAX_GOALS).fill(0));
-  for (let i = 0; i < MAX_GOALS; i++)
-    for (let j = 0; j < MAX_GOALS; j++)
-      mx[i][j] = poissonPMF(i, lamH) * poissonPMF(j, lamA);
-  if (lamH > 0 && lamA > 0) {
-    mx[0][0] *= Math.max(0, 1 - lamH * lamA * RHO);
-    mx[1][0] *= Math.max(0, 1 + lamA * RHO);
-    mx[0][1] *= Math.max(0, 1 + lamH * RHO);
-    mx[1][1] *= Math.max(0, 1 - RHO);
-  }
-  let sum = 0;
-  for (const row of mx) for (const v of row) sum += v;
-  if (sum > 0) for (const row of mx) for (let j = 0; j < MAX_GOALS; j++) row[j] /= sum;
-  return mx;
-}
-
+// SGP uses arbitrary functional conditions over (home_goals, away_goals);
+// dixon-coles queryMatrix only accepts declarative struct conditions, so
+// we keep this local matrix-walker. The MATRIX itself now comes from the
+// canonical buildMatrix — no more inline Poisson math drift.
 type Cond = (h: number, a: number) => boolean;
 
 function query(mx: number[][], conds: Cond[]) {

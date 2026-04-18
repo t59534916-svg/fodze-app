@@ -84,7 +84,7 @@ export function getHomeFactor(homeTeam: string, leagueHf: number): number {
 
 // ─── Poisson PMF (log-space for numerical stability) ────────────────
 
-function poissonPMF(k: number, lambda: number): number {
+export function poissonPMF(k: number, lambda: number): number {
   if (lambda <= 0) return k === 0 ? 1 : 0;
   let logP = -lambda + k * Math.log(lambda);
   for (let i = 2; i <= k; i++) logP -= Math.log(i);
@@ -652,23 +652,12 @@ export function bayesianShrinkage(obs:number, avg:number, n:number):{adjusted:nu
   return {adjusted: avg+s*(obs-avg), shrinkage: s};
 }
 
-export function formMultiplier(formString:string|undefined):{mult:number;label:string} {
-  // ══════════════════════════════════════════════════════════════════
-  // DISABLED: W/D/L-based form adjustment contradicts xG philosophy.
-  //
-  // Gemini DeepMind review (March 2026): Using results-based form
-  // (W/D/L) undoes the exact edge that xG finds. A team dominating
-  // xG 3.0:0.5 but drawing 3× gets punished by the market AND by
-  // this multiplier — destroying the value signal.
-  //
-  // The xG data already captures true team strength through Bayesian
-  // regression. W/D/L form on top is double-counting market noise.
-  //
-  // TODO: Replace with xG-trend form when per-match xG is available
-  // (ratio of last-3-match xG to season-avg xG).
-  // ══════════════════════════════════════════════════════════════════
-  return { mult: 1.0, label: "—" };
-}
+// W/D/L-based form multiplier was disabled per Gemini DeepMind review
+// (March 2026): double-counts market noise when xG already captures team
+// strength through Bayesian regression. Kept as a no-op constant for
+// result-shape backward-compat — the `formed` lambdas are now identical
+// to `regressed`. Removed function body + MatchDetail UI block.
+const FORM_NOOP = { mult: 1.0, label: "—" } as const;
 
 export interface TagCorrection {tag:string;lambdaH_mult:number;lambdaA_mult:number;reason:string}
 
@@ -798,8 +787,8 @@ export function calcMatchEnhanced(
   const lambdaA_raw = leagueAvg*(aXGpg/leagueAvg)*(hXGApg/leagueAvg);
   const lambdaH_reg = leagueAvg*(atkH_sh.adjusted/leagueAvg)*(defA_sh.adjusted/leagueAvg)*homeFactor;
   const lambdaA_reg = leagueAvg*(atkA_sh.adjusted/leagueAvg)*(defH_sh.adjusted/leagueAvg);
-  const fH=formMultiplier(formH), fA=formMultiplier(formA);
-  const lambdaH_form=lambdaH_reg*fH.mult, lambdaA_form=lambdaA_reg*fA.mult;
+  const fH = FORM_NOOP, fA = FORM_NOOP;
+  const lambdaH_form = lambdaH_reg, lambdaA_form = lambdaA_reg;
   const tagR=applyTagCorrections(tags||[]);
 
   // ── Phase 2: Player Absence Impact ────────────────────────────────
@@ -975,7 +964,6 @@ export function analyzeLineMovement(history:any[]):Record<string,any>|null {
   return Object.keys(moves).length>0?moves:null;
 }
 
-export function dixonColesMatrix(lH:number,lA:number,rho=RHO):number[][] { return buildMatrix(lH,lA,rho); }
 export function deriveMarkets(mx:number[][]):Markets { return deriveAllMarkets(mx); }
 
 export function calcLambdas(

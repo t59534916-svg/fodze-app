@@ -52,7 +52,7 @@ Pro Spieltag wird automatisch enriched:
 | Feld | Quelle | Engine-Impact |
 |------|--------|---------------|
 | `xg_h_history`, `xg_h8` | Understat / Shots-Modell / OpenLigaDB | λ-Berechnung (Hauptinput) |
-| `form` ("W D L W W") | team_xg_history letzte 5 | formMultiplier ±5% λ |
+| `form` ("W D L W W") | team_xg_history letzte 5 | UI anzeige (W/D/L multiplier disabled per Gemini review) |
 | `tags` (DERBY, MEISTERKAMPF, ABSTIEGSKAMPF, ROTATION) | Rivalitäten-Map + Standings + Fixtures | applyTagCorrections ±3-6% λ |
 | `injuries` ("Player (POS, Reason, bis DATE), …") | **Transfermarkt + Groq** | calcAbsenceImpact ±5-15% λ |
 | `yellow_risk` | Transfermarkt "Sperre droht" | UI + future engine input |
