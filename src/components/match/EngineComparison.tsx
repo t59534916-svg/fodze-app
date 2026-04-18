@@ -82,6 +82,34 @@ const S = {
     alignItems: "center",
     fontSize: 11,
   } as React.CSSProperties,
+  // Wraps the active row in a subtle gold-tinted band so the user can
+  // see at a glance which engine drives the value-bets below.
+  // display: "contents" doesn't allow border, so we re-implement with
+  // a thin gold left-border via box-shadow on the cells (works without
+  // breaking the grid layout). See activeRowCell.
+  activeRowCell: (active: boolean): React.CSSProperties => ({
+    background: active ? "#d4b86a12" : "transparent",
+    borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    padding: "4px 6px",
+    margin: "-3px 0",   // collapse the grid row-gap so the band looks continuous
+  }),
+  activeRowFirstCell: (active: boolean): React.CSSProperties => ({
+    background: active ? "#d4b86a12" : "transparent",
+    borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    borderLeft: active ? "2px solid #d4b86a" : "2px solid transparent",
+    padding: "4px 8px 4px 6px",
+    margin: "-3px 0",
+  }),
+  activeRowLastCell: (active: boolean): React.CSSProperties => ({
+    background: active ? "#d4b86a12" : "transparent",
+    borderTop: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    borderBottom: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    borderRight: active ? "1px solid #d4b86a40" : "1px solid transparent",
+    padding: "4px 8px 4px 6px",
+    margin: "-3px 0",
+  }),
   colHead: {
     fontSize: 9,
     color: "#c4a26580",
@@ -176,14 +204,14 @@ export default function EngineComparison({
           };
           return (
             <div key={e.id} style={{ display: "contents" }}>
-              <div style={S.engineCell(active)}>
+              <div style={{ ...S.activeRowFirstCell(active), ...S.engineCell(active) }}>
                 {active ? "▸ " : ""}
                 {e.name}
               </div>
-              <div style={S.probCell(active, isOutlier("H"))}>{pc(mk.H)}</div>
-              <div style={S.probCell(active, isOutlier("D"))}>{pc(mk.D)}</div>
-              <div style={S.probCell(active, isOutlier("A"))}>{pc(mk.A)}</div>
-              <div style={S.probCell(active, false)}>{pc(mk.O25)}</div>
+              <div style={{ ...S.activeRowCell(active), ...S.probCell(active, isOutlier("H")) }}>{pc(mk.H)}</div>
+              <div style={{ ...S.activeRowCell(active), ...S.probCell(active, isOutlier("D")) }}>{pc(mk.D)}</div>
+              <div style={{ ...S.activeRowCell(active), ...S.probCell(active, isOutlier("A")) }}>{pc(mk.A)}</div>
+              <div style={{ ...S.activeRowLastCell(active), ...S.probCell(active, false) }}>{pc(mk.O25)}</div>
             </div>
           );
         })}

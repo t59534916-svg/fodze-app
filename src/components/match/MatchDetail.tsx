@@ -12,6 +12,59 @@ import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/typ
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
+// Count comma-separated injury entries — the format the Transfermarkt
+// scrape produces is "Name (Pos, Reason), Name (Pos, Reason)". Split on
+// ", " between bracket-closes-then-comma so commas inside parens don't
+// double-count. Returns 0 for empty/falsy input.
+function countInjuries(injStr?: string): number {
+  if (!injStr || !injStr.trim()) return 0;
+  // Each entry ends with ")" — count those.
+  return (injStr.match(/\)/g) || []).length;
+}
+
+// Tag → human label (engine TAG_MAP keys are uppercase, this de-shouts
+// them for the UI without losing the canonical key shape).
+function tagLabel(tag: string): string {
+  const map: Record<string, string> = {
+    DERBY: "Derby",
+    ROTATION: "Rotation",
+    "ROTATION-ERWARTET": "Rotation",
+    SANDWICH: "Sandwich",
+    "NEUER-TRAINER": "Neuer Trainer",
+    "TRAINER-UNTER-DRUCK": "Trainer-Druck",
+    ABSTIEGSKAMPF: "Abstiegskampf",
+    MEISTERKAMPF: "Meisterkampf",
+    GEISTERSPIEL: "Geisterspiel",
+    POKAL: "Pokal",
+  };
+  return map[tag.toUpperCase()] || tag;
+}
+
+// Form letter (W/D/L) → small colored dot. Returns inline-style + label
+// so the dots have a tooltip on hover for screen readers.
+function formDotStyle(letter: string): React.CSSProperties {
+  const c =
+    letter === "W" ? "#6aad55" :
+    letter === "L" ? "#c47070" :
+    letter === "D" ? "#c4a26580" : "#c4a26530";
+  return {
+    width: 6, height: 6, borderRadius: "50%",
+    background: c, display: "inline-block",
+  };
+}
+
+function FormDots({ form }: { form?: string }) {
+  if (!form) return null;
+  const letters = form.split(/\s+/).filter(Boolean).slice(0, 5);
+  if (letters.length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }}
+      title={`Form letzte ${letters.length}: ${letters.join(" ")}`}>
+      {letters.map((l, i) => <span key={i} style={formDotStyle(l)} />)}
+    </span>
+  );
+}
+
 // Tabs reduced from 3 to 2 — Statistik merged into Überblick as a
 // collapsible "Mehr Details" section. The previous pattern had users
 // flipping between Überblick and Statistik looking for λ values, winning
@@ -42,8 +95,84 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
   const br = budget;
   const { engine } = useApp();
 
+  // Pre-compute strip content so we can decide whether to render the
+  // wrapper at all (avoid an empty bordered row).
+  const homeInjCount = countInjuries(match.home?.injuries);
+  const awayInjCount = countInjuries(match.away?.injuries);
+  const stripHasContent =
+    (match.tags?.length || 0) > 0 || homeInjCount > 0 || awayInjCount > 0 ||
+    !!match.home?.form || !!match.away?.form;
+
   return (
     <div style={{ padding: "12px 0" }}>
+      {/* Context strip — surfaces enrichment-pipeline data (tags + injury
+          counts + form) that would otherwise be buried in the collapsed
+          MEHR DETAILS block. The pipeline auto-fills tags (DERBY,
+          MEISTERKAMPF, ABSTIEGSKAMPF, ROTATION) and Transfermarkt fills
+          injuries — both directly affect engine λ (TAG_MAP +
+          calcAbsenceImpact). Showing them here gives the user the WHY
+          behind any subsequent value-bet recommendation. */}
+      {stripHasContent && (
+        <div style={{
+          display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
+          marginBottom: 12, padding: "6px 10px",
+          background: "#c4a26508", border: "1px solid #c4a26515", borderRadius: 6,
+          fontSize: 11,
+        }}>
+          {/* Form per side — color-coded W/D/L dots */}
+          {match.home?.form && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#c4a26580" }}>
+              <span style={{ fontSize: 9, color: "#c4a26560" }}>H</span>
+              <FormDots form={match.home.form} />
+            </span>
+          )}
+          {match.away?.form && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: "#c4a26580" }}>
+              <span style={{ fontSize: 9, color: "#c4a26560" }}>A</span>
+              <FormDots form={match.away.form} />
+            </span>
+          )}
+
+          {/* Spacer between form/injuries and tags */}
+          {(homeInjCount > 0 || awayInjCount > 0) && (match.home?.form || match.away?.form) && (
+            <span style={{ color: "#c4a26530" }}>·</span>
+          )}
+
+          {/* Injury counters — only render when > 0 to keep strip clean */}
+          {homeInjCount > 0 && (
+            <span title={match.home!.injuries} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              color: "#c47070cc", fontSize: 11,
+            }}>
+              <span aria-hidden="true">🩹</span>
+              <span style={{ fontWeight: 600 }}>H: {homeInjCount}</span>
+            </span>
+          )}
+          {awayInjCount > 0 && (
+            <span title={match.away!.injuries} style={{
+              display: "inline-flex", alignItems: "center", gap: 4,
+              color: "#c47070cc", fontSize: 11,
+            }}>
+              <span aria-hidden="true">🩹</span>
+              <span style={{ fontWeight: 600 }}>A: {awayInjCount}</span>
+            </span>
+          )}
+
+          {/* Tags — only show distinct ones, badge-style */}
+          {(match.tags || []).slice(0, 4).map((tag) => (
+            <span key={tag} style={{
+              fontSize: 10, fontWeight: 600,
+              padding: "2px 8px", borderRadius: 10,
+              background: "#5a8c4a18", color: "#6aad55",
+              border: "1px solid #6aad5530",
+              letterSpacing: 0.3,
+            }}>
+              {tagLabel(tag)}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Probability Bar Large */}
       {calc && (
         <div style={{ marginBottom: 16 }}>
@@ -126,7 +255,16 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
                     background: confColor + "18", color: confColor }}>{b.confidence}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {br > 0 && <span style={{ fontSize: 13, fontWeight: 600, color: "#d4b86a" }}>€{(b.kelly * br).toFixed(0)}</span>}
+                  {/* Stake + odds combined: "5€ @ 3.40" tells the user
+                      what they're actually committing to in one glance,
+                      vs the previous bare "5€" which required scrolling
+                      back to the All-Markets table to find the quote. */}
+                  {br > 0 && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#d4b86a", fontFamily: "'SF Mono', Consolas, monospace", fontVariantNumeric: "tabular-nums" }}>
+                      €{(b.kelly * br).toFixed(0)}
+                      {b.quote ? <span style={{ color: "#c4a26580", fontWeight: 500, marginLeft: 4 }}>@ {b.quote.toFixed(2)}</span> : null}
+                    </span>
+                  )}
                   {br > 0 && (
                     <button onClick={e => { e.stopPropagation(); onPlaceBet(match, b); }} disabled={placingBet === b.label}
                       style={{
