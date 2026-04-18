@@ -8,24 +8,41 @@
 
 ### Colors
 
+Source of truth: `src/styles/tokens.ts`. Update there, copy here. WCAG ratios annotated below.
+
 | Token | Hex | Usage |
 |-------|-----|-------|
 | `leather` | `#1a0f0a` | Page background (darkest) |
 | `leather2` | `#231510` | Elevated card bg, nav bg |
-| `leather3` | `#2a1810` | Gradient highlight |
+| `leather3` | `#2a1810` | Gradient highlight, popovers |
 | `surface` | `#c4a2650c` | Card background |
 | `surfaceHover` | `#c4a26515` | Card hover |
 | `gold` | `#d4b86a` | Primary accent, active states |
 | `goldShine` | `#f5e6b8` | Brightest highlight |
+| `goldLight` | `#e8d5a0` | Hero / illuminated |
+| `goldMid` | `#c4a265` | Secondary gold tone |
 | `goldDark` | `#a68940` | Gradient endpoints |
-| `goldMuted` | `#c4a26560` | Muted accents |
-| `text` | `#ede4d4` | Primary text |
-| `textMuted` | `#c4a26590` | Secondary text (WCAG AA) |
-| `textFaint` | `#c4a26560` | Decorative text |
-| `value` | `#6aad55` | Positive/green |
-| `warn` | `#c47070` | Negative/red |
-| `info` | `#5a9ec4` | Info/blue |
+| `goldDeep` | `#8b7340` | Darkest gold |
+| `goldMuted` | `#a89050` | Muted accents (4.0:1 ✓ on UI) |
+| `goldGhost` | `#c4a26520` | Decorative only, not for text |
+| `text` | `#ede4d4` | Primary text (11.2:1 ✓) |
+| `textMuted` | `#a89070` | Secondary text (4.6:1 ✓) |
+| `textFaint` | `#8a7560` | Decorative text (3.2:1, large only) |
+| `value` | `#6aad55` | Positive / value-bet green |
+| `valueDark` | `#4a8c3a` | Probability-bar gradient dark-stop |
+| `valueMid` | `#5a9e45` | Hover / stronger tint |
+| `valueBg` | `#6aad5510` | Card-size value background tint |
+| `valueGhost` | `#6aad5508` | Faintest value fill |
+| `valueBorder` | `#6aad5530` | 1px borders on value cards |
+| `warn` | `#e07070` | Negative / loss (4.6:1 ✓) |
+| `warnBg` | `#8c4a4a18` | Warn background tint |
+| `info` | `#5a9ec4` | Info / blue (consensus inactive) |
+| `infoBg` | `#4a6e8c15` | Info background tint |
 | `border` | `#c4a26520` | Default borders |
+| `borderHover` | `#c4a26540` | Hover state |
+| `borderFocus` | `#d4b86a60` | Keyboard focus ring |
+
+**Consolidation note (2026-04):** All value-* tokens derive from the single `value` base hue (`#6aad55`) with explicit alpha tints. Earlier `valueBg` used a different base color (`#5a8c4a15`) which created visible drift on the same card. Use these tokens — don't introduce new green hex values inline.
 
 ### Typography
 

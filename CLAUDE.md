@@ -148,11 +148,29 @@ Next.js 14 App Router (alle pages "use client")
 
 ### Goldilocks Option A (dual-source edges)
 
-`src/app/goldilocks/page.tsx` berechnet jetzt ZWEI Edge-Quellen pro Match:
+`src/app/goldilocks/page.tsx` berechnet ZWEI Edge-Quellen pro Match:
 - **Markt-Edge**: Pinnacle sharp vig-removed (original Verhalten)
 - **Engine-Edge**: FODZE ensemble (`computeEngineProbs` in goldilocks-engine.ts)
 
 Tags: `market` · `engine` · `consensus` (beide in Zone). Konsens-Filter zeigt nur Bets wo beide agree — robuster Edge-Indikator.
+
+**Per-Match Konsens auf MatchDetail** (seit `0e30c67` / `d7c395e`):
+Dieselbe Konsens-Logik läuft auf jedem Value-Bet im `MatchDetail.tsx`. Lokale Helpers:
+- `buildSharpProbs(odds)` — Pinnacle vig-removed via `vigAdjustBest([sharp_h, sharp_d, sharp_a])` → `{H,D,A}` oder `null`
+- `isConsensus(bet, sharpProbs)` — mappt BetCalc-Label auf sharp-prob, prüft ob `marketEdge ∈ [0.025, 0.075]` zusätzlich zu `bet.isValue`
+- `<ConsensusBadge>` — Click-toggle Popover mit Erklärung (statt `title=` damit Mobile auch was sieht). Goldener Hintergrund + `aria-expanded` + keyboard-fokussierbar.
+
+Limit: `OddsSharpData` enthält aktuell nur H/D/A. Sharp-O25/U25 in `live_odds` vorhanden aber nicht im Type — Erweiterung wäre 1-zeilig in `MatchdayContext.tsx:208` + Type-Update.
+
+### MatchDetail enrichment-surfacing (TabOverview Header-Strip)
+
+Der `<details>`-Block "MEHR DETAILS" in MatchDetail enthielt bisher die Pipeline-enriched Felder (form, injuries, tags), die default kollabiert waren. Seit `be3eca1` werden die wichtigsten Signale in einem **Context-Strip** ÜBER der Probability-Bar gerendert:
+
+- **Form-Dots** pro Team — `<FormDots form="W W D L W"/>` parst die letzten-5-Sequenz, rendert 5 farbcodierte Punkte (Grün/Grau/Rot) mit `title=` für Hover und `tabIndex` für Keyboard
+- **Injury-Counter** — `countInjuries(str)` zählt `)` im Comma-separated TM-Format → "🩹 H:2  🩹 A:3" mit Tooltip = vollständige Liste
+- **Tag-Pills** — nur die 4 ersten Tags, durch `tagLabel()` von UPPER-Case zu Pascal de-shouted ("Meisterkampf"). Engine TAG_MAP-Keys werden vorher übersetzt.
+
+Strip rendert nur wenn `stripHasContent` (mindestens ein Signal vorhanden) — keine leere Box bei Skelett-Matchdays.
 
 ### Neue Seite hinzufügen
 1. `src/app/neue-seite/page.tsx` mit `"use client"`
@@ -280,6 +298,16 @@ Mapping-Systeme:
 - Cards: `card()` Factory aus `components.ts`
 - Buttons: `button("gold" | "outline" | "ghost")`
 - Badges: `badge("value" | "warn" | "gold" | "neutral" | "info")`
+
+**Value-Token-Familie (seit `d7c395e`):** Eine Base-Hue mit expliziten Alpha-Tints. Earlier `valueBg` nutzte einen ANDEREN Base-Hue (`#5a8c4a15` vs `#6aad55`) → driftete sichtbar. Jetzt:
+- `color.value` (`#6aad55`) — kanonisches Grün
+- `color.valueDark` (`#4a8c3a`) — Probability-Bar Gradient-Stop
+- `color.valueMid` (`#5a9e45`) — Hover / stronger tint
+- `color.valueBg` (`#6aad5510`) — Card-bg
+- `color.valueGhost` (`#6aad5508`) — faintest fill
+- `color.valueBorder` (`#6aad5530`) — 1px Borders auf value cards
+
+Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufügen.
 
 ### State
 - **AppContext**: User, Liga, Profil, Bankroll, Engine-Auswahl — global

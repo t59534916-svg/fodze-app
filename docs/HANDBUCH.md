@@ -44,10 +44,13 @@ Die zentrale Analyse-Seite. Pro Spiel siehst du:
 | **Anstoßzeit** | Kickoff in deiner Zeitzone |
 | **Grade-Badge** | A/B/C/D/F je nach Edge |
 
-**Tipp**: Tippe ein Spiel → expandiert zu MatchDetail mit 3 Tabs:
-- **Überblick** — Top-Scores, Engine-Vergleich, Value-Bets
+**Tipp**: Tippe ein Spiel → expandiert zu MatchDetail mit 2 Tabs:
+- **Überblick** — Context-Strip (Form-Dots ●●●○●, Verletzte 🩹H:2 / 🩹A:3, Tags), Probability-Bar, Engine-Vergleich (aktive Engine gold-getöntem Band hervorgehoben), Top-Scores, Value-Bets mit Konsens-Indikator (siehe unten)
 - **Quoten** — deine Quoten eintragen → Edge + Kelly-Berechnung
-- **Statistik** — Exakte Ergebnisse, Halbzeit-Endstand, Winning Margin, BHZ
+- _Mehr Details_ (collapsible) — λ-Werte, Anpassungen, exakte Ergebnisse, Halbzeit-Endstand, Winning Margin, BHZ
+
+### Konsens-Badge auf Value-Bets
+Auf jedem Value-Bet kann ein **🤝 Konsens** Badge erscheinen. Bedeutung: Sowohl die FODZE-Engine ALS AUCH die Pinnacle-Sharp-Linie (vig-bereinigt) sehen den Edge in der 2.5–7.5% Goldilocks-Zone. Zwei unabhängige Quant-Systeme stimmen überein → **robustestes Signal das die App produziert**. Der Hintergrund wechselt von grün auf gold-getönt. Tippe auf das Badge um die Erklärung zu sehen (auch auf Mobile).
 
 ### Goldilocks (`/goldilocks`) — ⭐ Deine Haupt-Wett-Seite
 **Automatisch**: Listet alle Wetten mit **Edge zwischen 2.5% und 7.5%** aus allen aktiven Ligen.

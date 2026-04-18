@@ -35,14 +35,15 @@ Logs in `~/Library/Logs/fodze-refresh.log`. Stop mit `bash scripts/launchd/insta
 
 | Feature | Beschreibung |
 |---------|-------------|
-| **3 Engines** | Standard Ensemble + @annafrick13 v1 (Poisson-ML) + v2 (LightGBM Tweedie) — alle 3 parallel berechnet |
-| **Goldilocks Bets** | Edge 2.5–7.5% mit dualer Quelle: Markt (Pinnacle vig-removed) + Engine — Konsens = stärkstes Signal |
-| **Live-Injuries** | Per Match Verletzungen + Sperren + Yellow-Card-Risiko via Transfermarkt + Groq HTML-Parser |
+| **3 Engines** | Standard Ensemble + @annafrick13 v1 (Poisson-ML) + v2 (LightGBM Tweedie) — alle 3 parallel berechnet, aktive Engine im UI gold-getöntem Band hervorgehoben |
+| **Goldilocks Bets** | Edge 2.5–7.5% mit dualer Quelle: Markt (Pinnacle vig-removed) + Engine — Konsens = stärkstes Signal. Auf `/goldilocks` als Filter, auf MatchDetail als 🤝-Badge pro Value-Bet |
+| **Live-Injuries** | Per Match Verletzungen + Sperren + Yellow-Card-Risiko via Transfermarkt + Groq HTML-Parser. Im UI als 🩹 H:2 / 🩹 A:3 Counter mit Tooltip = volle Liste |
+| **Match-Context-Strip** | Form-Dots (●●●○●), Verletzten-Counter, Tag-Badges (Derby/Meisterkampf/Abstiegskampf) direkt über der Probability-Bar — Pipeline-Daten nicht mehr im collapsed Details-Block versteckt |
 | **CLV-Tracking** | Closing-Quoten-Snapshot vor Kickoff → echter Edge-Indikator über Variance |
 | **Kelly-Criterion** | K/M/A Risiko-Profile mit caps (2.5% / 4% / 6%) |
 | **Ask Anna** | KI-Beraterin (Groq Llama 3.3 70B kostenlos / Claude Sonnet) |
 | **19 Ligen** | BL, 2.BL, Liga 3, EPL, La Liga, Serie A, Ligue 1, Eredivisie, Championship, Primeira, Jupiler, Süper Lig, La Liga 2, Serie B, Ligue 2, Scottish Prem, Greek SL, League One, League Two |
-| **PWA** | Installierbar, Service Worker, Offline-Cache |
+| **PWA + A11y** | Installierbar, Service Worker, Offline-Cache, WCAG 2.1 AA (kontrast-geprüfte Tokens, `aria-current` auf aktiver Engine, Click-Tooltips für Mobile) |
 
 ## Daten-Pipeline
 
