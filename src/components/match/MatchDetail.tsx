@@ -7,6 +7,7 @@ import BettingSummary from "./BettingSummary";
 import EngineComparison from "./EngineComparison";
 import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
+import { color } from "@/styles/tokens";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
@@ -103,6 +104,47 @@ function isConsensus(bet: BetCalc, sharpProbs: { H: number; D: number; A: number
   const impliedProb = 1 / bet.quote;
   const marketEdge = pSharp - impliedProb;
   return marketEdge >= GOLDILOCKS_MIN && marketEdge <= GOLDILOCKS_MAX;
+}
+
+// ConsensusBadge — click-to-expand explainer. The previous implementation
+// relied on `title=` HTML tooltip, which is invisible on touchscreens
+// (no hover) and the badge's meaning was effectively hidden from mobile
+// users. Now the badge toggles a small inline explainer on tap, which
+// works on any device and is keyboard-focusable.
+function ConsensusBadge() {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, position: "relative" }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        aria-label="Konsens-Signal: Engine und Pinnacle-Sharp stimmen überein. Tippen für Erklärung."
+        aria-expanded={open}
+        style={{
+          fontSize: 9, padding: "1px 6px", borderRadius: 3, fontWeight: 700,
+          background: `${color.gold}22`, color: color.gold, border: `1px solid ${color.gold}55`,
+          letterSpacing: 0.3, cursor: "pointer", lineHeight: 1.4,
+        }}
+      >
+        <span aria-hidden="true">🤝 </span>Konsens
+      </button>
+      {open && (
+        <span
+          role="dialog"
+          style={{
+            position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 10,
+            background: color.leather3, border: `1px solid ${color.gold}40`,
+            padding: "8px 10px", borderRadius: 6, fontSize: 10, color: color.text,
+            lineHeight: 1.4, width: 240, boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+            fontWeight: 400, letterSpacing: 0,
+          }}
+        >
+          Engine UND Pinnacle-Sharp sehen den Edge in der 2.5–7.5% Goldilocks-Zone.
+          Zwei unabhängige Quant-Systeme stimmen überein — robustestes Signal das FODZE produziert.
+        </span>
+      )}
+    </span>
+  );
 }
 
 // Tabs reduced from 3 to 2 — Statistik merged into Überblick as a
@@ -208,8 +250,8 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
             <span key={tag} style={{
               fontSize: 10, fontWeight: 600,
               padding: "2px 8px", borderRadius: 10,
-              background: "#5a8c4a18", color: "#6aad55",
-              border: "1px solid #6aad5530",
+              background: color.valueBg, color: color.value,
+              border: `1px solid ${color.valueBorder}`,
               letterSpacing: 0.3,
             }}>
               {tagLabel(tag)}
@@ -222,12 +264,12 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
       {calc && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 11 }}>
-            <span style={{ color: "#6aad55", fontWeight: 600 }}>{match.home?.name?.split(" ").pop()} {pc(calc.mk.H)}</span>
+            <span style={{ color: color.value, fontWeight: 600 }}>{match.home?.name?.split(" ").pop()} {pc(calc.mk.H)}</span>
             <span style={{ color: "#c4a26560" }}>X {pc(calc.mk.D)}</span>
-            <span style={{ color: "#c47070", fontWeight: 600 }}>{match.away?.name?.split(" ").pop()} {pc(calc.mk.A)}</span>
+            <span style={{ color: color.warn, fontWeight: 600 }}>{match.away?.name?.split(" ").pop()} {pc(calc.mk.A)}</span>
           </div>
           <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", gap: 2 }}>
-            <div style={{ width: `${calc.mk.H * 100}%`, background: "linear-gradient(90deg, #4a8c3a, #6aad55)", borderRadius: 5 }} />
+            <div style={{ width: `${calc.mk.H * 100}%`, background: `linear-gradient(90deg, ${color.valueDark}, ${color.value})`, borderRadius: 5 }} />
             <div style={{ width: `${calc.mk.D * 100}%`, background: "#c4a26560", borderRadius: 5 }} />
             <div style={{ width: `${calc.mk.A * 100}%`, background: "linear-gradient(90deg, #c47070, #a04040)", borderRadius: 5 }} />
           </div>
@@ -284,9 +326,9 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
       {/* Value Bets (simplified) */}
       {calc?.bets?.filter((b: BetCalc) => b.isValue).length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 10, color: "#6aad55", letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>VALUE BETS</div>
+          <div style={{ fontSize: 10, color: color.value, letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>VALUE BETS</div>
           {calc.bets.filter((b: BetCalc) => b.isValue).map((b: BetCalc) => {
-            const confColor = b.confidence === "HIGH" ? "#6aad55" : b.confidence === "MEDIUM" ? "#d4b86a" : "#c4a265";
+            const confColor = b.confidence === "HIGH" ? color.value : b.confidence === "MEDIUM" ? color.gold : color.goldMid;
             // Consensus = both engine + Pinnacle-sharp see edge in the
             // 2.5–7.5% Goldilocks zone. The strongest possible signal —
             // two independent quant systems agree a price is wrong.
@@ -297,25 +339,22 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
                 padding: "10px 12px", marginBottom: 6, borderRadius: 8,
                 // Subtle gold tint + thicker gold border on consensus
                 // bets so they stand out from engine-only value picks.
-                background: consensus ? "#d4b86a10" : "#6aad5508",
-                border: consensus ? "1px solid #d4b86a40" : "1px solid #6aad5518",
+                background: consensus ? `${color.gold}10` : color.valueGhost,
+                border: `1px solid ${consensus ? `${color.gold}40` : color.valueBorder}`,
               }}>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{b.label}</span>
-                  <span style={{ fontSize: 11, color: "#6aad55", marginLeft: 8, fontWeight: 600 }}>{pe(b.edge)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: color.text }}>{b.label}</span>
+                  {/* Edge % — previously rendered in `color.value` on the value-tinted bg,
+                      which gave ~1.0:1 contrast (fails WCAG AA). Now rendered in neutral
+                      text color with only the leading +/− sign colored. */}
+                  <span style={{ fontSize: 11, color: color.text, marginLeft: 8, fontWeight: 600 }}>
+                    <span style={{ color: b.edge >= 0 ? color.value : color.warn }}>{b.edge >= 0 ? "+" : "−"}</span>
+                    {(Math.abs(b.edge) * 100).toFixed(1)}%
+                  </span>
                   <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, fontWeight: 600, marginLeft: 6,
                     background: confColor + "18", color: confColor }}>{b.confidence}</span>
                   {consensus && (
-                    <span
-                      title="Konsens: Engine UND Pinnacle-Sharp sehen den Edge in der 2.5–7.5% Goldilocks-Zone — robustestes Signal."
-                      style={{
-                        fontSize: 9, padding: "1px 6px", borderRadius: 3, fontWeight: 700, marginLeft: 6,
-                        background: "#d4b86a22", color: "#d4b86a", border: "1px solid #d4b86a55",
-                        letterSpacing: 0.3,
-                      }}
-                    >
-                      🤝 KONSENS
-                    </span>
+                    <ConsensusBadge />
                   )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

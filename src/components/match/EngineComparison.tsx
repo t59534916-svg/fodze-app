@@ -203,7 +203,11 @@ export default function EngineComparison({
             return Math.abs(mk[key] - othersAvg) >= 0.05;
           };
           return (
-            <div key={e.id} style={{ display: "contents" }}>
+            <div
+              key={e.id}
+              style={{ display: "contents" }}
+              aria-current={active ? "true" : undefined}
+            >
               <div style={{ ...S.activeRowFirstCell(active), ...S.engineCell(active) }}>
                 {active ? "▸ " : ""}
                 {e.name}

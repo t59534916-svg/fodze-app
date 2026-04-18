@@ -28,13 +28,20 @@ export const color = {
   textMuted:  "#a89070",     // 4.6:1 ✓ (was #c4a26590 = 1.8:1 ✗)
   textFaint:  "#8a7560",     // 3.2:1 (large text OK, decorative only)
 
-  // Semantic
-  value:      "#6aad55",
-  valueBg:    "#5a8c4a15",
-  warn:       "#e07070",      // 4.6:1 on leather ✓ (was #c47070 = 3.6:1)
-  warnBg:     "#8c4a4a18",
-  info:       "#5a9ec4",
-  infoBg:     "#4a6e8c15",
+  // Semantic — value (bet-edge green). ONE base hue #6aad55 with explicit
+  // alpha tints so hover / bg / border stay visually consistent instead
+  // of the earlier drift into 3 near-identical greens (#4a8c3a / #5a8c4a /
+  // #6aad55). Use `${color.value}08` pattern for one-off ghost fills.
+  value:         "#6aad55",
+  valueDark:     "#4a8c3a",    // gradient dark-stop (probability bar home)
+  valueMid:      "#5a9e45",    // hover / stronger tint
+  valueBg:       "#6aad5510",  // card-size background tint
+  valueGhost:    "#6aad5508",  // faintest decorative fill
+  valueBorder:   "#6aad5530",  // 1px borders on value cards
+  warn:          "#e07070",    // 4.6:1 on leather ✓ (was #c47070 = 3.6:1)
+  warnBg:        "#8c4a4a18",
+  info:          "#5a9ec4",
+  infoBg:        "#4a6e8c15",
 
   // Borders
   border:     "#c4a26520",
