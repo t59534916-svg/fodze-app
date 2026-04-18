@@ -6,7 +6,7 @@ import OddsInput from "./OddsInput";
 import BettingSummary from "./BettingSummary";
 import EngineComparison from "./EngineComparison";
 import { useApp } from "@/contexts/AppContext";
-import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves } from "@/lib/dixon-coles";
+import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
@@ -65,6 +65,46 @@ function FormDots({ form }: { form?: string }) {
   );
 }
 
+// ─── Goldilocks consensus detection ──────────────────────────────────
+//
+// A bet is "consensus" when BOTH our engine AND Pinnacle's sharp line
+// (vig-removed) see the edge inside the Goldilocks zone (2.5–7.5%).
+// The engine half is `bet.isValue` — already computed by the engine
+// pipeline. The market half we compute here from sharp odds.
+//
+// Note: sharp data in OddsSharpData currently only covers H/D/A.
+// O25/U25/BTTS bets always return false (no signal, not a non-consensus
+// answer). When we extend OddsSharpData with sharp_over25/under25 the
+// market check below should grow accordingly.
+const GOLDILOCKS_MIN = 0.025;
+const GOLDILOCKS_MAX = 0.075;
+
+function buildSharpProbs(odds: OddsData | undefined): { H: number; D: number; A: number } | null {
+  const sh = odds?._sharp;
+  if (!sh || typeof sh !== "object") return null;
+  const h = sh.h, d = sh.d, a = sh.a;
+  if (!h || !d || !a || h <= 1 || d <= 1 || a <= 1) return null;
+  const adj = vigAdjustBest([h, d, a]);
+  return { H: adj.probs[0], D: adj.probs[1], A: adj.probs[2] };
+}
+
+function isConsensus(bet: BetCalc, sharpProbs: { H: number; D: number; A: number } | null): boolean {
+  if (!sharpProbs || !bet.isValue) return false;
+  // Map BetCalc.label → sharp-prob key. The engine uses German market
+  // labels (Heim/Unent./Ausw.), and English aliases survive too.
+  const probKey: "H" | "D" | "A" | null =
+    bet.label === "Heim" || bet.label === "Home" || bet.label === "1" ? "H" :
+    bet.label === "Unent." || bet.label === "Draw" || bet.label === "X" ? "D" :
+    bet.label === "Ausw." || bet.label === "Away" || bet.label === "2" ? "A" :
+    null;
+  if (!probKey) return false;
+  const pSharp = sharpProbs[probKey];
+  if (!bet.quote || bet.quote <= 1) return false;
+  const impliedProb = 1 / bet.quote;
+  const marketEdge = pSharp - impliedProb;
+  return marketEdge >= GOLDILOCKS_MIN && marketEdge <= GOLDILOCKS_MAX;
+}
+
 // Tabs reduced from 3 to 2 — Statistik merged into Überblick as a
 // collapsible "Mehr Details" section. The previous pattern had users
 // flipping between Überblick and Statistik looking for λ values, winning
@@ -87,13 +127,18 @@ function TabBtn({ label, active, onClick, id, controls }: { label: string; activ
 }
 
 // ─── Overview Tab ────────────────────────────────────────────────
-function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
+function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds }: {
   match: RawMatch; calc: any; budget: number;
   onPlaceBet: (match: RawMatch, bet: BetCalc) => void; placingBet: string | null;
   league?: string;
+  odds?: OddsData;
 }) {
   const br = budget;
   const { engine } = useApp();
+  // Pre-compute Pinnacle-sharp probs once per render. Used by isConsensus
+  // for the value-bet consensus indicator. Returns null when no sharp
+  // data present, in which case all consensus checks short-circuit false.
+  const sharpProbs = buildSharpProbs(odds);
 
   // Pre-compute strip content so we can decide whether to render the
   // wrapper at all (avoid an empty bordered row).
@@ -242,17 +287,36 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league }: {
           <div style={{ fontSize: 10, color: "#6aad55", letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>VALUE BETS</div>
           {calc.bets.filter((b: BetCalc) => b.isValue).map((b: BetCalc) => {
             const confColor = b.confidence === "HIGH" ? "#6aad55" : b.confidence === "MEDIUM" ? "#d4b86a" : "#c4a265";
+            // Consensus = both engine + Pinnacle-sharp see edge in the
+            // 2.5–7.5% Goldilocks zone. The strongest possible signal —
+            // two independent quant systems agree a price is wrong.
+            const consensus = isConsensus(b, sharpProbs);
             return (
               <div key={b.label} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "10px 12px", marginBottom: 6, borderRadius: 8,
-                background: "#6aad5508", border: "1px solid #6aad5518",
+                // Subtle gold tint + thicker gold border on consensus
+                // bets so they stand out from engine-only value picks.
+                background: consensus ? "#d4b86a10" : "#6aad5508",
+                border: consensus ? "1px solid #d4b86a40" : "1px solid #6aad5518",
               }}>
                 <div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{b.label}</span>
                   <span style={{ fontSize: 11, color: "#6aad55", marginLeft: 8, fontWeight: 600 }}>{pe(b.edge)}</span>
                   <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, fontWeight: 600, marginLeft: 6,
                     background: confColor + "18", color: confColor }}>{b.confidence}</span>
+                  {consensus && (
+                    <span
+                      title="Konsens: Engine UND Pinnacle-Sharp sehen den Edge in der 2.5–7.5% Goldilocks-Zone — robustestes Signal."
+                      style={{
+                        fontSize: 9, padding: "1px 6px", borderRadius: 3, fontWeight: 700, marginLeft: 6,
+                        background: "#d4b86a22", color: "#d4b86a", border: "1px solid #d4b86a55",
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      🤝 KONSENS
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {/* Stake + odds combined: "5€ @ 3.40" tells the user
@@ -507,7 +571,7 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
       <div key={tab} className="tab-fade-in" role="tabpanel" id={`panel-${tab}-${idx}`} aria-labelledby={`tab-${tab}-${idx}`}>
         {tab === "overview" && (
           <>
-            <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} league={league} />
+            <TabOverview match={match} calc={calc} budget={budget} onPlaceBet={onPlaceBet} placingBet={placingBet} league={league} odds={odds} />
             {/* Detailed statistics — collapsed by default to reduce visual
                 noise; power users expand when they want to verify λ,
                 adjustments, HT/FT, winning margin etc. */}
