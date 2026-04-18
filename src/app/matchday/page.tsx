@@ -156,7 +156,8 @@ export default function MatchdayPage() {
           </div>
           <div style={{ height: 3, borderRadius: 2, background: "#c4a26510" }}>
             <div style={{ height: "100%", borderRadius: 2, width: `${Math.min((totalStake / br) / 0.15 * 100, 100)}%`,
-              background: totalStake / br > 0.15 ? "#c47070" : "linear-gradient(90deg, #a68940, #f5e6b8, #a68940)",
+              backgroundColor: totalStake / br > 0.15 ? "#c47070" : "transparent",
+              backgroundImage: totalStake / br > 0.15 ? "none" : "linear-gradient(90deg, #a68940, #f5e6b8, #a68940)",
               backgroundSize: "200% 100%", animation: "goldShimmer 4s ease-in-out infinite", transition: "width 0.3s" }} />
           </div>
         </div>
@@ -165,7 +166,13 @@ export default function MatchdayPage() {
       {/* Top 5 Tipps */}
       {sortedTips.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <button onClick={() => setShowTips(!showTips)} aria-expanded={showTips} aria-label={`Top ${sortedTips.length} Tipps ${showTips ? "ausblenden" : "anzeigen"}`}
+          {/* Outer uses role=button (not <button>) because it wraps inner
+              sort-toggle buttons — nested <button> is invalid HTML and was
+              triggering React hydration warnings. */}
+          <div onClick={() => setShowTips(!showTips)}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setShowTips(!showTips); } }}
+            role="button" tabIndex={0}
+            aria-expanded={showTips} aria-label={`Top ${sortedTips.length} Tipps ${showTips ? "ausblenden" : "anzeigen"}`}
             style={{ ...S.card, padding: "10px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%",
               background: "linear-gradient(135deg, #5a8c4a10, #c4a26508)", border: "1px solid #6aad5525" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -179,7 +186,7 @@ export default function MatchdayPage() {
                 style={{ ...S.outlineBtn, fontSize: 9, padding: "2px 6px", background: tipSort === "conf" ? "#d4b86a20" : "transparent", color: tipSort === "conf" ? "#d4b86a" : "#a89070" }}>Konfidenz</button>
               <span style={{ color: "#c4a26535", fontSize: 14 }} aria-hidden="true">{showTips ? "▾" : "▸"}</span>
             </div>
-          </button>
+          </div>
           {showTips && (
             <div style={{ ...S.card, marginTop: -1, borderTop: "none", borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
               {sortedTips.map((tip, ti) => {
