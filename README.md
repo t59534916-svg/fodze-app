@@ -1,8 +1,8 @@
 # FODZE — Quantitative Fußball-Wettanalyse
 
-Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson Modell, isotonischer Kalibrierung und Kelly-Criterion Staking.
+Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson Modell, isotonischer Kalibrierung und Kelly-Criterion Staking. **19 Ligen**, **362 Teams** mit Live-Injuries, **186 Tests** grün.
 
-**v7.0.0** · 61 Dateien · Next.js 14 · TypeScript · Supabase
+**v7.x** · Next.js 14 · TypeScript · Supabase · Vercel
 
 ## Quick Start
 
@@ -10,101 +10,103 @@ Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson Modell, isotonischer 
 git clone https://github.com/t59534916-svg/fodze-app.git
 cd fodze-app
 npm install
-cp .env.example .env.local   # Keys eintragen
-npm run dev                   # http://localhost:3000
+cp .env.example .env.local      # Keys eintragen (siehe unten)
+npm run dev                      # http://localhost:3000
 ```
+
+## Daten aktuell halten
+
+```bash
+npm run health          # 5-Sekunden Statuscheck aller Datenquellen
+npm run refresh         # Schnell-Update — odds + matchdays (~3 min)
+npm run refresh:full    # Voll inkl. Injuries via Transfermarkt (~25 min)
+npm run audit           # Coverage-Report pro Liga
+```
+
+**Automatisch (macOS):**
+
+```bash
+bash scripts/launchd/install.sh   # täglich 07:30 + Di/Fr 19:00
+```
+
+Logs in `~/Library/Logs/fodze-refresh.log`. Stop mit `bash scripts/launchd/install.sh --uninstall`.
 
 ## Features
 
 | Feature | Beschreibung |
 |---------|-------------|
-| **Dixon-Coles Engine** | 15×15 Bivariate Poisson mit ρ-Korrektur, Neg-Binomial, XGBoost Residuals |
-| **Value-Bet Erkennung** | Edge-Berechnung mit Konfidenzintervallen (90% CI) |
-| **Kelly-Criterion** | Optimale Einsatzberechnung (¼/⅓/½ Kelly, capped bei 5%) |
-| **System-Wetten** | 2aus3, 3aus4, 4aus5 mit EV und P(Gewinn) |
-| **Ask Anna** | KI-Beraterin: Multi-Liga Chat mit Streaming (Groq kostenlos / Claude) |
-| **Live-Odds** | Automatischer Quoten-Import via GitHub Actions + The-Odds-API |
-| **21 Ligen** | BL, PL, La Liga, Serie A, Ligue 1, Eredivisie, Championship, 2.BL, 3.Liga, CL, EL + PT, BE, TR, SP2, IT2, FR2, SCO, GR, ENG3, ENG4 |
-| **PWA** | Installierbar, Offline-Cache via Service Worker |
+| **3 Engines** | Standard Ensemble + @annafrick13 v1 (Poisson-ML) + v2 (LightGBM Tweedie) — alle 3 parallel berechnet |
+| **Goldilocks Bets** | Edge 2.5–7.5% mit dualer Quelle: Markt (Pinnacle vig-removed) + Engine — Konsens = stärkstes Signal |
+| **Live-Injuries** | Per Match Verletzungen + Sperren + Yellow-Card-Risiko via Transfermarkt + Groq HTML-Parser |
+| **CLV-Tracking** | Closing-Quoten-Snapshot vor Kickoff → echter Edge-Indikator über Variance |
+| **Kelly-Criterion** | K/M/A Risiko-Profile mit caps (2.5% / 4% / 6%) |
+| **Ask Anna** | KI-Beraterin (Groq Llama 3.3 70B kostenlos / Claude Sonnet) |
+| **19 Ligen** | BL, 2.BL, Liga 3, EPL, La Liga, Serie A, Ligue 1, Eredivisie, Championship, Primeira, Jupiler, Süper Lig, La Liga 2, Serie B, Ligue 2, Scottish Prem, Greek SL, League One, League Two |
+| **PWA** | Installierbar, Service Worker, Offline-Cache |
 
-## Architektur
+## Daten-Pipeline
 
-```
-src/
-  app/               # Next.js 14 App Router (14 Routen)
-    page.tsx          # Home — Liga-Auswahl
-    matchday/         # Match-Analyse + Quoten + Kombi-Builder
-    anna/             # Ask Anna — KI-Wettberaterin
-    simulator/        # Monte Carlo Bankroll-Simulation
-    performance/      # Modell-Backtest Dashboard (14.359 Spiele)
-    api/              # Streaming AI + Matchday + Scraper
-  components/         # 23 React-Komponenten
-    layout/           # AppShell, Navbar (Mobile + Desktop Sidebar), AuthGate
-    match/            # MatchCard (Probability Bar), MatchDetail (Tabs), OddsInput (Auto-Save)
-    anna/             # ChatMessage, LeagueChips, BetCard, QuickReplies
-    shared/           # Kit, Logo, Corners, GoldButton, ValueBadge, MetricBox
-  contexts/           # AppContext (User/Liga/Profil), MatchdayContext (Matches/Odds/Bets)
-  hooks/              # useMatchday, useBets
-  lib/                # Dixon-Coles Engine (46KB), System-Bets, Supabase, Scrapers
-  styles/             # Design Tokens (Leather+Gold), Component Factories
-  types/              # TypeScript Interfaces (Match, Calc, Odds, Bet, Profile)
-```
+Pro Spieltag wird automatisch enriched:
+
+| Feld | Quelle | Engine-Impact |
+|------|--------|---------------|
+| `xg_h_history`, `xg_h8` | Understat / Shots-Modell / OpenLigaDB | λ-Berechnung (Hauptinput) |
+| `form` ("W D L W W") | team_xg_history letzte 5 | formMultiplier ±5% λ |
+| `tags` (DERBY, MEISTERKAMPF, ABSTIEGSKAMPF, ROTATION) | Rivalitäten-Map + Standings + Fixtures | applyTagCorrections ±3-6% λ |
+| `injuries` ("Player (POS, Reason, bis DATE), …") | **Transfermarkt + Groq** | calcAbsenceImpact ±5-15% λ |
+| `yellow_risk` | Transfermarkt "Sperre droht" | UI + future engine input |
+| `standings_pos`, `h2h` | team_xg_history | UI display + future features |
+| `matchday` Label (z.B. "30. Spieltag") | OpenLigaDB (DE-Ligen) | UI |
 
 ## Tech Stack
 
 | Layer | Technologie |
 |-------|------------|
-| Frontend | Next.js 14 App Router, React 18, TypeScript 5.5, Inter Font |
-| Styling | Custom Leather+Gold Token System (inline, kein UI-Framework) |
+| Frontend | Next.js 14 App Router, React 18, TypeScript 5.5 |
+| Styling | Inline tokens (Leather + Gold), kein Framework |
 | State | AppContext + MatchdayContext + sessionStorage |
 | Backend | Supabase PostgreSQL + Auth + Row-Level Security |
 | AI | Groq Llama 3.3 70B (kostenlos) / Claude Sonnet 4 / Offline |
-| Engine | Dixon-Coles + Neg-Binomial + XGBoost + Pinnacle Anchor + SoS |
+| Engine | Dixon-Coles 15×15 + Neg-Binomial + XGBoost + Pinnacle Anchor + SoS + Absences |
+| Data | Supabase + The-Odds-API + OpenLigaDB + Transfermarkt + Understat |
 | CI | GitHub Actions (Lint, TypeCheck, Test, Build) |
-| Hosting | Vercel |
-
-## Admin-Workflow
-
-```bash
-npm run spieltag    # Interaktiver 6-Schritt Wizard
-```
-
-1. **Spielplan** — Prompt generiert → Admin fügt in AI ein
-2. **xG-Daten** — Understat Browser-Script oder Tor-Proxy Prompt
-3. **Verletzungen** — Prompt an 2-3 AIs parallel für Cross-Check
-4. **JSON bauen** — Prompt mit allen Daten → FODZE-Format
-5. **Supabase seeden** — Validierung + Bestätigung + Seed
-6. **Quoten eingeben** — In der App oder automatisch via Live-Odds
-
-Details: [WORKFLOW.md](WORKFLOW.md)
-
-## xG-Daten
-
-36.068 per-Match xG-Einträge in Supabase `team_xg_history`:
-
-| Quelle | Ligen | Einträge | Methode |
-|--------|-------|----------|---------|
-| Understat | BL, EPL, La Liga, Serie A, Ligue 1, Eredivisie | 28.718 | Echte xG (2017-2025) |
-| Shots-Modell | 12 weitere Ligen (Championship, 2.BL, PT, BE, TR, ...) | 7.350 | `xG ≈ 0.242×SOT + 0.065×SOFF` (R²=0.57) |
-
-```bash
-npm run backfill                              # Understat xG Backfill (Browser-Script)
-node scripts/backfill-shots-xg.mjs --all      # CSV Schüsse → geschätzte xG (12 Ligen)
-npm run export-xg                             # Supabase → lokale JSON-Backups
-```
+| Hosting | Vercel (auto-deploy on push to main) |
 
 ## Scripts
 
+### Daily Operations
 ```bash
-npm run dev          # Lokaler Dev-Server
-npm run build        # Production Build
-npm run spieltag     # Admin Spieltag-Wizard (interaktiv)
-npm run backfill     # Historisches xG Backfill
-npm run export-xg    # Supabase Export → backups/
-npm run test         # vitest (49 Tests für Engine + Poisson + Schemas)
-npm run test:watch   # Watch-Mode
-npm run lint         # ESLint
-npm run spieltag     # Admin Spieltag-Wizard
+npm run dev              # Lokaler Dev-Server
+npm run health           # Datenquellen-Statuscheck (5s)
+npm run audit            # Coverage-Report aller 19 Ligen
+npm run refresh          # Update odds + matchdays (~3 min)
+npm run refresh:full     # + Transfermarkt Injuries (~25 min)
+npm run refresh:quick    # Nur odds + audit (~30s)
+npm run refresh:odds     # Nur fetch-odds.mjs
+```
+
+### Development
+```bash
+npm run build            # Production Build
+npm run test             # 186 Tests (vitest)
+npm run test:watch       # Watch-Mode
+npm run lint             # ESLint
+```
+
+### Maintenance
+```bash
+npm run suggest-aliases  # TM-Alias-Vorschläge für ungemappte Teams
+npm run spieltag         # Admin Spieltag-Wizard (interaktiv)
+node scripts/build-tm-team-ids.mjs   # Saison-Wechsel: 362 IDs neu generieren
+```
+
+### Background Cron (macOS launchd)
+```bash
+bash scripts/launchd/install.sh           # both daily + weekly
+bash scripts/launchd/install.sh --daily   # nur daily
+bash scripts/launchd/install.sh --uninstall
+launchctl list | grep com.fodze            # status check
+launchctl start com.fodze.refresh          # manueller Trigger
 ```
 
 ## Environment Variables
@@ -115,18 +117,33 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_KEY=eyJ...
 
-# Ask Anna AI (optional — pick one)
-GROQ_API_KEY=gsk_...          # FREE — https://console.groq.com
-# CLAUDE_API_KEY=sk-ant-...   # PAID — https://console.anthropic.com
+# Live odds (required für refresh)
+ODDS_API_KEY=...                    # https://the-odds-api.com (500 free credits/mo)
+
+# AI (required für Anna + Injury-Parsing)
+GROQ_API_KEY=gsk_...                # FREE — https://console.groq.com (500K tokens/day)
+# CLAUDE_API_KEY=sk-ant-...        # PAID — alternative zu Groq
+
+# Optional
+TELEGRAM_BOT_TOKEN=...              # Value-Bet alerts
+TELEGRAM_CHAT_ID=...
+FOOTYSTATS_API_KEY=...              # Echte xG für Liga 3 (paid)
 ```
 
-## Dokumentation
+## Daten-Coverage (Stand 04/2026)
 
-- **[Engine](docs/ENGINE.md)** — Dixon-Coles, NegBin, XGBoost, Kalibrierung, Kelly (mathematisch detailliert)
-- **[Architecture](docs/ARCHITECTURE.md)** — System-Diagramm, Data Flow, DB Schema
-- **[Design Handoff](docs/DESIGN-HANDOFF.md)** — Tokens, Komponenten, Responsive, Accessibility
-- **[Workflow](WORKFLOW.md)** — Admin Spieltag-Workflow mit Prompts
-- **[CLAUDE.md](CLAUDE.md)** — Entwickler-Guide für Claude Code
+| Liga | xG Coverage | Form Coverage | Injuries Coverage |
+|------|-------------|---------------|-------------------|
+| Bundesliga / 2.BL / Liga 3 | 100% | 100% | 83-95% |
+| EPL / La Liga / Serie A | 95-100% | 100% | 85-95% |
+| Ligue 1 / Eredivisie | 100% | 100% | 95-100% |
+| Championship | 86% | 100% | 83% |
+| Süper Lig | 100% | 100% | 81% |
+| Primeira / Jupiler / Greek | 75-100% | 100% | 77-96% |
+| La Liga 2 / Serie B / Ligue 2 | 89-100% | 100% | 88-95% |
+| League One / League Two | 100% | 100% | 80-85% |
+
+**Gesamt:** 17/19 Ligen mit ≥80% Injuries-Coverage. 352+ live Team-Injury-Einträge.
 
 ## Engine Performance (OOS, kein Data Leakage)
 
@@ -137,17 +154,25 @@ GROQ_API_KEY=gsk_...          # FREE — https://console.groq.com
 | Logistic (6 EWMA Features) | 0.6090 | 51.3% |
 | Market-Implied (Pinnacle) | — | 20.0% |
 | **Ensemble** | **0.6076** | — |
+| @annafrick13 v2 (LightGBM) | **0.5844** | — |
 
-Trainiert auf 139.691 Matches (18 Ligen), evaluiert auf 6.691 OOS Matches (nach 01.08.2023).
-Per-League-Kalibrierung: Platt + Isotonic Curves für jede Liga individuell.
+Trainiert auf 139.691 Matches (18 Ligen), evaluiert auf 6.691 OOS Matches. Per-Liga-Kalibrierung via Platt + Isotonic Curves.
+
+## Dokumentation
+
+- **[Engine](docs/ENGINE.md)** — Dixon-Coles, NegBin, XGBoost, Kalibrierung, Kelly (mathematisch detailliert)
+- **[Architecture](docs/ARCHITECTURE.md)** — System-Diagramm, Data Flow, DB Schema
+- **[Design Handoff](docs/DESIGN-HANDOFF.md)** — Tokens, Komponenten, Responsive, A11y
+- **[Workflow](WORKFLOW.md)** — Admin Spieltag-Workflow mit Prompts
+- **[CLAUDE.md](CLAUDE.md)** — Entwickler-Guide für Claude Code (Architektur, Pipelines, Konventionen)
 
 ## Qualität
 
 | Metrik | Wert |
 |--------|------|
-| Build | ✅ 0 Fehler, 19 Routen |
-| Tests | ✅ 49/49 (Engine + Poisson + Zod) |
-| TypeScript | Strict Types (TeamData, MatchCalc, Zod Runtime) |
+| Build | ✅ 0 Fehler in `src/` |
+| Tests | ✅ 186/186 (12 files) |
+| TypeScript | Strict Types + Zod Runtime Validation |
 | Accessibility | WCAG 2.1 AA (ARIA, Focus, Landmarks) |
-| Security | HSTS, RLS, X-Frame-Options, Permissions-Policy |
-| Dependencies | 6 Runtime (+ zod), 5 Dev |
+| Security | RLS + Cookie-Auth + Rate-Limit auf /api/anna |
+| Idempotent | Alle Refresh-Scripts safe to re-run |
