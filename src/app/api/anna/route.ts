@@ -12,6 +12,8 @@ import { cookies } from "next/headers";
 // by hammering POST /api/anna. These limits + cookie auth close that.
 const MAX_SYSTEM_PROMPT_CHARS = 20_000; // ~5k tokens, plenty for context
 const MAX_TOTAL_MESSAGES_CHARS = 40_000; // ~10k tokens across history
+const MAX_MESSAGE_CHARS = 10_000; // per-message cap — prevents a single
+                                  // message from consuming the whole budget
 const MAX_MESSAGE_COUNT = 30; // no runaway back-and-forth
 
 // Simple in-memory rate-limit (per Next.js worker). Not a proper defense
@@ -98,13 +100,21 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
-  const totalChars = messages.reduce(
-    (sum: number, m: unknown) =>
-      sum + (typeof m === "object" && m && "content" in m && typeof (m as { content: unknown }).content === "string"
-        ? ((m as { content: string }).content).length
-        : 0),
-    0,
-  );
+  let totalChars = 0;
+  for (const m of messages) {
+    if (typeof m !== "object" || !m || !("content" in m)) continue;
+    const c = (m as { content: unknown }).content;
+    if (typeof c !== "string") continue;
+    if (c.length > MAX_MESSAGE_CHARS) {
+      // Per-message cap closes a loophole where a single 40k message was
+      // valid under the combined total but still flooded the LLM budget.
+      return new Response(
+        JSON.stringify({ error: `Single message too long (max ${MAX_MESSAGE_CHARS} chars)` }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    totalChars += c.length;
+  }
   if (totalChars > MAX_TOTAL_MESSAGES_CHARS) {
     return new Response(
       JSON.stringify({ error: `Combined messages too long (max ${MAX_TOTAL_MESSAGES_CHARS} chars)` }),

@@ -1,11 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Error-code contract (additive to `error` string for backward compat —
+// MatchdayContext throws on `result.error`, keeps working either way):
+//   NO_KEY          — config missing, frontend falls back to manual mode
+//   BAD_REQUEST     — malformed body or missing league param
+//   UPSTREAM_ERROR  — Claude API returned non-2xx or unparseable JSON
+//   INTERNAL        — uncaught server error
+//
+// Status codes follow the code (401 for config, 400 bad request, 502 upstream,
+// 500 internal) — previously everything was 200-or-500 even for distinct cases.
+
+type ApiError = { error: string; errorCode: string; message?: string };
+
+const err = (code: string, message: string, status: number) =>
+  NextResponse.json<ApiError>({ error: message, errorCode: code, message }, { status });
+
 export async function POST(req: NextRequest) {
-  const { league } = await req.json();
+  // Body-parse safety: malformed JSON was crashing the route.
+  let league: string | undefined;
+  try {
+    const body = await req.json();
+    league = body?.league;
+  } catch {
+    return err("BAD_REQUEST", "Ungültiges Request-Body JSON.", 400);
+  }
+  if (!league || typeof league !== "string") {
+    return err("BAD_REQUEST", "Liga-Parameter fehlt oder ungültig.", 400);
+  }
 
   const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "NO_KEY", message: "Claude API Key nicht konfiguriert. Nutze den manuellen Modus." }, { status: 200 });
+    // Kept at 200 — frontend graceful fallback to manual mode depends on it.
+    return NextResponse.json<ApiError>({
+      error: "NO_KEY",
+      errorCode: "NO_KEY",
+      message: "Claude API Key nicht konfiguriert. Nutze den manuellen Modus.",
+    }, { status: 200 });
   }
 
   try {
@@ -59,6 +89,13 @@ RESPOND ONLY AS JSON:
       }),
     });
 
+    if (!resp.ok) {
+      // Surface upstream status but don't leak headers or body — Claude
+      // errors sometimes include raw internal prompts.
+      console.error(`[api/matchday] Claude API HTTP ${resp.status}`);
+      return err("UPSTREAM_ERROR", `Claude API antwortet mit ${resp.status}.`, 502);
+    }
+
     const data = await resp.json();
     const text = data.content
       ?.filter((b: any) => b.type === "text")
@@ -67,19 +104,25 @@ RESPOND ONLY AS JSON:
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json({ error: "Keine strukturierten Daten erhalten" }, { status: 502 });
+      return err("UPSTREAM_ERROR", "Keine strukturierten Daten erhalten.", 502);
     }
 
-    const parsed = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+    } catch {
+      return err("UPSTREAM_ERROR", "Antwort konnte nicht geparst werden.", 502);
+    }
     return NextResponse.json(parsed);
 
   } catch (e: any) {
-    console.error("Claude API error:", e);
-    return NextResponse.json({ error: e.message || "API-Fehler" }, { status: 500 });
+    // Log full error server-side, return sanitized message to client.
+    console.error("[api/matchday] Internal error:", e);
+    return err("INTERNAL", "Serverfehler bei der Anfrage.", 500);
   }
 }
 
-// Check if Claude API is configured
+// Check if Claude API is configured — callers read `d.hasKey === true`
 export async function GET() {
   const hasKey = !!process.env.CLAUDE_API_KEY;
   return NextResponse.json({ hasKey });
