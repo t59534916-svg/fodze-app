@@ -23,6 +23,7 @@ interface AppContextValue {
   effectiveBudget: number;
   kellyFraction: number;
   calLoaded: boolean;
+  modelErrors: string[];
   hasApi: boolean | null;
   engine: PredictionEngine;
   setEngine: (e: PredictionEngine) => void;
@@ -45,6 +46,7 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const [profile, setProfile] = useState<ProfileData>({ risk_profile: "M", bankroll: 0, display_name: "" });
   const [dayBudget, setDayBudget] = useState("");
   const [calLoaded, setCalLoaded] = useState(false);
+  const [modelErrors, setModelErrors] = useState<string[]>([]);
   const [engine, setEngineState] = useState<PredictionEngine>(DEFAULT_ENGINE);
   const [hasApi, setHasApi] = useState<boolean | null>(null);
   const [userBets, setUserBets] = useState<PlacedBet[]>([]);
@@ -56,26 +58,33 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const effectiveBudget = parsedBudget > 0 ? parsedBudget : bankroll;
   const kellyFraction = ({ K: 0.25, M: 0.33, A: 0.5 } as Record<string, number>)[profile.risk_profile] || 0.33;
 
-  // Load calibration curves
+  // Load model artifacts (calibration, ensemble, LGBM) in parallel. Silent
+  // `.catch(() => {})` was masking broken deploys — now each failure logs
+  // and surfaces via `modelErrors` so the UI can warn instead of serving
+  // uncalibrated predictions as if everything's fine.
   useEffect(() => {
-    fetch("/calibration_curves.json")
-      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
-      .then(curves => { loadCalibrationCurves(curves); setCalLoaded(true); })
-      .catch(() => {});
+    const loadModel = (
+      url: string, name: string, apply: (data: any) => void,
+    ): Promise<void> =>
+      fetch(url)
+        .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+        .then(data => apply(data))
+        .catch(err => {
+          console.error(`[FODZE] Failed to load ${name}:`, err.message || err);
+          setModelErrors(prev => prev.includes(name) ? prev : [...prev, name]);
+        });
 
-    // Load ensemble model (Elo ratings, logistic coefficients, weights)
-    fetch("/ensemble-model.json")
-      .then(res => { if (!res.ok) throw new Error(); return res.json(); })
-      .then(model => { loadEnsembleModel(model); loadPoissonModel(model); })
-      .catch(() => {});
-
-    // Load LightGBM v2 model
-    fetch("/lgbm-model-v2.json")
-      .then(res => { if (!res.ok) throw new Error(); return res.json(); })
-      .then(model => {
-        if (loadLGBMModel(model)) validateGoldenTests();
-      })
-      .catch(() => {});
+    loadModel("/calibration_curves.json", "calibration", curves => {
+      loadCalibrationCurves(curves);
+      setCalLoaded(true);
+    });
+    loadModel("/ensemble-model.json", "ensemble", model => {
+      loadEnsembleModel(model);
+      loadPoissonModel(model);
+    });
+    loadModel("/lgbm-model-v2.json", "lgbm", model => {
+      if (loadLGBMModel(model)) validateGoldenTests();
+    });
   }, []);
 
   // Load user profile + bets + API check + league status
@@ -123,11 +132,11 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const value = useMemo(() => ({
     user, supabase, league, setLeague, leagueConfig, profile, saveProf,
     bankroll, dayBudget, setDayBudget, effectiveBudget, kellyFraction,
-    calLoaded, hasApi, userBets, refreshBets, leagueStatus,
+    calLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
     engine, setEngine,
   }), [user, supabase, league, leagueConfig, profile, saveProf,
     bankroll, dayBudget, effectiveBudget, kellyFraction,
-    calLoaded, hasApi, userBets, refreshBets, leagueStatus,
+    calLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
     engine, setEngine]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

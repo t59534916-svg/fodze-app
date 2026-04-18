@@ -43,9 +43,13 @@ export async function saveOddsSnapshot(
 }
 
 export async function loadOddsHistory(supabase: SupabaseClient, matchKey: string) {
+  // Only fetch the two columns callers actually consume (snapshot_time, odds).
+  // `.select("*")` previously pulled id/league/match_key/home_team/away_team/
+  // created_by/created_at per row — 9 useless columns × 5-10 snapshots × 10
+  // matches = ~100 KB wasted bandwidth per matchday load.
   const { data, error } = await supabase
     .from("odds_snapshots")
-    .select("*")
+    .select("snapshot_time, odds")
     .eq("match_key", matchKey)
     .order("snapshot_time", { ascending: true });
   if (error) return [];
@@ -216,17 +220,73 @@ export async function loadAllTeamXGHistory(
 }
 
 /**
+ * Sanity-check per-match xG history before it flows into the engines.
+ * Engines previously trusted any length-non-zero array, so a Supabase data
+ * bug producing [{xg: 2.0}, {xg: 2.0}, …] (copy-paste) would cascade into
+ * false-confident predictions. This flags suspicious data via console.warn
+ * but does NOT block — operator sees the signal, engine still runs.
+ *
+ * Checks: chronological date order, plausible xG range (0 ≤ xg ≤ 5), not
+ * all identical (variance > 0), and no long runs of identical values.
+ */
+export function validateXGHistory(
+  entries: Array<{ xg: number; xga: number; date: string }>,
+  context?: string,
+): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (!entries || entries.length === 0) return { ok: true, issues };
+
+  for (const e of entries) {
+    if (e.xg < 0 || e.xg > 5 || e.xga < 0 || e.xga > 5) {
+      issues.push(`xG out of [0, 5]: ${e.date} xg=${e.xg} xga=${e.xga}`);
+      break;
+    }
+  }
+
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i].date < entries[i - 1].date) {
+      issues.push(`chronology broken at ${entries[i].date}`);
+      break;
+    }
+  }
+
+  if (entries.length >= 3) {
+    const xgs = entries.map(e => e.xg);
+    const avg = xgs.reduce((s, v) => s + v, 0) / xgs.length;
+    const variance = xgs.reduce((s, v) => s + (v - avg) ** 2, 0) / xgs.length;
+    if (variance < 0.001) issues.push(`zero xG variance — suspicious duplicates`);
+
+    let runLen = 1;
+    for (let i = 1; i < xgs.length; i++) {
+      if (Math.abs(xgs[i] - xgs[i - 1]) < 0.01) {
+        runLen++;
+        if (runLen >= 3) {
+          issues.push(`3+ identical xG values in a row — copy-paste?`);
+          break;
+        }
+      } else runLen = 1;
+    }
+  }
+
+  if (issues.length > 0) {
+    console.warn(`[FODZE] xG history issue${context ? ` (${context})` : ""}:`, issues.join("; "));
+  }
+  return { ok: issues.length === 0, issues };
+}
+
+/**
  * Convert Supabase TeamXGMatch rows to engine-compatible XGHistoryEntry format.
  * This bridges the Understat data to calcMatchEnhanced()'s hHistory/aHistory params.
+ * Runs validateXGHistory as a side-effect for early warning.
  */
-export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{
+export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Array<{
   xg: number; xga: number;
   npxg?: number; npxga?: number;
   ppda_att?: number; ppda_def?: number;
   deep?: number; deep_allowed?: number;
   date: string; opponent?: string;
 }> {
-  return matches.map((m) => ({
+  const entries = matches.map((m) => ({
     xg: m.xg,
     xga: m.xga,
     npxg: m.npxg ?? undefined,
@@ -238,6 +298,8 @@ export function toXGHistoryEntries(matches: TeamXGMatch[]): Array<{
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));
+  validateXGHistory(entries, context);
+  return entries;
 }
 
 // ─── League Standings (computed from team_xg_history) ─────────────

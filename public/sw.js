@@ -1,6 +1,6 @@
-// FODZE Service Worker — Network-First with Offline Fallback
+// FODZE Service Worker — Network-First with Offline Fallback + SWR for models
 // Cache version bumped on every deploy to invalidate stale content
-const CACHE_NAME = "fodze-v3";
+const CACHE_NAME = "fodze-v4";
 const STATIC_ASSETS = [
   "/",
   "/icon-192.png",
@@ -8,7 +8,17 @@ const STATIC_ASSETS = [
   "/manifest.json",
 ];
 
-// Install: cache static shell, force activate immediately
+// Stale-while-revalidate targets. These are ~400KB combined, rarely change
+// between deploys, and AppContext re-fetches them every page load. Serving
+// from cache immediately (while revalidating in the background) removes
+// them from the critical path without risking stale predictions — the
+// cache version bump on each deploy invalidates them atomically.
+const SWR_PATHS = [
+  "/calibration_curves.json",
+  "/ensemble-model.json",
+  "/lgbm-model-v2.json",
+];
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -16,7 +26,6 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// Activate: delete ALL old caches to force fresh content
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -26,20 +35,38 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Fetch: NETWORK-FIRST for everything (fixes stale deploy issue)
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // Skip non-GET requests and external API calls
   if (event.request.method !== "GET") return;
   if (url.hostname.includes("supabase")) return;
   if (url.pathname.startsWith("/api/")) return;
 
-  // Network-first: try network, fall back to cache for offline
+  // Stale-while-revalidate for model artifacts: respond with cached
+  // version immediately if present, kick off a network refresh in the
+  // background. First-ever visit falls through to network-first below.
+  if (SWR_PATHS.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        const networkUpdate = fetch(event.request)
+          .then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+            }
+            return response;
+          })
+          .catch(() => null);
+        return cached || networkUpdate;
+      })
+    );
+    return;
+  }
+
+  // Default: network-first with cache fallback for offline
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Cache successful responses for offline use
         if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
@@ -47,10 +74,8 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => {
-        // Offline: serve from cache
         return caches.match(event.request).then((cached) => {
           if (cached) return cached;
-          // Offline fallback for navigation
           if (event.request.mode === "navigate") {
             return caches.match("/");
           }

@@ -1,6 +1,6 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadTeamXGHistory, loadLeagueXGHistory, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory } from "@/lib/supabase";
+import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, type TeamXGMatch } from "@/lib/supabase";
 import { matchKey } from "@/lib/format";
 import { parseAbsences } from "@/lib/absence-parser";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
@@ -103,49 +103,80 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       // For teams with NO xG history (e.g. 3. Liga, newly promoted teams
       // without football-data coverage), we synthesize league-average xG
       // summaries so the engine can still run — same pattern as fuck-betting.
-      // The engine will then rely more heavily on Elo + odds since the xG
-      // signal is neutralized. Match is flagged implicitly by lacking
-      // xg_h_history (engines fall back to simpler pipelines).
+      //
+      // ONE batch query for the whole league, bucketed in JS. Replaces the
+      // prior N × 2 sequential waterfall (home + away per match) which cost
+      // ~1.2-1.8s on 10-match days. Same fuzzy-resolver fallback behavior as
+      // loadTeamXGHistory, done locally against the pre-loaded map.
+      const allLeagueXG = await loadAllTeamXGHistory(supabase, lg);
+
       if (matchdayData.matches) {
         const lgConfig = LEAGUES[lg] || LEAGUES.bundesliga;
         const fallbackXG = lgConfig.avg * 8 * 0.55; // home scores ~55% of league total
         const fallbackXGA = lgConfig.avg * 8 * 0.45;
 
-        for (const match of matchdayData.matches) {
-          const resolveTeam = (name: string) => {
-            const mapped = TEAM_SCRAPER_MAP[name];
-            return mapped?.understat || name;
-          };
+        // Bucket all xG rows by (team, venue), then slice each to latest 8
+        // in chronological-ascending order (oldest of the 8 first — engine
+        // contract). loadAllTeamXGHistory returns desc; sort asc here.
+        const byTeamVenue = new Map<string, TeamXGMatch[]>();
+        for (const m of allLeagueXG) {
+          const key = `${m.team}|${m.venue}`;
+          if (!byTeamVenue.has(key)) byTeamVenue.set(key, []);
+          byTeamVenue.get(key)!.push(m);
+        }
+        for (const [key, arr] of byTeamVenue) {
+          arr.sort((a, b) => a.match_date.localeCompare(b.match_date));
+          byTeamVenue.set(key, arr.slice(-8));
+        }
 
+        // Mirrors loadTeamXGHistory fuzzy logic: exact team first, then
+        // longest-distinctive-token substring match against the bucket keys.
+        const resolveBucket = (team: string, venue: "home" | "away"): TeamXGMatch[] => {
+          const mapped = TEAM_SCRAPER_MAP[team];
+          const understat = mapped?.understat || team;
+          const exact = byTeamVenue.get(`${understat}|${venue}`);
+          if (exact && exact.length > 0) return exact;
+
+          const tokens = team
+            .toLowerCase()
+            .replace(/[._]/g, " ")
+            .split(/\s+/)
+            .filter(w => w.length > 3 && !/^(fc|sc|sv|vfl|vfb|tsg|tsv|rb|afc|the|club)$/.test(w));
+          if (tokens.length === 0) return [];
+          const probe = tokens.sort((a, b) => b.length - a.length)[0];
+          for (const [k, arr] of byTeamVenue) {
+            const [t, v] = k.split("|");
+            if (v === venue && t.toLowerCase().includes(probe)) return arr;
+          }
+          return [];
+        };
+
+        for (const match of matchdayData.matches) {
           if (match.home?.name && !match.home.xg_h_history?.length) {
-            const understatName = resolveTeam(match.home.name);
-            const hist = await loadTeamXGHistory(supabase, understatName, lg, "home", 8);
+            const hist = resolveBucket(match.home.name, "home");
             if (hist.length > 0) {
-              match.home.xg_h_history = toXGHistoryEntries(hist);
+              match.home.xg_h_history = toXGHistoryEntries(hist, `${match.home.name} H`);
               if (!match.home.xg_h8) {
                 match.home.xg_h8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
                 match.home.xga_h8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
                 match.home.games = hist.length;
               }
             } else if (!match.home.xg_h8) {
-              // No history + no explicit xG → league-average fallback
               match.home.xg_h8 = +fallbackXG.toFixed(2);
               match.home.xga_h8 = +fallbackXGA.toFixed(2);
               match.home.games = 8;
             }
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
-            const understatName = resolveTeam(match.away.name);
-            const hist = await loadTeamXGHistory(supabase, understatName, lg, "away", 8);
+            const hist = resolveBucket(match.away.name, "away");
             if (hist.length > 0) {
-              match.away.xg_a_history = toXGHistoryEntries(hist);
+              match.away.xg_a_history = toXGHistoryEntries(hist, `${match.away.name} A`);
               if (!match.away.xg_a8) {
                 match.away.xg_a8 = +hist.reduce((s, g) => s + g.xg, 0).toFixed(2);
                 match.away.xga_a8 = +hist.reduce((s, g) => s + g.xga, 0).toFixed(2);
                 match.away.games = hist.length;
               }
             } else if (!match.away.xg_a8) {
-              // Away teams historically score ~45% of home, concede ~55%
               match.away.xg_a8 = +fallbackXGA.toFixed(2);
               match.away.xga_a8 = +fallbackXG.toFixed(2);
               match.away.games = 8;
@@ -154,12 +185,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Load league-wide xG history for SoS (Strength of Schedule) ratings
+      // SoS (Strength of Schedule) from the same already-loaded batch.
+      // Filter to home-venue rows (one per match) to match loadLeagueXGHistory.
       try {
-        const leagueXG = await loadLeagueXGHistory(supabase, lg);
-        if (leagueXG.length > 0) {
+        const sosRows = allLeagueXG.filter(m => m.venue === "home");
+        if (sosRows.length > 0) {
           const lgConfig = LEAGUES[lg] || LEAGUES.bundesliga;
-          const sosMatches = leagueXG.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
+          const sosMatches = sosRows.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
           setSosRatings(computeSoSRatings(sosMatches, lgConfig.avg));
         }
       } catch (e) { /* SoS is optional — engine works without it */ }
@@ -313,8 +345,15 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       options: { league } as any,
     };
 
-    const v2Calc = calcMatchPoissonMLv2(mlInputs);
-    const v1Calc = calcMatchPoissonML(mlInputs);
+    // Per-engine isolation: a broken v2 model file or runtime error should
+    // not crash the ensemble + v1 pipeline. Engines already return null for
+    // insufficient-data cases; try/catch covers runtime failures on top.
+    let v2Calc: MatchCalc | null = null;
+    let v1Calc: MatchCalc | null = null;
+    try { v2Calc = calcMatchPoissonMLv2(mlInputs); }
+    catch (e) { console.warn("[FODZE] poisson-ml-v2 failed:", (e as Error).message); }
+    try { v1Calc = calcMatchPoissonML(mlInputs); }
+    catch (e) { console.warn("[FODZE] poisson-ml-v1 failed:", (e as Error).message); }
 
     const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
     const enh = calcMatchEnhanced(
@@ -366,10 +405,29 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
 
   const matches: RawMatch[] = data?.matches || [];
 
-  // Inner memo: expensive engine runs. Deliberately omits `engine` from deps
-  // — the 3 engines are engine-agnostic; only primary selection is not.
+  // Per-match engine cache. When a user edits odds for ONE match, all OTHER
+  // matches' cached engine results (lambdas, 200-iter bootstrap, Elo lookups,
+  // calcMatchEnhanced) stay valid — the previous single-memo pattern forced
+  // the entire 10-match day to recompute on every oddsData change even
+  // though 9 matches' inputs hadn't changed. Cache key = matchIdx + serialized
+  // odds; global-invalidate on non-odds deps via effect below.
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null } | null;
+  const engineCache = useRef<Map<string, EngineResult>>(new Map());
+  const cacheVersionKey = useMemo(
+    () => `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|${data?.matches?.length ?? 0}`,
+    [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data?.matches?.length],
+  );
+  useEffect(() => { engineCache.current.clear(); }, [cacheVersionKey]);
+
   const allEngineCalcs = useMemo(
-    () => matches.map((m: RawMatch, i: number) => computeAllEngines(m, i)),
+    () => matches.map((m: RawMatch, i: number) => {
+      const cacheKey = `${i}|${JSON.stringify(oddsData[i] || {})}`;
+      const cached = engineCache.current.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const result = computeAllEngines(m, i);
+      engineCache.current.set(cacheKey, result);
+      return result;
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded, sosRatings],
   );
