@@ -256,9 +256,12 @@ export function validateXGHistory(
     const variance = xgs.reduce((s, v) => s + (v - avg) ** 2, 0) / xgs.length;
     if (variance < 0.001) issues.push(`zero xG variance — suspicious duplicates`);
 
+    // Only flag EXACTLY-identical values (to 0.001) — natural variance
+    // can produce xG strings like [1.50, 1.50, 1.49] that are plausible,
+    // but 3× exactly 1.500000 in a row indicates a data-pipeline bug.
     let runLen = 1;
     for (let i = 1; i < xgs.length; i++) {
-      if (Math.abs(xgs[i] - xgs[i - 1]) < 0.01) {
+      if (Math.abs(xgs[i] - xgs[i - 1]) < 0.001) {
         runLen++;
         if (runLen >= 3) {
           issues.push(`3+ identical xG values in a row — copy-paste?`);

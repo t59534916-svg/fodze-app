@@ -8,12 +8,12 @@ const fair = (p: number) => p > 0 ? (1 / p).toFixed(2) : "—";
 
 // Styles
 const sectionStyle = { fontSize: 9, fontWeight: 700 as const, color: color.gold, letterSpacing: 0.8, marginBottom: 6, marginTop: 14 };
-const rowStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #c4a26508", fontSize: 12 };
+const rowStyle = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: `1px solid ${color.goldMid}08`, fontSize: 12 };
 const labelStyle = { color: color.text, fontWeight: 500 as const };
 const probStyle = { color: `${color.goldMid}80`, fontFamily: "'SF Mono', monospace", fontSize: 11 };
 const fairStyle = { color: `${color.goldMid}60`, fontFamily: "'SF Mono', monospace", fontSize: 11 };
 const valueIndicator = { width: 5, height: 5, borderRadius: "50%", background: color.value, marginLeft: 6, flexShrink: 0 as const };
-const noDataStyle = { fontSize: 10, color: "#c4a26545", fontStyle: "italic" as const, padding: "4px 0" };
+const noDataStyle = { fontSize: 10, color: `${color.goldMid}45`, fontStyle: "italic" as const, padding: "4px 0" };
 
 // ─── Confidence Check: is this prediction reliable? ──────────────────
 // Compares internal consistency — if probabilities don't sum to ~1 or
@@ -130,13 +130,13 @@ export default function BettingSummary({ match, calc, league }: {
 
   return (
     <div style={{
-      background: "#c4a2650a", border: "1px solid #c4a26515", borderRadius: 10,
+      background: `${color.goldMid}0a`, border: `1px solid ${color.goldMid}15`, borderRadius: 10,
       padding: "12px 14px", marginBottom: 14,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: color.gold, letterSpacing: 1 }}>WETTÜBERSICHT</span>
         {quality.xgQuality === "weak" && (
-          <span style={{ fontSize: 8, color: color.warn, background: "#c4707012", padding: "2px 6px", borderRadius: 4 }}>xG-Daten unsicher</span>
+          <span style={{ fontSize: 8, color: color.warn, background: `${color.warn}12`, padding: "2px 6px", borderRadius: 4 }}>xG-Daten unsicher</span>
         )}
       </div>
 
@@ -211,7 +211,7 @@ export default function BettingSummary({ match, calc, league }: {
               <span style={{ fontSize: 14 }}>👨‍⚖️</span>
               <div>
                 <div style={{ fontSize: 11, color: color.text, fontWeight: 600 }}>{match.referee.split(",")[0].trim()}</div>
-                <div style={{ fontSize: 9, color: "#c4a26570" }}>Ø {cards.expected.toFixed(1)} Karten/Spiel</div>
+                <div style={{ fontSize: 9, color: `${color.goldMid}70` }}>Ø {cards.expected.toFixed(1)} Karten/Spiel</div>
               </div>
             </div>
           )}
@@ -270,7 +270,7 @@ export default function BettingSummary({ match, calc, league }: {
         <>
           <div style={sectionStyle}>TORSCHÜTZEN (Top {scorers.length})</div>
           {scorers.map((s: TopScorer, i: number) => (
-            <div key={i} style={{ ...rowStyle, borderBottom: i < scorers.length - 1 ? "1px solid #c4a26508" : "none" }}>
+            <div key={i} style={{ ...rowStyle, borderBottom: i < scorers.length - 1 ? `1px solid ${color.goldMid}08` : "none" }}>
               <span style={{ color: color.gold, fontWeight: 700, width: 16 }}>#{i + 1}</span>
               <span style={{ ...labelStyle, flex: 1 }}>
                 {s.name} <span style={{ color: `${color.goldMid}60`, fontSize: 10 }}>({s.team === "H" ? match.home?.name?.split(" ").pop() : match.away?.name?.split(" ").pop()})</span>

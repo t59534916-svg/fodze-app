@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, useRef } from "react";
 import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, type TeamXGMatch } from "@/lib/supabase";
 import { matchKey } from "@/lib/format";
 import { parseAbsences } from "@/lib/absence-parser";
@@ -409,28 +409,40 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // matches' cached engine results (lambdas, 200-iter bootstrap, Elo lookups,
   // calcMatchEnhanced) stay valid — the previous single-memo pattern forced
   // the entire 10-match day to recompute on every oddsData change even
-  // though 9 matches' inputs hadn't changed. Cache key = matchIdx + serialized
-  // odds; global-invalidate on non-odds deps via effect below.
+  // though 9 matches' inputs hadn't changed.
+  //
+  // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
+  // matchday refresh with the same count but different sort order would
+  // otherwise serve another match's cached result under the same idx.
   type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
-  const cacheVersionKey = useMemo(
-    () => `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|${data?.matches?.length ?? 0}`,
-    [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data?.matches?.length],
-  );
-  useEffect(() => { engineCache.current.clear(); }, [cacheVersionKey]);
+  const lastVersionRef = useRef<string>("");
 
-  const allEngineCalcs = useMemo(
-    () => matches.map((m: RawMatch, i: number) => {
-      const cacheKey = `${i}|${JSON.stringify(oddsData[i] || {})}`;
+  const cacheVersionKey = useMemo(() => {
+    const matchIds = (data?.matches || [])
+      .map(m => `${m.home?.name}:${m.away?.name}`)
+      .join(",");
+    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|${matchIds}`;
+  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data]);
+
+  const allEngineCalcs = useMemo(() => {
+    // Clear inline before lookups — useEffect fires AFTER render, which
+    // would let one render tick serve stale cache entries on version
+    // change (e.g., league switch with new SoS).
+    if (lastVersionRef.current !== cacheVersionKey) {
+      engineCache.current.clear();
+      lastVersionRef.current = cacheVersionKey;
+    }
+    return matches.map((m: RawMatch, i: number) => {
+      const cacheKey = `${m.home?.name}|${m.away?.name}|${JSON.stringify(oddsData[i] || {})}`;
       const cached = engineCache.current.get(cacheKey);
       if (cached !== undefined) return cached;
       const result = computeAllEngines(m, i);
       engineCache.current.set(cacheKey, result);
       return result;
-    }),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, oddsData, frac, ld.avg, ld.hf, league, calLoaded, sosRatings],
-  );
+  }, [cacheVersionKey, oddsData]);
 
   // Outer memo: cheap — picks primary from the precomputed 3 based on
   // currently selected engine. Switching engines is now microseconds

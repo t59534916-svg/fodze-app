@@ -240,7 +240,7 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
         <div style={{
           display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
           marginBottom: 12, padding: "6px 10px",
-          background: `${color.goldMid}08`, border: "1px solid #c4a26515", borderRadius: 6,
+          background: `${color.goldMid}08`, border: `1px solid ${color.goldMid}15`, borderRadius: 6,
           fontSize: 11,
         }}>
           {/* Form per side — color-coded W/D/L dots */}
@@ -308,7 +308,7 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
           <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", gap: 2 }}>
             <div style={{ width: `${calc.mk.H * 100}%`, background: `linear-gradient(90deg, ${color.valueDark}, ${color.value})`, borderRadius: 5 }} />
             <div style={{ width: `${calc.mk.D * 100}%`, background: `${color.goldMid}60`, borderRadius: 5 }} />
-            <div style={{ width: `${calc.mk.A * 100}%`, background: "linear-gradient(90deg, #c47070, #a04040)", borderRadius: 5 }} />
+            <div style={{ width: `${calc.mk.A * 100}%`, background: `linear-gradient(90deg, ${color.warn}, #a04040)`, borderRadius: 5 }} />
           </div>
         </div>
       )}
@@ -347,7 +347,7 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
 
       {/* Model Assessment */}
       {calc && (
-        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${color.goldMid}0a`, border: "1px solid #c4a26512", marginBottom: 16, fontSize: 12, lineHeight: 1.6, color: `${color.goldMid}80` }}>
+        <div style={{ padding: "10px 14px", borderRadius: 8, background: `${color.goldMid}0a`, border: `1px solid ${color.goldMid}12`, marginBottom: 16, fontSize: 12, lineHeight: 1.6, color: `${color.goldMid}80` }}>
           {calc.mk.H > 0.55 ? `${match.home?.name} klarer Favorit.` :
            calc.mk.A > 0.55 ? `${match.away?.name} klarer Favorit.` :
            calc.mk.H > 0.42 ? `${match.home?.name} leichter Favorit, offenes Spiel.` :
@@ -455,7 +455,7 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
           <div style={{ fontSize: 10, color: `${color.goldMid}70`, letterSpacing: 0.5, marginBottom: 6, fontWeight: 600 }}>ALLE MÄRKTE</div>
           {calc.bets.map((b: BetCalc) => (
             <div key={b.label}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid #c4a26508", fontSize: 11 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${color.goldMid}08`, fontSize: 11 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   {b.valueTrap && <div style={{ width: 5, height: 5, borderRadius: "50%", background: color.warn }} />}
                   {b.isValue && !b.valueTrap && <div style={{ width: 5, height: 5, borderRadius: "50%", background: color.value }} />}
@@ -486,13 +486,13 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
 
       {/* Odds History */}
       {oddsHistory.length > 0 && (
-        <div style={{ background: `${color.goldMid}08`, border: "1px solid #c4a26515", borderRadius: 10, padding: 10, marginTop: 8 }}>
+        <div style={{ background: `${color.goldMid}08`, border: `1px solid ${color.goldMid}15`, borderRadius: 10, padding: 10, marginTop: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
             <span style={{ fontSize: 9, color: `${color.goldMid}70`, letterSpacing: 0.5 }}>QUOTENVERLAUF ({oddsHistory.length}x)</span>
             <button onClick={onDelHist} style={{ fontSize: 9, padding: "1px 6px", background: color.warnBg, color: color.warn, border: "none", borderRadius: 4, cursor: "pointer" }}>Löschen</button>
           </div>
           {oddsHistory.map((s: OddsSnapshot, si: number) => (
-            <div key={si} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, padding: "3px 0", borderBottom: si < oddsHistory.length - 1 ? "1px solid #c4a26508" : "none" }}>
+            <div key={si} style={{ display: "flex", justifyContent: "space-between", fontSize: 10, padding: "3px 0", borderBottom: si < oddsHistory.length - 1 ? `1px solid ${color.goldMid}08` : "none" }}>
               <span style={{ color: `${color.goldMid}60`, minWidth: 42 }}>{new Date(s.snapshot_time).toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
               {["h", "d", "a"].map(k => {
                 const val = parseFloat(String(s.odds[k] ?? "")), prev = si > 0 ? parseFloat(String(oddsHistory[si - 1].odds[k] ?? "")) : null;
@@ -526,10 +526,10 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
         { t: match.home, r: "H" as const, cl: color.gold, xg: match.home.xg_h8, xga: match.home.xga_h8, hist: match.home.xg_h_history },
         { t: match.away, r: "A" as const, cl: color.warn, xg: match.away.xg_a8, xga: match.away.xga_a8, hist: match.away.xg_a_history },
       ].map(({ t, r, cl, xg, xga, hist }) => t && (
-        <div key={r} style={{ padding: "10px 0", borderBottom: "1px solid #c4a26510", fontSize: 12 }}>
+        <div key={r} style={{ padding: "10px 0", borderBottom: `1px solid ${color.goldMid}10`, fontSize: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             <Kit team={t.name} size={20} />
-            <span style={{ fontWeight: 600, color: color.text, cursor: "pointer", textDecoration: "underline dotted #c4a26530" }}
+            <span style={{ fontWeight: 600, color: color.text, cursor: "pointer", textDecoration: `underline dotted ${color.goldMid}30` }}
               onClick={() => window.open("/team/" + encodeURIComponent(t.name), "_blank")}>{t.name}</span>
             <span style={{ fontWeight: 700, color: cl, fontSize: 10 }}>({r})</span>
           </div>
@@ -552,7 +552,7 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
       {calc && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, margin: "12px 0" }}>
           {[["λ H", calc.lambdaH.toFixed(2)], ["λ A", calc.lambdaA.toFixed(2)], ["Ü2.5", pc(calc.mk.O25)], ["TOP", calc.mk.best]].map(([l, v]: any) => (
-            <div key={l} style={{ background: `${color.goldMid}10`, border: "1px solid #c4a26518", borderRadius: 8, padding: "8px 4px", textAlign: "center" }}>
+            <div key={l} style={{ background: `${color.goldMid}10`, border: `1px solid ${color.goldMid}18`, borderRadius: 8, padding: "8px 4px", textAlign: "center" }}>
               <div style={{ fontSize: 8, color: `${color.goldMid}60`, letterSpacing: 0.5 }}>{l}</div>
               <div style={{ fontSize: 14, fontWeight: 600, color: l === "TOP" ? color.gold : color.text }}>{v}</div>
             </div>
@@ -562,7 +562,7 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
 
       {/* Adjustments */}
       {calc?.enh && (
-        <div style={{ fontSize: 10, marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: `${color.goldMid}08`, border: "1px solid #c4a26512" }}>
+        <div style={{ fontSize: 10, marginBottom: 12, padding: "8px 10px", borderRadius: 8, background: `${color.goldMid}08`, border: `1px solid ${color.goldMid}12` }}>
           <div style={{ color: `${color.goldMid}55`, marginBottom: 4, fontWeight: 600, fontSize: 9, letterSpacing: 0.5 }}>ANPASSUNGEN</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
             <span style={{ color: `${color.goldMid}70` }}>Regression: λ {calc.lambdaH_raw?.toFixed(2)}→{calc.enh.lambdaH_regressed.toFixed(2)} ({(calc.enh.shrinkageH * 100).toFixed(0)}%)</span>
@@ -588,7 +588,7 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
             <div style={{ fontWeight: 600, color: color.gold, marginBottom: 4, fontSize: 9, letterSpacing: 0.5 }}>EXAKTE ERGEBNISSE</div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
               {scores.map((sc: any, si: number) => (
-                <div key={si} style={{ background: si < 3 ? `${color.goldMid}12` : "#0d070533", border: "1px solid #c4a26515", borderRadius: 5, padding: "3px 6px", textAlign: "center", minWidth: 38 }}>
+                <div key={si} style={{ background: si < 3 ? `${color.goldMid}12` : "#0d070533", border: `1px solid ${color.goldMid}15`, borderRadius: 5, padding: "3px 6px", textAlign: "center", minWidth: 38 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: si === 0 ? color.gold : color.text }}>{sc.score}</div>
                   <div style={{ fontSize: 8, color: `${color.goldMid}70` }}>{pc(sc.p)} · {(1 / sc.p).toFixed(1)}</div>
                 </div>
@@ -598,7 +598,7 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
             <div style={{ fontWeight: 600, color: color.gold, marginBottom: 4, fontSize: 9, letterSpacing: 0.5 }}>HALBZEIT / ENDSTAND</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3, marginBottom: 12 }}>
               {Object.entries(htft).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => (
-                <div key={k} style={{ background: "#0d070533", border: "1px solid #c4a26515", borderRadius: 4, padding: "3px 4px", textAlign: "center" }}>
+                <div key={k} style={{ background: "#0d070533", border: `1px solid ${color.goldMid}15`, borderRadius: 4, padding: "3px 4px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, fontWeight: 500, color: color.text }}>{k}</div>
                   <div style={{ fontSize: 8, color: `${color.goldMid}70` }}>{pc(v)}</div>
                 </div>
@@ -619,7 +619,7 @@ function TabDetails({ match, calc }: { match: RawMatch; calc: any }) {
 
       {/* Warnings */}
       {calc?.warnings?.filter((w: { level: string; message: string }) => w.level === "error").length > 0 && (
-        <div style={{ padding: 8, borderRadius: 8, background: color.warnBg, border: "1px solid #c4707020", marginTop: 12 }}>
+        <div style={{ padding: 8, borderRadius: 8, background: color.warnBg, border: `1px solid ${color.warn}20`, marginTop: 12 }}>
           {calc.warnings.filter((w: { level: string; message: string }) => w.level === "error").map((w: { level: string; message: string }, wi: number) => (
             <div key={wi} style={{ fontSize: 10, color: color.warn, marginBottom: 2 }}>{w.message}</div>))}
         </div>
@@ -639,9 +639,9 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
   const [tab, setTab] = useState<Tab>("overview");
 
   return (
-    <div style={{ borderTop: "1px solid #c4a26515", marginTop: 4 }}>
+    <div style={{ borderTop: `1px solid ${color.goldMid}15`, marginTop: 4 }}>
       {/* Tab Bar — 2 primary tabs, details embedded in Überblick */}
-      <div role="tablist" aria-label="Match-Details" style={{ display: "flex", borderBottom: "1px solid #c4a26510" }}>
+      <div role="tablist" aria-label="Match-Details" style={{ display: "flex", borderBottom: `1px solid ${color.goldMid}10` }}>
         <TabBtn label="Überblick" active={tab === "overview"} onClick={() => setTab("overview")} id={`tab-overview-${idx}`} controls={`panel-overview-${idx}`} />
         <TabBtn label="Quoten" active={tab === "odds"} onClick={() => setTab("odds")} id={`tab-odds-${idx}`} controls={`panel-odds-${idx}`} />
       </div>
@@ -653,7 +653,7 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
             {/* Detailed statistics — collapsed by default to reduce visual
                 noise; power users expand when they want to verify λ,
                 adjustments, HT/FT, winning margin etc. */}
-            <details style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #c4a26510" }}>
+            <details style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${color.goldMid}10` }}>
               <summary style={{
                 cursor: "pointer", listStyle: "none",
                 padding: "10px 12px", borderRadius: 6,
