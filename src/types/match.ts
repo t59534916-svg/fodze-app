@@ -214,7 +214,9 @@ export interface MatchCalc extends LambdaEstimates {
   ov: number | null;
   hasValue: boolean;
   hasOdds: boolean;
-  warnings?: { level: "error" | "warning"; message: string }[];
+  // Structurally compatible with XGWarning from lib/dixon-coles.ts; the
+  // `field` is emitted by the engine but the UI only uses level+message.
+  warnings?: { level: "error" | "warning" | "info"; message: string; field?: string }[];
   ensemble?: {
     H: number; D: number; A: number; O25: number;
     models: Record<string, any>;
@@ -228,6 +230,15 @@ export interface MatchCalc extends LambdaEstimates {
       trackA: { H: number; D: number; A: number };
       trackB: { H: number; D: number; A: number };
     };
+  };
+  // Attached by MatchdayContext.processed so EngineComparison can render
+  // side-by-side H/X/2/Ü2.5 across all 3 engines from any primary calc.
+  // Optional because individual engine calls don't set it (only the
+  // orchestrator does); null entries indicate the engine bailed out.
+  allEnginesMk?: {
+    "ensemble-v1": MarketProbs;
+    "poisson-ml": MarketProbs | null;
+    "poisson-ml-v2": MarketProbs | null;
   };
 }
 

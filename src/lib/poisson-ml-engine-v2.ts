@@ -504,10 +504,10 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   return {
     lambdaH, lambdaA,
     lambdaH_raw, lambdaA_raw,
-    mk, bets, enh: enh as any,
+    mk, bets, enh,
     topScores: topScores.slice(0, 5),
     ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
     hasValue: bets.some(b => b.isValue),
     hasOdds, warnings, ensemble,
-  } as MatchCalc;
+  };
 }

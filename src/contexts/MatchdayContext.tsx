@@ -4,7 +4,7 @@ import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAl
 import { matchKey } from "@/lib/format";
 import { parseAbsences } from "@/lib/absence-parser";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
-import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
+import { resolveBucket as resolveXGBucket } from "@/lib/xg-history-resolver";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
@@ -129,31 +129,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           byTeamVenue.set(key, arr.slice(-8));
         }
 
-        // Mirrors loadTeamXGHistory fuzzy logic: exact team first, then
-        // longest-distinctive-token substring match against the bucket keys.
-        const resolveBucket = (team: string, venue: "home" | "away"): TeamXGMatch[] => {
-          const mapped = TEAM_SCRAPER_MAP[team];
-          const understat = mapped?.understat || team;
-          const exact = byTeamVenue.get(`${understat}|${venue}`);
-          if (exact && exact.length > 0) return exact;
-
-          const tokens = team
-            .toLowerCase()
-            .replace(/[._]/g, " ")
-            .split(/\s+/)
-            .filter(w => w.length > 3 && !/^(fc|sc|sv|vfl|vfb|tsg|tsv|rb|afc|the|club)$/.test(w));
-          if (tokens.length === 0) return [];
-          const probe = tokens.sort((a, b) => b.length - a.length)[0];
-          for (const [k, arr] of byTeamVenue) {
-            const [t, v] = k.split("|");
-            if (v === venue && t.toLowerCase().includes(probe)) return arr;
-          }
-          return [];
-        };
-
+        // Fuzzy resolver lives in src/lib/xg-history-resolver.ts so the
+        // matching behavior can be unit-tested without spinning up React +
+        // Supabase; it mirrors loadTeamXGHistory (exact Understat-name
+        // hit, then longest-distinctive-token substring match).
         for (const match of matchdayData.matches) {
           if (match.home?.name && !match.home.xg_h_history?.length) {
-            const hist = resolveBucket(match.home.name, "home");
+            const hist = resolveXGBucket(byTeamVenue, match.home.name, "home");
             if (hist.length > 0) {
               match.home.xg_h_history = toXGHistoryEntries(hist, `${match.home.name} H`);
               if (!match.home.xg_h8) {
@@ -168,7 +150,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
             }
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
-            const hist = resolveBucket(match.away.name, "away");
+            const hist = resolveXGBucket(byTeamVenue, match.away.name, "away");
             if (hist.length > 0) {
               match.away.xg_a_history = toXGHistoryEntries(hist, `${match.away.name} A`);
               if (!match.away.xg_a8) {
@@ -194,7 +176,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           const sosMatches = sosRows.map(m => ({ team: m.team, opponent: m.opponent, xg: m.xg, xga: m.xga }));
           setSosRatings(computeSoSRatings(sosMatches, lgConfig.avg));
         }
-      } catch (e) { /* SoS is optional — engine works without it */ }
+      } catch (e) {
+        // SoS is optional — engine works without it. Log anyway so a bug
+        // in computeSoSRatings surfaces in devtools instead of silently
+        // degrading the lambda adjustments for every user.
+        console.warn("[FODZE] SoS computation failed (engine will proceed without):", (e as Error).message);
+      }
 
       setData(matchdayData);
       const live = await loadLiveOdds(supabase, lg);
@@ -331,6 +318,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         ? { home: homeAbsences, away: awayAbsences }
         : undefined;
 
+    // sharpOdds: OddsSharpData is structurally assignable to the engine's
+    //   { h|null, d|null, a|null } — the extra `book?` field is fine.
+    // No options: the ML engines accept { rhoModel, overdispersion,
+    //   restDaysDiff }; none are set here, and `league` is already passed
+    //   as a top-level field above, so an options object would be dead.
     const mlInputs = {
       xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
       xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
@@ -339,10 +331,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       hHistory: h.xg_h_history, aHistory: a.xg_a_history,
       homeTeam: h.name, awayTeam: a.name,
       odds: no, fraction: frac,
-      sharpOdds: o._sharp as any,
+      sharpOdds: o._sharp,
       sosRatings: sosRatings || undefined,
       absences,
-      options: { league } as any,
     };
 
     // Per-engine isolation: a broken v2 model file or runtime error should
@@ -447,18 +438,27 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Outer memo: cheap — picks primary from the precomputed 3 based on
   // currently selected engine. Switching engines is now microseconds
   // instead of re-running LightGBM/GLM/ensemble for every match.
+  //
+  // `allEnginesMk` is constructed on a SHALLOW COPY of the chosen primary
+  // so the cached engine calcs in `allEngineCalcs` stay immutable; an
+  // earlier version mutated primary in place, which worked but left the
+  // cached ensembleCalc/v1Calc/v2Calc objects drifting between engine
+  // toggles (benign in practice, trap for refactors).
   const processed: ProcessedMatch[] = useMemo(() =>
     matches.map((m: RawMatch, i: number) => {
       const all = allEngineCalcs[i];
       if (!all) return { ...m, idx: i, calc: null };
-      let primary: MatchCalc;
-      if (engine === "poisson-ml-v2" && all.v2Calc) primary = all.v2Calc;
-      else if (engine === "poisson-ml" && all.v1Calc) primary = all.v1Calc;
-      else primary = all.ensembleCalc;
-      (primary as any).allEnginesMk = {
-        "ensemble-v1": all.ensembleCalc.mk,
-        "poisson-ml": all.v1Calc?.mk || null,
-        "poisson-ml-v2": all.v2Calc?.mk || null,
+      const chosen =
+        engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
+        engine === "poisson-ml" && all.v1Calc ? all.v1Calc :
+        all.ensembleCalc;
+      const primary: MatchCalc = {
+        ...chosen,
+        allEnginesMk: {
+          "ensemble-v1": all.ensembleCalc.mk,
+          "poisson-ml": all.v1Calc?.mk || null,
+          "poisson-ml-v2": all.v2Calc?.mk || null,
+        },
       };
       return { ...m, idx: i, calc: primary };
     }),
