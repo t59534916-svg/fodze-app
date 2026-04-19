@@ -46,7 +46,7 @@ Das ist ein Empty-State den ich bewusst eingebaut habe — `calc === null` im `P
 
 **Diagnose:**
 1. DevTools Console öffnen → suche `[FODZE] poisson-ml-v2 failed` oder `[FODZE] poisson-ml-v1 failed`
-2. Wenn kein Engine-Fehler, ist `xg_h8 === 0` für eine Seite:
+2. Wenn kein Engine-Fehler: die Engine-Guard `if (!h?.xg_h8 || !a?.xg_a8) return null` hat gegriffen. `xg_h8` (8-Game-Summe im Matchday-JSON) ist 0, weil im Lade-Pfad keine `team_xg_history`-Rows summiert werden konnten. Prüfe die Source-Tabelle:
    ```sql
    SELECT team, venue, xg, match_date
    FROM team_xg_history
@@ -54,7 +54,7 @@ Das ist ein Empty-State den ich bewusst eingebaut habe — `calc === null` im `P
      AND league = 'bundesliga'
    ORDER BY match_date DESC;
    ```
-3. Wenn für ein Team 0 Rows → Namens-Mapping-Problem (Understat-Name != FODZE-Name)
+3. Wenn für ein Team 0 Rows → Namens-Mapping-Problem (Understat-Name im DB != FODZE-Name im Matchday-JSON). Seit Commit `d468cbf` läuft der Fuzzy-Resolver in JS über `loadAllTeamXGHistory` — check auch die Token-Heuristik in `src/contexts/MatchdayContext.tsx` (`resolveBucket`).
 
 **Fix — fehlende xG-Historie:**
 ```bash
@@ -139,12 +139,13 @@ WHERE id IN (... IDs from above query ...);
 
 ### Symptom: Transfermarkt-Scrape bricht mit Groq-Error ab
 
-Ein `refresh:full` verbraucht ~350K Tokens/Tag (Groq free: 500K/Tag). Zweimal am Tag → mittendrin Abbruch. Seit Commit `aeXXXX` gibt's ein sticky flag `_groqDailyQuotaExhausted` damit nicht endlos retried wird.
+Ein `refresh:full` verbraucht ~350K Tokens/Tag (Groq free: 500K/Tag). Zweimal am Tag → mittendrin Abbruch. Seit Commit `d4edc6f` gibt's ein sticky flag `_groqDailyQuotaExhausted` in [`scripts/_lib/transfermarkt-scrape.mjs`](../scripts/_lib/transfermarkt-scrape.mjs) damit nicht endlos retried wird.
 
 **Diagnose:**
 ```bash
-# Log check
-cat scripts/refresh.log 2>/dev/null | tail -50
+# launchd-Logs (wenn via scripts/launchd/install.sh installiert)
+tail -50 ~/Library/Logs/fodze-refresh.log
+tail -50 ~/Library/Logs/fodze-refresh-full.log
 
 # missing-aliases könnte auch der Grund sein
 cat missing-tm-aliases.log 2>/dev/null
