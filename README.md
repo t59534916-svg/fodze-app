@@ -163,6 +163,7 @@ Trainiert auf 139.691 Matches (18 Ligen), evaluiert auf 6.691 OOS Matches. Per-L
 
 - **[Engine](docs/ENGINE.md)** — Dixon-Coles, NegBin, XGBoost, Kalibrierung, Kelly (mathematisch detailliert)
 - **[Architecture](docs/ARCHITECTURE.md)** — System-Diagramm, Data Flow, DB Schema
+- **[Debugging](docs/DEBUGGING.md)** — Operationaler Runbook: Symptom → Diagnose → Fix
 - **[Design Handoff](docs/DESIGN-HANDOFF.md)** — Tokens, Komponenten, Responsive, A11y
 - **[Workflow](WORKFLOW.md)** — Admin Spieltag-Workflow mit Prompts
 - **[CLAUDE.md](CLAUDE.md)** — Entwickler-Guide für Claude Code (Architektur, Pipelines, Konventionen)

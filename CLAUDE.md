@@ -448,6 +448,7 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 ## Zusätzliche Docs
 
 - `docs/ARCHITECTURE.md` — tiefer Architektur-Überblick
+- `docs/DEBUGGING.md` — Operationaler Runbook (Symptom → Diagnose → Fix)
 - `docs/ENGINE.md` — Engine-Internals, Training, Backtest-Methodik
 - `docs/HANDBUCH.md` — End-User Handbuch (auch als `/handbuch` In-App)
 - `docs/LINEUP-INTEGRATION.md` — Design für Lineup-aware Predictions (nicht implementiert)
