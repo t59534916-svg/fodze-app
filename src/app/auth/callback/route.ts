@@ -16,7 +16,11 @@ export async function GET(request: Request) {
           getAll() { return cookieStore.getAll(); },
           setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
             cookiesToSet.forEach(({ name, value, options }) => {
-              try { cookieStore.set(name, value, options); } catch {}
+              // cookieStore.set throws when invoked from a Server Component
+              // after the response has already been sent — the documented
+              // Next.js + Supabase SSR pattern is to swallow this; middleware
+              // is responsible for refreshing cookies on subsequent requests.
+              try { cookieStore.set(name, value, options); } catch { /* SSR cookie-set limitation */ }
             });
           },
         },

@@ -18,7 +18,13 @@ function loadFromSession<T>(key: string, fallback: T): T {
     if (parsed.selectedIds) parsed.selectedIds = new Set(parsed.selectedIds);
     if (parsed.bankerIds) parsed.bankerIds = new Set(parsed.bankerIds);
     return parsed;
-  } catch { return fallback; }
+  } catch (err) {
+    // Corrupted sessionStorage value — wipe it so the next save starts
+    // clean, and fall back to defaults. Log for diagnosis.
+    console.warn("[FODZE] combo state restore failed:", (err as Error).message);
+    try { sessionStorage.removeItem(key); } catch { /* storage disabled */ }
+    return fallback;
+  }
 }
 
 function saveToSession(key: string, state: any) {
@@ -28,7 +34,11 @@ function saveToSession(key: string, state: any) {
       selectedIds: Array.from(state.selectedIds),
       bankerIds: Array.from(state.bankerIds),
     }));
-  } catch {}
+  } catch (err) {
+    // Quota exceeded or storage disabled (private browsing). Non-fatal —
+    // combo state just won't persist across reloads.
+    console.warn("[FODZE] combo state save failed:", (err as Error).message);
+  }
 }
 
 export default function CombosPage() {

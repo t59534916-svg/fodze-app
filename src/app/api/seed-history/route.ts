@@ -93,7 +93,12 @@ async function fetchMatchday(season: string, matchday: number): Promise<Match[]>
           });
         }
       }
-    } catch {}
+    } catch (err) {
+      // kicker.de occasionally ships malformed JSON-LD in some ads/trackers.
+      // Skipping is correct — match data lives in separate SportsEvent nodes.
+      // Log so a full schema change doesn't produce a silent zero-match run.
+      console.warn("[FODZE] seed-history JSON-LD parse skipped:", (err as Error).message);
+    }
   });
 
   const matches: Match[] = [];

@@ -343,7 +343,12 @@ export default function AnnaPage() {
                 m.id === assistantId ? { ...m, content: m.content + json.delta.text } : m
               ));
             }
-          } catch {}
+          } catch (err) {
+            // Partial SSE chunk split across TCP frames — safe to skip,
+            // next chunk completes the JSON. Log once so a format change
+            // upstream doesn't silently break every stream.
+            console.warn("[FODZE] anna SSE parse skipped:", (err as Error).message);
+          }
         }
       }
     } catch (e: any) {
