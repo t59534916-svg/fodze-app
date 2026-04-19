@@ -76,6 +76,37 @@ export const MatchdayDataSchema = z.object({
   sources: z.array(z.string()).optional(),
 });
 
+// ─── Anna Chat Request ───────────────────────────────────────────────
+// Limits mirror the constants in /api/anna/route.ts; keeping them here
+// so route.ts can parse once and drop all the manual typeof guards.
+
+export const ANNA_LIMITS = {
+  MAX_SYSTEM_PROMPT_CHARS: 20_000,
+  MAX_TOTAL_MESSAGES_CHARS: 40_000,
+  MAX_MESSAGE_CHARS: 10_000,
+  MAX_MESSAGE_COUNT: 30,
+} as const;
+
+export const AnnaMessageSchema = z.object({
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string().max(ANNA_LIMITS.MAX_MESSAGE_CHARS,
+    `Single message too long (max ${ANNA_LIMITS.MAX_MESSAGE_CHARS} chars)`),
+}).passthrough();
+
+export const AnnaChatRequestSchema = z.object({
+  messages: z.array(AnnaMessageSchema)
+    .max(ANNA_LIMITS.MAX_MESSAGE_COUNT, `Too many messages (max ${ANNA_LIMITS.MAX_MESSAGE_COUNT})`),
+  systemPrompt: z.string()
+    .max(ANNA_LIMITS.MAX_SYSTEM_PROMPT_CHARS,
+      `systemPrompt too long (max ${ANNA_LIMITS.MAX_SYSTEM_PROMPT_CHARS} chars)`),
+}).refine(
+  (d) => d.messages.reduce((s, m) => s + m.content.length, 0) <= ANNA_LIMITS.MAX_TOTAL_MESSAGES_CHARS,
+  { message: `Combined messages too long (max ${ANNA_LIMITS.MAX_TOTAL_MESSAGES_CHARS} chars)` },
+);
+
+export type AnnaChatRequest = z.infer<typeof AnnaChatRequestSchema>;
+export type AnnaMessage = z.infer<typeof AnnaMessageSchema>;
+
 // ─── Validation Helpers ──────────────────────────────────────────────
 
 export interface ValidationResult<T> {

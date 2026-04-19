@@ -1,43 +1,51 @@
 import { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { AnnaChatRequestSchema, type AnnaMessage } from "@/lib/schemas";
 
 // Priority: GROQ_API_KEY (free) → CLAUDE_API_KEY (paid) → error
 // Groq: Free, fast (Llama 3.3 70B) — https://console.groq.com
 // Claude: Paid but higher quality — https://console.anthropic.com
 
-// ─── Limits (defense against LLM-credit drain) ─────────────────────
-// The endpoint was previously unauthenticated + unlimited. An attacker
-// with the URL could drain Groq free tier or run up Anthropic bills
-// by hammering POST /api/anna. These limits + cookie auth close that.
-const MAX_SYSTEM_PROMPT_CHARS = 20_000; // ~5k tokens, plenty for context
-const MAX_TOTAL_MESSAGES_CHARS = 40_000; // ~10k tokens across history
-const MAX_MESSAGE_CHARS = 10_000; // per-message cap — prevents a single
-                                  // message from consuming the whole budget
-const MAX_MESSAGE_COUNT = 30; // no runaway back-and-forth
+// Size limits live in lib/schemas.ts (ANNA_LIMITS) — single source of
+// truth that the Zod schema enforces. Rate-limit is separate.
 
-// Simple in-memory rate-limit (per Next.js worker). Not a proper defense
-// against distributed abuse — that would need Upstash or similar — but
-// catches casual script-kiddies and accidental loops.
-const rateLimit = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 20; // 20 requests/min per user
+// Rate-limit: 20 requests/minute per user. Enforced by Postgres via the
+// `check_and_increment_rate_limit` RPC (see migration-rate-limits.sql),
+// so the limit holds across all Vercel worker instances instead of
+// fragmenting per-worker like the previous in-memory Map did.
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
+const RATE_LIMIT_BUCKET = "anna";
 
-function checkRateLimit(userId: string): boolean {
-  const now = Date.now();
-  const bucket = rateLimit.get(userId);
-  if (!bucket || bucket.resetAt < now) {
-    rateLimit.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
+async function checkRateLimit(supabase: SupabaseClient, userId: string): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+  const { data, error } = await supabase.rpc("check_and_increment_rate_limit", {
+    p_user_id: userId,
+    p_bucket: RATE_LIMIT_BUCKET,
+    p_max: RATE_LIMIT_MAX,
+    p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
+  });
+  if (error) {
+    // Fail-open on DB blips — better to serve a legitimate request than
+    // lock out every user when the rate-limit table is unreachable.
+    // The previous in-memory Map had the same failure semantics (a
+    // worker restart zeroed every counter). Log so persistent issues
+    // show up in Vercel logs.
+    console.warn("[FODZE] rate_limit RPC failed, failing open:", error.message);
+    return { allowed: true };
   }
-  if (bucket.count >= RATE_LIMIT_MAX) return false;
-  bucket.count++;
-  return true;
+  // RPC returns a single-row TABLE — supabase-js gives us an array.
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return { allowed: true };
+  if (row.allowed) return { allowed: true };
+  const resetMs = row.reset_at ? new Date(row.reset_at).getTime() - Date.now() : RATE_LIMIT_WINDOW_SECONDS * 1000;
+  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(resetMs / 1000)) };
 }
 
 // ─── Auth guard ────────────────────────────────────────────────────
 
-async function getUserIdOrUnauthorized(): Promise<string | Response> {
+async function getSessionOrUnauthorized(): Promise<{ supabase: SupabaseClient; userId: string } | Response> {
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,18 +59,25 @@ async function getUserIdOrUnauthorized(): Promise<string | Response> {
       { status: 401, headers: { "Content-Type": "application/json" } },
     );
   }
-  return user.id;
+  return { supabase, userId: user.id };
 }
 
 export async function POST(req: NextRequest) {
-  const userIdOrError = await getUserIdOrUnauthorized();
-  if (userIdOrError instanceof Response) return userIdOrError;
-  const userId = userIdOrError;
+  const session = await getSessionOrUnauthorized();
+  if (session instanceof Response) return session;
+  const { supabase, userId } = session;
 
-  if (!checkRateLimit(userId)) {
+  const rate = await checkRateLimit(supabase, userId);
+  if (!rate.allowed) {
     return new Response(
-      JSON.stringify({ error: "Rate limit exceeded. Max 20 requests/minute." }),
-      { status: 429, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: `Rate limit exceeded. Max ${RATE_LIMIT_MAX} requests/minute.` }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "Retry-After": String(rate.retryAfterSeconds ?? RATE_LIMIT_WINDOW_SECONDS),
+        },
+      },
     );
   }
 
@@ -73,60 +88,24 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
-  const { messages, systemPrompt } = body as { messages?: unknown; systemPrompt?: unknown };
 
-  // Validate shapes — reject anything that would pass garbage to the LLM
-  if (!Array.isArray(messages)) {
+  const parsed = AnnaChatRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    // Surface the first issue — keeps error responses short; full detail
+    // goes to server logs for postmortem if a bug request starts failing.
+    const first = parsed.error.issues[0];
     return new Response(
-      JSON.stringify({ error: "messages must be an array" }),
+      JSON.stringify({ error: first?.message || "Invalid request body" }),
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
-  if (typeof systemPrompt !== "string") {
-    return new Response(
-      JSON.stringify({ error: "systemPrompt must be a string" }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
-  if (messages.length > MAX_MESSAGE_COUNT) {
-    return new Response(
-      JSON.stringify({ error: `Too many messages (max ${MAX_MESSAGE_COUNT})` }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
-  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
-    return new Response(
-      JSON.stringify({ error: `systemPrompt too long (max ${MAX_SYSTEM_PROMPT_CHARS} chars)` }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
-  let totalChars = 0;
-  for (const m of messages) {
-    if (typeof m !== "object" || !m || !("content" in m)) continue;
-    const c = (m as { content: unknown }).content;
-    if (typeof c !== "string") continue;
-    if (c.length > MAX_MESSAGE_CHARS) {
-      // Per-message cap closes a loophole where a single 40k message was
-      // valid under the combined total but still flooded the LLM budget.
-      return new Response(
-        JSON.stringify({ error: `Single message too long (max ${MAX_MESSAGE_CHARS} chars)` }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    totalChars += c.length;
-  }
-  if (totalChars > MAX_TOTAL_MESSAGES_CHARS) {
-    return new Response(
-      JSON.stringify({ error: `Combined messages too long (max ${MAX_TOTAL_MESSAGES_CHARS} chars)` }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
+  const { messages, systemPrompt } = parsed.data;
 
   const groqKey = process.env.GROQ_API_KEY;
   const claudeKey = process.env.CLAUDE_API_KEY;
 
-  if (groqKey) return streamGroq(groqKey, messages as any[], systemPrompt);
-  if (claudeKey) return streamClaude(claudeKey, messages as any[], systemPrompt);
+  if (groqKey) return streamGroq(groqKey, messages, systemPrompt);
+  if (claudeKey) return streamClaude(claudeKey, messages, systemPrompt);
 
   return new Response(JSON.stringify({ error: "NO_KEY", offline: true }), {
     status: 200, headers: { "Content-Type": "application/json" },
@@ -135,7 +114,7 @@ export async function POST(req: NextRequest) {
 
 // ─── Groq (Free: Llama 3.3 70B) ─────────────────────────────────────
 
-async function streamGroq(apiKey: string, messages: any[], systemPrompt: string) {
+async function streamGroq(apiKey: string, messages: AnnaMessage[], systemPrompt: string) {
   try {
     const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
@@ -177,7 +156,13 @@ async function streamGroq(apiKey: string, messages: any[], systemPrompt: string)
                 `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: delta } })}\n\n`
               ));
             }
-          } catch {}
+          } catch (err) {
+            // Rare: a partial SSE chunk lands here when Groq splits a JSON
+            // object across TCP frames. Dropping it is fine (next chunk
+            // contains the rest), but log so a real format change doesn't
+            // silently eat every delta.
+            console.warn("[FODZE] anna SSE parse skipped:", (err as Error).message);
+          }
         }
       },
     });
@@ -192,7 +177,7 @@ async function streamGroq(apiKey: string, messages: any[], systemPrompt: string)
 
 // ─── Claude (Paid) ───────────────────────────────────────────────────
 
-async function streamClaude(apiKey: string, messages: any[], systemPrompt: string) {
+async function streamClaude(apiKey: string, messages: AnnaMessage[], systemPrompt: string) {
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
