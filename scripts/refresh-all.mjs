@@ -32,10 +32,13 @@
  *   node scripts/refresh-all.mjs --skip-odds     # assume odds already fresh
  *   node scripts/refresh-all.mjs --skip-matchday # don't regenerate matchdays
  *   node scripts/refresh-all.mjs --quiet         # just phase headers, no per-step output
+ *   node scripts/refresh-all.mjs --resume        # skip leagues already matchday-
+ *                                                # seeded by an earlier crashed run
+ *                                                # (progress file < 6h old)
  */
 
 import { spawn } from "child_process";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -73,10 +76,47 @@ const SKIP_ODDS = args.includes("--skip-odds");
 const SKIP_MATCHDAY = args.includes("--skip-matchday");
 const QUIET = args.includes("--quiet");
 const SKIP_AUDIT = args.includes("--skip-audit");
+const RESUME = args.includes("--resume");
 // Opt-in: propagate --injuries to generate-matchday so each team gets a
 // Transfermarkt scrape. Adds ~3s/team but populates the `injuries` field
 // the absence-parser + calcAbsenceImpact actually use.
 const WITH_INJURIES = args.includes("--injuries");
+
+// ─── Progress File (resumability) ───────────────────────────────────
+//
+// Only the matchdays phase is resumable — it's the one that takes 20min
+// and iterates 19 leagues. If Groq quota dies on league 12, re-running
+// with --resume skips the first 11. Stale file (>6h) is ignored so an
+// ancient interrupted run doesn't silently skip today's work.
+const PROGRESS_FILE = resolve(REPO_ROOT, ".fodze-refresh-progress.json");
+const PROGRESS_TTL_MS = 6 * 3600 * 1000;
+
+function loadProgress() {
+  if (!existsSync(PROGRESS_FILE)) return null;
+  try {
+    const data = JSON.parse(readFileSync(PROGRESS_FILE, "utf-8"));
+    if (!data?.started_at) return null;
+    const age = Date.now() - new Date(data.started_at).getTime();
+    if (age > PROGRESS_TTL_MS) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(data) {
+  try {
+    writeFileSync(PROGRESS_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.warn(`   ⚠ Konnte Progress-File nicht schreiben: ${e.message}`);
+  }
+}
+
+function clearProgress() {
+  if (existsSync(PROGRESS_FILE)) {
+    try { unlinkSync(PROGRESS_FILE); } catch { /* best-effort */ }
+  }
+}
 
 // ─── Runner ─────────────────────────────────────────────────────────
 
@@ -136,8 +176,23 @@ const phases = [
     description: `Matchdays generieren + seeden (pro Liga)${WITH_INJURIES ? " + Injuries scrape" : ""}`,
     skip: () => SKIP_MATCHDAY,
     run: async () => {
+      // Resume: if a recent progress file exists, skip already-completed
+      // leagues. First call to saveProgress initializes the file for the
+      // current run; subsequent calls append each successful league.
+      const existing = RESUME ? loadProgress() : null;
+      const completed = new Set(existing?.completed || []);
+      const progress = {
+        started_at: existing?.started_at || new Date().toISOString(),
+        completed: existing?.completed || [],
+      };
+      if (existing && completed.size > 0) {
+        console.log(`   ↻ Resume: ${completed.size}/${LEAGUES.length} Ligen bereits erledigt — überspringen`);
+      }
+      saveProgress(progress);
+
       let ok = 0, fail = 0, skipped = 0;
       for (const lg of LEAGUES) {
+        if (completed.has(lg)) { skipped++; continue; }
         try {
           await runScript(
             "scripts/generate-matchday.mjs",
@@ -145,6 +200,8 @@ const phases = [
             `generate-matchday ${lg}`,
           );
           ok++;
+          progress.completed.push(lg);
+          saveProgress(progress);
         } catch (e) {
           // "No fixtures" isn't a real failure — the script just prints a
           // warning and exits cleanly. But exit code might be non-zero for
@@ -153,7 +210,12 @@ const phases = [
           if (!QUIET) console.warn(`     ⚠ ${lg}: ${e.message}`);
         }
       }
-      console.log(`   ${ok}/${LEAGUES.length} Ligen geseedet${fail ? ` (${fail} failed/no-fixtures)` : ""}`);
+      const resumed = skipped > 0 ? ` (${skipped} resumed)` : "";
+      console.log(`   ${ok + skipped}/${LEAGUES.length} Ligen geseedet${resumed}${fail ? ` (${fail} failed/no-fixtures)` : ""}`);
+
+      // Only clear the progress file when all leagues succeeded; on any
+      // failure, keep it so the next --resume run can pick up the rest.
+      if (fail === 0) clearProgress();
     },
     abortOnFail: false,
   },

@@ -106,20 +106,13 @@ function isConsensus(bet: BetCalc, sharpProbs: { H: number; D: number; A: number
   return marketEdge >= GOLDILOCKS_MIN && marketEdge <= GOLDILOCKS_MAX;
 }
 
-// ConsensusBadge — click-to-expand explainer. The previous implementation
-// relied on `title=` HTML tooltip, which is invisible on touchscreens
-// (no hover) and the badge's meaning was effectively hidden from mobile
-// users. Now the badge toggles a small inline explainer on tap, which
-// works on any device and is keyboard-focusable. Uses goldShine (11.2:1
-// on leather) for the text instead of gold (#d4b86a, ~3:1 against the
-// gold-tinted background) — WCAG AA compliant.
-function ConsensusBadge() {
+// usePopover — shared escape/outside-click wiring for ConsensusBadge and
+// InjuryPopover. Extracted once so any future inline popover reuses the
+// same a11y semantics (Escape closes, outside-click closes, keyboard-
+// focusable trigger).
+function usePopover<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  // Close on outside-click or Escape. Previously the dialog persisted
-  // until users remembered to click the badge again — mobile users
-  // typically didn't realize the toggle-off path existed.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent | TouchEvent) => {
@@ -135,6 +128,71 @@ function ConsensusBadge() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+  return { ref, open, setOpen };
+}
+
+// InjuryPopover — tap-to-expand list of absent players. Previously the
+// injury counter rendered as `<span title={fullList}>`, which is
+// invisible on touch devices and unreachable via keyboard — mobile
+// users saw "H: 3" with no way to see WHO was out. Now a button
+// opens a scrollable dialog with one entry per line.
+function InjuryPopover({ side, count, injuries }: { side: "H" | "A"; count: number; injuries: string }) {
+  const { ref, open, setOpen } = usePopover<HTMLSpanElement>();
+  const entries = injuries
+    .split(/\),\s*/)
+    .map((s, i, arr) => (i < arr.length - 1 ? s + ")" : s))
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return (
+    <span ref={ref} style={{ display: "inline-flex", alignItems: "center", position: "relative" }}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        aria-label={`${count} Ausfälle ${side === "H" ? "Heim" : "Auswärts"} — Tippen für Liste`}
+        aria-expanded={open}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 4,
+          background: "transparent", border: "none", padding: 0, cursor: "pointer",
+          color: `${color.warn}cc`, fontSize: 11, fontWeight: 600, lineHeight: 1.4,
+          borderRadius: 3,
+        }}
+      >
+        <span aria-hidden="true">🩹</span>
+        <span>{side}: {count}</span>
+      </button>
+      {open && (
+        <span
+          role="dialog"
+          aria-label={`Ausfälle ${side === "H" ? "Heim" : "Auswärts"}`}
+          style={{
+            position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 10,
+            background: color.leather3, border: `1px solid ${color.warn}40`,
+            padding: "8px 10px", borderRadius: 6, fontSize: 10, color: color.text,
+            lineHeight: 1.5, width: 260, maxHeight: 220, overflowY: "auto",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)", fontWeight: 400, letterSpacing: 0,
+          }}
+        >
+          {entries.map((entry, i) => (
+            <div key={i} style={{ padding: "2px 0", borderBottom: i < entries.length - 1 ? `1px solid ${color.warn}15` : "none" }}>
+              {entry}
+            </div>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ConsensusBadge — click-to-expand explainer. The previous implementation
+// relied on `title=` HTML tooltip, which is invisible on touchscreens
+// (no hover) and the badge's meaning was effectively hidden from mobile
+// users. Now the badge toggles a small inline explainer on tap, which
+// works on any device and is keyboard-focusable. Uses goldShine (11.2:1
+// on leather) for the text instead of gold (#d4b86a, ~3:1 against the
+// gold-tinted background) — WCAG AA compliant.
+function ConsensusBadge() {
+  const { ref, open, setOpen } = usePopover<HTMLSpanElement>();
 
   return (
     <span ref={ref} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, position: "relative" }}>
@@ -262,24 +320,15 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
             <span style={{ color: `${color.goldMid}30` }}>·</span>
           )}
 
-          {/* Injury counters — only render when > 0 to keep strip clean */}
+          {/* Injury counters — tap/click to see the full roster of
+              absent players. Previously `title=` tooltips worked only on
+              hover (desktop) and never on touch; mobile users could see
+              the count but never the names. */}
           {homeInjCount > 0 && (
-            <span title={match.home!.injuries} style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              color: `${color.warn}cc`, fontSize: 11,
-            }}>
-              <span aria-hidden="true">🩹</span>
-              <span style={{ fontWeight: 600 }}>H: {homeInjCount}</span>
-            </span>
+            <InjuryPopover side="H" count={homeInjCount} injuries={match.home!.injuries!} />
           )}
           {awayInjCount > 0 && (
-            <span title={match.away!.injuries} style={{
-              display: "inline-flex", alignItems: "center", gap: 4,
-              color: `${color.warn}cc`, fontSize: 11,
-            }}>
-              <span aria-hidden="true">🩹</span>
-              <span style={{ fontWeight: 600 }}>A: {awayInjCount}</span>
-            </span>
+            <InjuryPopover side="A" count={awayInjCount} injuries={match.away!.injuries!} />
           )}
 
           {/* Tags — only show distinct ones, badge-style */}
