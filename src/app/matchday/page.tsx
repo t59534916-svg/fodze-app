@@ -12,9 +12,49 @@ import GoldButton from "@/components/shared/GoldButton";
 import MatchCard from "@/components/match/MatchCard";
 import MatchDetail from "@/components/match/MatchDetail";
 import BetTracker from "@/components/matchday/BetTracker";
+import { useCountUp } from "@/hooks/useCountUp";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
+
+// Extracted so each row can call useCountUp independently — hooks
+// can't live inside a .map() callback. Animates the Kelly € and
+// Edge % from 0 → target on first render, giving the list a live
+// "ticking up" feel when the Top-5 Tipps dropdown expands.
+function TipRow({ tip, ti, last, br, onSelect }: {
+  tip: any; ti: number; last: boolean; br: number; onSelect: () => void;
+}) {
+  const confColor = tip.confidence === "HIGH" ? "#6aad55" : tip.confidence === "MEDIUM" ? "#d4b86a" : "#c4a265";
+  const edgePct = useCountUp(tip.edge * 100, 700);
+  const kellyEur = useCountUp(br > 0 ? tip.kelly * br : 0, 700);
+  return (
+    <div onClick={onSelect}
+      className="stagger-item"
+      style={{
+        ["--i" as any]: ti,
+        display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer",
+        borderBottom: !last ? "1px solid #c4a26510" : "none",
+      }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "#d4b86a", width: 16 }}>#{ti + 1}</span>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+          <Kit team={tip.home} size={12} />
+          <span style={{ color: "#ede4d4" }}>{tip.home?.split(" ").pop()}</span>
+          <span style={{ color: "#c4a26530" }}>–</span>
+          <Kit team={tip.away} size={12} />
+          <span style={{ color: "#ede4d4" }}>{tip.away?.split(" ").pop()}</span>
+        </div>
+        <div style={{ fontSize: 10, color: "#a89070", marginTop: 2 }}>
+          {tip.label} · Edge <span style={{ fontVariantNumeric: "tabular-nums" }}>{edgePct >= 0 ? "+" : ""}{edgePct.toFixed(1)}%</span> · Quote {tip.quote.toFixed(2)}
+        </div>
+      </div>
+      <div style={{ textAlign: "right" }}>
+        <div style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, fontWeight: 600, background: confColor + "18", color: confColor }}>{tip.confidence}</div>
+        {br > 0 && <div style={{ fontSize: 10, color: "#6aad55", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>€{kellyEur.toFixed(0)}</div>}
+      </div>
+    </div>
+  );
+}
 
 const S = {
   card: { background: "#c4a26508", border: "1px solid #c4a26520", borderRadius: 10, padding: 14, marginBottom: 10 },
@@ -189,32 +229,14 @@ export default function MatchdayPage() {
           </div>
           {showTips && (
             <div style={{ ...S.card, marginTop: -1, borderTop: "none", borderTopLeftRadius: 0, borderTopRightRadius: 0 }}>
-              {sortedTips.map((tip, ti) => {
-                const confColor = tip.confidence === "HIGH" ? "#6aad55" : tip.confidence === "MEDIUM" ? "#d4b86a" : "#c4a265";
-                return (
-                  <div key={ti} onClick={() => { setSelectedMatch(tip.matchIdx); setShowTips(false); }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", cursor: "pointer",
-                      borderBottom: ti < sortedTips.length - 1 ? "1px solid #c4a26510" : "none" }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#d4b86a", width: 16 }}>#{ti + 1}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
-                        <Kit team={tip.home} size={12} />
-                        <span style={{ color: "#ede4d4" }}>{tip.home?.split(" ").pop()}</span>
-                        <span style={{ color: "#c4a26530" }}>–</span>
-                        <Kit team={tip.away} size={12} />
-                        <span style={{ color: "#ede4d4" }}>{tip.away?.split(" ").pop()}</span>
-                      </div>
-                      <div style={{ fontSize: 10, color: "#a89070", marginTop: 2 }}>
-                        {tip.label} · Edge {pe(tip.edge)} · Quote {tip.quote.toFixed(2)}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, fontWeight: 600, background: confColor + "18", color: confColor }}>{tip.confidence}</div>
-                      {br > 0 && <div style={{ fontSize: 10, color: "#6aad55", marginTop: 2 }}>€{(tip.kelly * br).toFixed(0)}</div>}
-                    </div>
-                  </div>
-                );
-              })}
+              {sortedTips.map((tip, ti) => (
+                <TipRow
+                  key={ti} tip={tip} ti={ti}
+                  last={ti === sortedTips.length - 1}
+                  br={br}
+                  onSelect={() => { setSelectedMatch(tip.matchIdx); setShowTips(false); }}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -235,7 +257,7 @@ export default function MatchdayPage() {
         {processed.map((m: any, i: number) => {
           const isOpen = selectedMatch === i;
           return (
-            <div key={i} data-match-idx={i}>
+            <div key={i} data-match-idx={i} className="stagger-item" style={{ ["--i" as any]: i }}>
               <MatchCard
                 match={m} calc={m.calc} isOpen={isOpen}
                 onClick={() => setSelectedMatch(isOpen ? null : i)}

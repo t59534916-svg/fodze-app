@@ -374,21 +374,30 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
       {calc?.bets?.filter((b: BetCalc) => b.isValue).length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 10, color: color.value, letterSpacing: 0.5, marginBottom: 8, fontWeight: 600 }}>VALUE BETS</div>
-          {calc.bets.filter((b: BetCalc) => b.isValue).map((b: BetCalc) => {
+          {calc.bets.filter((b: BetCalc) => b.isValue).map((b: BetCalc, bi: number) => {
             const confColor = b.confidence === "HIGH" ? color.value : b.confidence === "MEDIUM" ? color.gold : color.goldMid;
             // Consensus = both engine + Pinnacle-sharp see edge in the
             // 2.5–7.5% Goldilocks zone. The strongest possible signal —
             // two independent quant systems agree a price is wrong.
             const consensus = isConsensus(b, sharpProbs);
+            // Shine sweep: reserved for consensus-confirmed or HIGH-
+            // confidence bets. Anything less and the animation becomes
+            // decorative noise that trains users to tune it out.
+            const shouldShine = consensus || b.confidence === "HIGH";
             return (
-              <div key={b.label} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "10px 12px", marginBottom: 6, borderRadius: 8,
-                // Subtle gold tint + thicker gold border on consensus
-                // bets so they stand out from engine-only value picks.
-                background: consensus ? `${color.gold}10` : color.valueGhost,
-                border: `1px solid ${consensus ? `${color.gold}40` : color.valueBorder}`,
-              }}>
+              <div
+                key={b.label}
+                className={`stagger-item ${shouldShine ? "value-row-shine" : ""}`.trim()}
+                style={{
+                  // CSS custom property for the stagger animation delay
+                  ["--i" as any]: bi,
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "10px 12px", marginBottom: 6, borderRadius: 8,
+                  // Subtle gold tint + thicker gold border on consensus
+                  // bets so they stand out from engine-only value picks.
+                  background: consensus ? `${color.gold}10` : color.valueGhost,
+                  border: `1px solid ${consensus ? `${color.gold}40` : color.valueBorder}`,
+                }}>
                 <div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: color.text }}>{b.label}</span>
                   {/* Edge % — previously rendered in `color.value` on the value-tinted bg,

@@ -135,6 +135,51 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
   to { opacity: 1; transform: scale(1); }
 }
 
+/* Diagonal gold sheen sweep — for high-value bets. A brief shine
+   crosses the element every few seconds to signal "this is worth
+   your attention" without being a flashing ad. */
+@keyframes shineSweep {
+  0% { background-position: -200% 0; }
+  40%, 100% { background-position: 200% 0; }
+}
+
+/* Staggered match-card reveal — each card sets --i via inline style,
+   and this animation delays by i*60ms for a gentle cascade on matchday
+   load. Respects prefers-reduced-motion via the global override. */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger-item {
+  opacity: 0;
+  animation: staggerIn 0.35s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+/* High-value bet row: shine sweep overlay. Applied via
+   `.value-row-shine` on high-confidence or consensus bets. */
+.value-row-shine {
+  position: relative;
+  overflow: hidden;
+}
+.value-row-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgba(245, 230, 184, 0.14) 48%,
+    rgba(245, 230, 184, 0.28) 50%,
+    rgba(245, 230, 184, 0.14) 52%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: shineSweep 5s ease-in-out infinite;
+  border-radius: inherit;
+}
+
 /* ─── Card Expand Animation ────────────────────────────────────────── */
 
 @keyframes expandIn {
