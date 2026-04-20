@@ -2,10 +2,10 @@
   "_version": 1,
   "_meta": {
     "method": "dirichlet_odir",
-    "trained_at": null,
     "lambda": 0.01,
-    "status": "placeholder",
-    "note": "Identity matrices + zero biases → applyDirichlet passes probabilities through unchanged. Replace with the output of tools/calibrate_dirichlet.py once OOT logits + pinnacle closing coverage exist for all three cluster tiers."
+    "train_frac": 0.8,
+    "source_parquet": "tools/backtest/v2-oot-predictions.parquet",
+    "trained_at": "2026-04-21T01:46:29.246970"
   },
   "cluster_map": {
     "bundesliga": "top5",
@@ -29,12 +29,113 @@
     "greek_sl": "lower"
   },
   "global": {
-    "W": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-    "b": [0, 0, 0]
+    "W": [
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "b": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "n_train": 5352,
+    "oot_logloss": 1.03014,
+    "fallback_identity": true
   },
   "clusters": {
-    "top5":         { "W": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "b": [0, 0, 0], "n_train": 0 },
-    "mid_european": { "W": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "b": [0, 0, 0], "n_train": 0 },
-    "lower":        { "W": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "b": [0, 0, 0], "n_train": 0 }
+    "top5": {
+      "W": [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          1.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0
+        ]
+      ],
+      "b": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "n_train": 1401,
+      "oot_logloss": 1.014109,
+      "fallback_identity": true
+    },
+    "mid_european": {
+      "W": [
+        [
+          1.2663834757899823,
+          0.040851739227499274,
+          -0.015918135585640977
+        ],
+        [
+          0.025749849466777105,
+          1.3844752142453314,
+          0.015649566678898035
+        ],
+        [
+          -0.025454819729179106,
+          -0.040710387112383506,
+          1.3974607583638572
+        ]
+      ],
+      "b": [
+        -0.17615625609410854,
+        0.14786737626759638,
+        0.028309277457022965
+      ],
+      "n_train": 2876,
+      "oot_logloss": 1.036344,
+      "fallback_identity": false
+    },
+    "lower": {
+      "W": [
+        [
+          1.5089009878169515,
+          -0.03441862907345865,
+          -0.022221667787229952
+        ],
+        [
+          -0.05476141835525619,
+          0.642158224876045,
+          0.022289918179998473
+        ],
+        [
+          0.054424643788358214,
+          0.03429882575283894,
+          1.7430186512790005
+        ]
+      ],
+      "b": [
+        0.07385565446438705,
+        -0.8456675270162219,
+        0.7719519246921401
+      ],
+      "n_train": 1075,
+      "oot_logloss": 1.041334,
+      "fallback_identity": false
+    }
   }
 }
