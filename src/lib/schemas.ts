@@ -107,6 +107,43 @@ export const AnnaChatRequestSchema = z.object({
 export type AnnaChatRequest = z.infer<typeof AnnaChatRequestSchema>;
 export type AnnaMessage = z.infer<typeof AnnaMessageSchema>;
 
+// ─── Pipeline Shadow-Log ─────────────────────────────────────────────
+// Batched engine predictions posted from MatchdayContext after all
+// engines finish. Table-level UNIQUE(match_key, engine_variant,
+// predicted_date) makes the upsert idempotent; this schema bounds
+// payload size so a compromised client can't flood the table.
+
+export const SHADOW_LOG_ENGINE_VARIANTS = [
+  "ensemble",
+  "poisson-ml",
+  "poisson-ml-v2",
+  "footbayes-hierarchical",
+] as const;
+
+export const ShadowLogPredictionSchema = z.object({
+  match_key: z.string().min(1).max(256),
+  league: z.string().min(1).max(64),
+  home_team: z.string().min(1).max(128),
+  away_team: z.string().min(1).max(128),
+  kickoff: z.string().datetime().nullable().optional(),
+  engine_variant: z.enum(SHADOW_LOG_ENGINE_VARIANTS),
+  prob_h: z.number().min(0).max(1),
+  prob_d: z.number().min(0).max(1),
+  prob_a: z.number().min(0).max(1),
+  prob_o25: z.number().min(0).max(1).nullable().optional(),
+  feature_version: z.string().min(1).max(32).default("v1"),
+}).refine(
+  (p) => Math.abs(p.prob_h + p.prob_d + p.prob_a - 1) < 0.05,
+  { message: "prob_h+prob_d+prob_a must sum to ~1.0 (±0.05)" },
+);
+
+export const ShadowLogBatchSchema = z.object({
+  predictions: z.array(ShadowLogPredictionSchema).min(1).max(200),
+});
+
+export type ShadowLogPrediction = z.infer<typeof ShadowLogPredictionSchema>;
+export type ShadowLogBatch = z.infer<typeof ShadowLogBatchSchema>;
+
 // ─── Validation Helpers ──────────────────────────────────────────────
 
 export interface ValidationResult<T> {

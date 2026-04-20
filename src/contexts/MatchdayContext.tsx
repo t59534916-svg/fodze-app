@@ -510,6 +510,92 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheVersionKey, oddsData]);
 
+  // ── Shadow-log: fire-and-forget POST after engines finish ──
+  // Captures each variant's 1X2/O25 posterior for later OOT evaluation
+  // against odds_closing_history.ft_result. Dedup lives at 3 levels:
+  //   1. sessionStorage below (same-session re-navigation = noop)
+  //   2. /api/shadow-log upsert(ignoreDuplicates: true)
+  //   3. DB UNIQUE(match_key, engine_variant, predicted_date)
+  // Network failure must NEVER surface in the UI — all errors swallowed.
+  useEffect(() => {
+    if (!user?.id) return;
+    if (!matches.length || !allEngineCalcs.length) return;
+    if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
+
+    const todayUTC = new Date().toISOString().slice(0, 10);
+    type Entry = {
+      match_key: string; league: string;
+      home_team: string; away_team: string;
+      kickoff: string | null;
+      engine_variant: "ensemble" | "poisson-ml" | "poisson-ml-v2" | "footbayes-hierarchical";
+      prob_h: number; prob_d: number; prob_a: number;
+      prob_o25: number | null;
+      feature_version: string;
+    };
+    const toLog: Entry[] = [];
+
+    // Best-effort ISO kickoff: match's kickoff is typically "HH:mm" while
+    // the matchday-root date holds the full ISO date. If either is missing
+    // or malformed we send null — the `kickoff` column is nullable and
+    // we'd rather log without kickoff than skip the whole prediction.
+    const baseDate = data?.date && /^\d{4}-\d{2}-\d{2}/.test(data.date) ? data.date.slice(0, 10) : null;
+
+    for (let i = 0; i < matches.length; i++) {
+      const m = matches[i];
+      const calcs = allEngineCalcs[i];
+      if (!calcs || !m.home?.name || !m.away?.name) continue;
+
+      let kickoffIso: string | null = null;
+      if (m.kickoff && /^\d{4}-\d{2}-\d{2}T/.test(m.kickoff)) {
+        kickoffIso = m.kickoff;
+      } else if (baseDate && m.kickoff && /^\d{1,2}:\d{2}$/.test(m.kickoff)) {
+        const [hh, mm] = m.kickoff.split(":");
+        kickoffIso = `${baseDate}T${hh.padStart(2, "0")}:${mm}:00.000Z`;
+      }
+
+      const mKey = matchKey(league, m.home.name, m.away.name);
+      const variants: { v: Entry["engine_variant"]; c: MatchCalc | null | undefined }[] = [
+        { v: "ensemble", c: calcs.ensembleCalc },
+        { v: "poisson-ml", c: calcs.v1Calc },
+        { v: "poisson-ml-v2", c: calcs.v2Calc },
+        { v: "footbayes-hierarchical", c: calcs.bayesCalc },
+      ];
+      for (const { v, c } of variants) {
+        if (!c?.mk) continue;
+        const { H, D, A, O25 } = c.mk;
+        if (!(Number.isFinite(H) && Number.isFinite(D) && Number.isFinite(A))) continue;
+        if (Math.abs(H + D + A - 1) >= 0.05) continue;  // drop stale/broken rows before POST
+
+        const dedupKey = `shadow:${mKey}:${v}:${todayUTC}`;
+        try { if (sessionStorage.getItem(dedupKey)) continue; } catch { /* private mode */ }
+        toLog.push({
+          match_key: mKey,
+          league,
+          home_team: m.home.name,
+          away_team: m.away.name,
+          kickoff: kickoffIso,
+          engine_variant: v,
+          prob_h: H, prob_d: D, prob_a: A,
+          prob_o25: Number.isFinite(O25) ? O25 : null,
+          feature_version: "v1",
+        });
+        try { sessionStorage.setItem(dedupKey, "1"); } catch { /* noop */ }
+      }
+    }
+
+    if (toLog.length === 0) return;
+
+    fetch("/api/shadow-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ predictions: toLog }),
+      keepalive: true,
+    }).catch((e) => {
+      console.warn("[FODZE] shadow-log post failed:", (e as Error).message);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allEngineCalcs, matches, league, user?.id, data?.date]);
+
   // Outer memo: cheap — picks primary from the precomputed 3 based on
   // currently selected engine. Switching engines is now microseconds
   // instead of re-running LightGBM/GLM/ensemble for every match.
