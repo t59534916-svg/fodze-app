@@ -148,17 +148,67 @@ function computeClv(oddsPlaced, closingOdds) {
   return +((Math.log(placed / closing) * 100).toFixed(4));
 }
 
+// ─── CLV fallback via odds_closing_history (football-data.co.uk PSCH) ──
+// When the live snapshot-closing-odds cron missed a bet (e.g. bet placed
+// long before the cron window, or weekend crawl timed out), try to recover
+// the closing price from the Buchdahl CSV ingest. Covers the 13 leagues
+// in LEAGUE_CSV of backfill-football-data-co-uk.mjs; others stay null.
+const MARKET_TO_CLOSING_COL = {
+  "1": "psch", "X": "pscd", "2": "psca",
+  "o25": "psc_over25", "u25": "psc_under25",
+};
+
+async function lookupClosingFromHistory(bet, league) {
+  const canon = canonicalMarket(bet.market);
+  const col = MARKET_TO_CLOSING_COL[canon];
+  if (!col || !league) return null;
+  // Query ±2 days around placed_at so we forgive timezone drift + fixture
+  // slips. This stays league-scoped to avoid fuzzy-matching across leagues
+  // (two "Club Brugge"s in Portugese + Belgian lists would be a mess).
+  const placed = new Date(bet.placed_at || Date.now());
+  const from = new Date(placed.getTime() - 2 * 86400000).toISOString().slice(0, 10);
+  const to = new Date(placed.getTime() + 2 * 86400000).toISOString().slice(0, 10);
+  const url = `${SUPA_URL}/rest/v1/odds_closing_history?select=home_team,away_team,${col}&league=eq.${league}&match_date=gte.${from}&match_date=lte.${to}`;
+  try {
+    const resp = await fetch(url, { headers: SUPA_HEADERS });
+    if (!resp.ok) return null;
+    const rows = await resp.json();
+    for (const r of rows) {
+      if (fuzzyTeamMatch(r.home_team, bet.home_team) && fuzzyTeamMatch(r.away_team, bet.away_team)) {
+        const v = Number(r[col]);
+        if (Number.isFinite(v) && v > 1) return v;
+      }
+    }
+  } catch {
+    // Table may not exist (migration not yet applied); graceful no-op.
+  }
+  return null;
+}
+
 async function settleBet(bet, result) {
   if (DRY) return;
   // Recompute CLV on settlement — defense-in-depth. The snapshot-closing-odds
   // cron normally sets clv atomically when it writes closing_odds, but this
   // guarantees clv is in sync even if snapshot ran before a schema change, or
   // if an admin edited closing_odds manually without updating clv.
-  const clv = computeClv(bet.odds_placed, bet.closing_odds);
+  let closingOdds = bet.closing_odds;
+  let recoveredFromHistory = false;
+  if (closingOdds == null) {
+    const league = (bet.match_key || "").split(":")[0];
+    const fallback = await lookupClosingFromHistory(bet, league);
+    if (fallback != null) {
+      closingOdds = fallback;
+      recoveredFromHistory = true;
+    }
+  }
+  const clv = computeClv(bet.odds_placed, closingOdds);
   const payload = {
     result,
     settled_at: new Date().toISOString(),
     ...(clv !== null ? { clv } : {}),
+    // Also persist the recovered closing_odds so it's visible in the bet
+    // record and subsequent runs don't re-query the history table.
+    ...(recoveredFromHistory && closingOdds != null ? { closing_odds: closingOdds } : {}),
   };
   const resp = await fetch(
     `${SUPA_URL}/rest/v1/bets?id=eq.${bet.id}`,

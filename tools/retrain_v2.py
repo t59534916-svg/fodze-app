@@ -18,6 +18,26 @@ Usage:
   python3 tools/retrain_v2.py
   python3 tools/retrain_v2.py --no-optuna       # Skip tuning, use defaults
   python3 tools/retrain_v2.py --use-npxg-csv    # Use npxG CSV if available
+
+v2.2 EXTENSION ROADMAP (Phase 1.2 + 2.4, not yet wired below):
+  Once scripts/backfill-xg-by-state.mjs has populated the game-state AND
+  situation columns on team_xg_history for all 6 Understat leagues, the
+  FEATURE_NAMES list below gains six entries:
+
+    # Game state (Phase 1.2)
+    "xg_while_level_diff_ewma",       # EWMA diff of xG-while-level-per-90
+    "xga_while_level_diff_ewma",
+    "level_xg_share_home",             # share of a team's xG at level score
+    "level_xg_share_away",
+
+    # Situation (Phase 2.4)
+    "sp_share_home",                   # team's set-piece xG share of total
+    "sp_share_diff_ewma",              # Matching-edge signal (Arsenal 2025 pattern)
+
+  The CSV loaders + feature-engineering functions already produce the
+  raw columns (xg_while_level, xg_openplay etc.) — only this script's
+  FEATURE_NAMES + build_features() need updating. Follow the existing
+  EWMA-per-team pattern from `npxg_diff_ewma` when wiring.
 ═══════════════════════════════════════════════════════════════════
 """
 

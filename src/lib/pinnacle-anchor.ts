@@ -53,8 +53,11 @@ const DEFAULT_CONFIG: AnchorConfig = {
  *
  * Simple approximation: normalize raw implied probs.
  * For Pinnacle's typical 2-3% vig, this is very close to Shin's.
+ *
+ * Exported for reuse by benter-blend.ts (Phase 1.3) — both anchor + Benter
+ * want the same vig-free Pinnacle prior and we avoid divergent helpers.
  */
-function pinnacleImpliedProbs(odds: PinnacleOdds): { H: number; D: number; A: number } | null {
+export function pinnacleImpliedProbs(odds: PinnacleOdds): { H: number; D: number; A: number } | null {
   if (!odds.sharp_h || !odds.sharp_d || !odds.sharp_a) return null;
   if (odds.sharp_h <= 1 || odds.sharp_d <= 1 || odds.sharp_a <= 1) return null;
 

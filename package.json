@@ -20,7 +20,10 @@
     "refresh:odds": "node scripts/fetch-odds.mjs",
     "audit": "node scripts/audit-data-quality.mjs",
     "health": "node scripts/health-check.mjs",
-    "suggest-aliases": "node scripts/suggest-tm-aliases.mjs"
+    "suggest-aliases": "node scripts/suggest-tm-aliases.mjs",
+    "wfr:export": "Rscript tools/export-worldfootballr.R",
+    "wfr:import": "node scripts/import-wfr-csvs.mjs",
+    "wfr:all": "npm run wfr:export && npm run wfr:import"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",

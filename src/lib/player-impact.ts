@@ -150,6 +150,132 @@ export function lookupPlayerProfile(
   return null;
 }
 
+// ─── Phase 2.3: Player-xG-weighted enrichment ────────────────────────
+//
+// `player_xg_history` gives us per-player xG-per-90 + minutes-played for
+// the season. That's exactly what McHale & Szczepański (2019, arXiv
+// 1902.00112) use to build the weighted absence impact:
+//
+//   xgShare_player = (xg_per_90_player × minutes_share_of_team) / team_total_xg_per_match
+//
+// `enrichPlayerFromXG` converts a position-default PlayerProfile into a
+// per-player actual-xG-share profile when `player_xg_history` data is
+// available. Falls back to the position-default unchanged when missing.
+
+export interface PlayerXgRow {
+  player_name: string;
+  team: string;
+  league: string;
+  season: string;
+  position: string | null;
+  minutes_played: number | null;
+  xg_per_90: number | null;
+  xa_per_90: number | null;
+  npxg_per_90: number | null;
+}
+
+/**
+ * Compute an xG-weighted PlayerProfile from per-player season data.
+ *
+ * Args:
+ *   profile           — PlayerProfile from defaultPlayerProfile (the fallback)
+ *   xg                — player_xg_history row (or null when unknown)
+ *   teamTotalXGpg     — team's average xG per match (e.g. 1.8 for a Top-5 attacker)
+ *   teamMinutesPerMatch — defaults to 90 × 11 = 990 player-minutes per match
+ *                        (use 990 unless you track subs; the error is small)
+ *
+ * Returns a PlayerProfile with real `xgShare` + calibrated `replacementLevel`
+ * (median of positional replacement ~0.4× the player's own contribution, a
+ * conservative anchor matching the Szczepański replacement-level estimates).
+ *
+ * Pure — no state, no fetches. Called per-player at engine time.
+ */
+export function enrichPlayerFromXG(
+  profile: PlayerProfile,
+  xg: PlayerXgRow | null,
+  teamTotalXGpg: number,
+  teamMinutesPerMatch: number = 990,
+): PlayerProfile {
+  if (!xg || xg.xg_per_90 == null || xg.minutes_played == null || xg.minutes_played < 90) {
+    return profile;
+  }
+  const xg90 = Number(xg.xg_per_90);
+  const minutes = Number(xg.minutes_played);
+  if (!Number.isFinite(xg90) || !Number.isFinite(minutes) || xg90 < 0) return profile;
+
+  // How many matches worth of minutes? ~38 in a full season at 90min each.
+  // The per-match xG contribution is xg90 × minutes_share.
+  // minutes_share = this-player-minutes / team-player-minutes-per-season
+  //               ≈ minutes / (teamMinutesPerMatch × games_played_in_season)
+  //
+  // We have `minutes` for the player but not team-games. Approximation: the
+  // scaled xgShare = xg90 × minutes / (38 × teamMinutesPerMatch × teamXGpg).
+  // Simpler: normalize xg90 to per-match by multiplying by minutes_share_per_90.
+  //
+  // The cleanest form the engine actually needs:
+  //   xgShare_per_match = xg90 × (minutes_share_of_available_minutes)
+  // When the player plays every minute of every match, minutes_share → 1.0
+  // and xgShare_per_match = xg90. So:
+  const gamesPlayed = minutes / 90;
+  const teamGamesAssumed = Math.max(gamesPlayed, 1); // can't exceed team's total
+  const minutesShare = Math.min(1.0, minutes / (teamMinutesPerMatch / 11 * teamGamesAssumed));
+  const xgShare = teamTotalXGpg > 0
+    ? Math.min(0.50, (xg90 * minutesShare) / teamTotalXGpg)
+    : profile.xgShare;
+
+  // Positional replacement: bench/youth player typically contributes
+  // ~40% of the starter's rate. For GK/DEF we use 50% (defensive roles
+  // are more replaceable due to system-effect).
+  const replacementFactor = (profile.position === "GK" || profile.position === "DEF") ? 0.50 : 0.40;
+  const replacementLevel = Math.min(xgShare * replacementFactor, xgShare);
+
+  return {
+    ...profile,
+    xgShare: +xgShare.toFixed(4),
+    replacementLevel: +replacementLevel.toFixed(4),
+    gamesPlayed: Math.round(gamesPlayed),
+  };
+}
+
+/**
+ * Batch-hydrate a list of absent PlayerProfiles against a player-xg map.
+ * Keyed by lower-case lastname OR full name for fuzzy matching (TM + FBref
+ * disagree on umlauts and initials; we accept either).
+ */
+export function hydrateAbsencesWithXG(
+  absences: PlayerProfile[],
+  xgByKey: Map<string, PlayerXgRow>,
+  teamTotalXGpg: number,
+): PlayerProfile[] {
+  if (absences.length === 0 || xgByKey.size === 0) return absences;
+  return absences.map(p => {
+    // Try full-name then last-name fallback.
+    const lower = p.name.toLowerCase();
+    const last = lower.split(" ").pop() || "";
+    const hit = xgByKey.get(lower) || xgByKey.get(last) || null;
+    return enrichPlayerFromXG(p, hit, teamTotalXGpg);
+  });
+}
+
+/**
+ * Build the lookup Map expected by hydrateAbsencesWithXG.
+ * Keys: lower-case full name + lower-case last name, both pointing at
+ * the same row. Duplicates (two "Silva" players) collapse to whichever
+ * row came last — acceptable collision since the absence-parser only
+ * hits ~2-3 players per match.
+ */
+export function buildPlayerXgIndex(rows: PlayerXgRow[]): Map<string, PlayerXgRow> {
+  const out = new Map<string, PlayerXgRow>();
+  for (const r of rows) {
+    if (!r.player_name) continue;
+    const lower = r.player_name.toLowerCase();
+    out.set(lower, r);
+    const last = lower.split(" ").pop();
+    if (last) out.set(last, r);
+  }
+  return out;
+}
+
 /**
  * Create a default player profile when no data is available.
  * Uses position-based heuristics as last resort.

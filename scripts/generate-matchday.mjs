@@ -31,6 +31,11 @@ import {
   loadOpenLigaDBSeason,
   findOpenLigaMatch,
   inferMatchdayLabel,
+  loadRefereesForLeague,
+  deriveRefereeFeatures,
+  loadStadiumsForTeams,
+  deriveTravelCongestion,
+  flagShortRestEuropean,
 } from './_lib/matchday-enrich.mjs';
 import { fetchMultipleTeamInjuries } from './_lib/transfermarkt-scrape.mjs';
 
@@ -216,7 +221,14 @@ function summarizeXG(entries) {
 // ─── Build Matchday JSON ──────────────────────────────────────────
 function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
   if (fixtures.length === 0) return null;
-  const { standings = [], leagueSize = 18, openLigaMatches = [], injuriesByTeam = new Map() } = ctx;
+  const {
+    standings = [],
+    leagueSize = 18,
+    openLigaMatches = [],
+    injuriesByTeam = new Map(),
+    refereesMap = new Map(),
+    stadiumMap = new Map(),
+  } = ctx;
 
   // Real matchday label from OpenLigaDB when available (German leagues),
   // otherwise the "auto" fallback. Users see "30. Spieltag" in the app
@@ -238,6 +250,7 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
   let h2hFound = 0;
   let injuriesHome = 0;
   let injuriesAway = 0;
+  let refereeMatched = 0;
 
   const matchday = {
     league: LEAGUE_NAMES[league] || league,
@@ -320,6 +333,34 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       if (homeInjuries) injuriesHome++;
       if (awayInjuries) injuriesAway++;
 
+      // Referee: hydrate from `referees` table if a pre-match assignment
+      // source ever populates f.referee_name. Until then this resolves to
+      // an empty string (same as pre-upgrade behavior).
+      // Engine's predictYellowCards() parses the "Name, Ø X.X Karten/Spiel"
+      // format out of match.referee — no change needed there.
+      const refFeatures = deriveRefereeFeatures(refereesMap, f.referee_name);
+      if (refFeatures.ref_string) refereeMatched++;
+
+      // Travel + congestion (Phase 1.4) — null travel when stadium map is
+      // empty; engine treats nulls as "no signal" per existing null-safety.
+      const homeStadium = stadiumMap.get(homeFodze) || null;
+      const awayStadium = stadiumMap.get(awayFodze) || null;
+      const homeFatigue = deriveTravelCongestion({
+        team: homeFodze, teamStadium: homeStadium,
+        historyRows: homeEntries, stadiumMap, kickoff,
+      });
+      const awayFatigue = deriveTravelCongestion({
+        team: awayFodze, teamStadium: awayStadium,
+        historyRows: awayEntries, stadiumMap, kickoff,
+      });
+      // EURO-FATIGUE tag fires only when a UEFA-fixtures source declares
+      // a European-Away within 72h — no such source today, so always false.
+      // Infrastructure is wired so the tag auto-activates once that source lands.
+      const euroAwayHome = false; // placeholder — UEFA-fixtures TODO
+      const euroAwayAway = false;
+      if (flagShortRestEuropean(homeFatigue, euroAwayHome)) derivedTags.push("EURO-FATIGUE");
+      else if (flagShortRestEuropean(awayFatigue, euroAwayAway)) derivedTags.push("EURO-FATIGUE");
+
       return {
         home: {
           name: homeFodze,
@@ -335,6 +376,8 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
             standings_gd: homeStanding.gd,
           } : {}),
           ...(homeXG ? { xg_h_history: homeXG.history } : {}),
+          ...(homeFatigue.travel_km_last_7d != null ? { travel_km_last_7d: homeFatigue.travel_km_last_7d } : {}),
+          ...(homeFatigue.matches_last_14d ? { matches_last_14d: homeFatigue.matches_last_14d } : {}),
         },
         away: {
           name: awayFodze,
@@ -350,10 +393,12 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
             standings_gd: awayStanding.gd,
           } : {}),
           ...(awayXG ? { xg_a_history: awayXG.history } : {}),
+          ...(awayFatigue.travel_km_last_7d != null ? { travel_km_last_7d: awayFatigue.travel_km_last_7d } : {}),
+          ...(awayFatigue.matches_last_14d ? { matches_last_14d: awayFatigue.matches_last_14d } : {}),
         },
         tags: derivedTags,
         context: "",
-        referee: "",         // not available from TM or OpenLigaDB; future work
+        referee: refFeatures.ref_string,
         kickoff,
         ...(h2h.length > 0 ? { h2h } : {}),
         ...(oldMatch ? { _openliga_match_id: oldMatch.matchID } : {}),
@@ -370,6 +415,7 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       h2h_found: `${h2hFound}/${fixtures.length}`,
       home_injuries: `${injuriesHome}/${fixtures.length}`,
       away_injuries: `${injuriesAway}/${fixtures.length}`,
+      referee_matched: `${refereeMatched}/${fixtures.length}`,
       matchday_label_source: olLabel ? "openligadb" : "auto-fallback",
       source: "team_xg_history (Understat/shots-model/goals-proxy) + OpenLigaDB" + (injuriesByTeam.size > 0 ? " + Transfermarkt" : ""),
       enriched_at: new Date().toISOString(),
@@ -386,14 +432,33 @@ async function main() {
   console.log(`   Fenster: nächste ${days} Tage`);
   console.log();
 
-  // Kick off the three network fetches in parallel. xgHistory covers
+  // Kick off the four network fetches in parallel. xgHistory covers
   // form + H2H + standings, OpenLigaDB gives real matchday labels for
-  // German leagues (no-op for other leagues — returns []).
-  const [fixtures, xgHistory, openLigaMatches] = await Promise.all([
+  // German leagues (no-op for other leagues — returns []), and the
+  // refereesMap hydrates match.referee when a pre-match source supplies
+  // the referee name (empty map until a referee-assignment scraper lands).
+  const currentRefSeason = (() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const startYear = now.getMonth() >= 6 ? y : y - 1;
+    return `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`;
+  })();
+  const [fixtures, xgHistory, openLigaMatches, refereesMap] = await Promise.all([
     loadFixtures(),
     loadLeagueXGHistory(league),
     loadOpenLigaDBSeason(league),
+    loadRefereesForLeague(SUPA_URL, SUPA_KEY, league, currentRefSeason),
   ]);
+
+  // Stadium coords — one extra round-trip after we know which teams are in
+  // the upcoming matchday. Empty map if the migration + Wikidata scrape
+  // haven't run yet; deriveTravelCongestion degrades cleanly to null travel.
+  const teamNames = new Set();
+  for (const f of fixtures) {
+    if (f.home_team) teamNames.add(resolveName(f.home_team));
+    if (f.away_team) teamNames.add(resolveName(f.away_team));
+  }
+  const stadiumMap = await loadStadiumsForTeams(SUPA_URL, SUPA_KEY, Array.from(teamNames));
   console.log(`   ${fixtures.length} Fixtures gefunden`);
   console.log(`   ${xgHistory.length} xG-Einträge für diese Liga im team_xg_history`);
   if (openLigaMatches.length > 0) {
@@ -497,6 +562,8 @@ async function main() {
     leagueSize,
     openLigaMatches,
     injuriesByTeam,
+    refereesMap,
+    stadiumMap,
   });
 
   // Print summary with enrichment status per match. Badge slots:
@@ -520,7 +587,7 @@ async function main() {
   }
   const e = matchday._enrichment;
   console.log(
-    `\n   xG: ${e.home_xg}/${e.away_xg}  ·  Form: ${e.home_form}/${e.away_form}  ·  Tags: ${e.tags_applied}  ·  Standings: ${e.standings_matched}  ·  H2H: ${e.h2h_found}  ·  Injuries: ${e.home_injuries}/${e.away_injuries}  ·  Label: ${e.matchday_label_source}\n`,
+    `\n   xG: ${e.home_xg}/${e.away_xg}  ·  Form: ${e.home_form}/${e.away_form}  ·  Tags: ${e.tags_applied}  ·  Standings: ${e.standings_matched}  ·  H2H: ${e.h2h_found}  ·  Injuries: ${e.home_injuries}/${e.away_injuries}  ·  Referee: ${e.referee_matched}  ·  Label: ${e.matchday_label_source}\n`,
   );
 
   // Write JSON file

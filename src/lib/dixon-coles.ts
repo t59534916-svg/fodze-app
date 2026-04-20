@@ -10,7 +10,9 @@ import { PlayerProfile, calcAbsenceImpact } from "./player-impact";
 import { createPMF, getAlpha, type OverdispersionConfig } from "./neg-binomial";
 import { predictRho, buildRhoFeatures, DEFAULT_RHO_MODEL, type RhoModelCoefficients } from "./dynamic-rho";
 import { xgbPredict, buildFeatureVector, applyResidualCorrections, tagsToResidualFeatures, type ResidualModels } from "./xgb-runtime";
-import { anchorToPinnacle, hasPinnacleData, type PinnacleOdds, type AnchorConfig } from "./pinnacle-anchor";
+import { anchorToPinnacle, hasPinnacleData, pinnacleImpliedProbs, type PinnacleOdds, type AnchorConfig } from "./pinnacle-anchor";
+import { benterBlend } from "./benter-blend";
+import { conformalKellyFactor } from "./conformal-gate";
 
 export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> = {
   bundesliga:    { name: "Bundesliga",        hf: 1.28, avg: 1.38 },
@@ -302,14 +304,47 @@ const LEAGUE_AVG_CARDS: Record<string,number> = {
   bundesliga: 3.8, epl: 3.2, la_liga: 4.5, serie_a: 4.2, ligue_1: 3.6,
   bundesliga2: 3.9, liga3: 3.7, championship: 3.4, eredivisie: 3.5, cl: 3.3, el: 3.4,
 };
-export function predictYellowCards(refereeStr?: string, leagueKey?: string): { expected: number; over25: number; over35: number; over45: number; over55: number } {
+/**
+ * Expected total yellow cards + over-lines for a fixture.
+ *
+ * Args:
+ *   refereeStr : "Name, Ø X.X Karten/Spiel" format. Parsed regex-wise;
+ *                falls back to Liga-avg if format doesn't match.
+ *   leagueKey  : for the Liga-avg fallback.
+ *   homeBias   : 1.0 = neutral (total/2 per side).
+ *                1.15 = ref gives 15% more yellows to the home side,
+ *                which distributes total as:
+ *                  home = homeBias * total / (1 + homeBias)
+ *                  away = total / (1 + homeBias)
+ *                Dohmen 2008 style home-bias factor — typical range 0.9–1.2.
+ *                Stays at 1.0 until scrape-referees.mjs match-detail pass
+ *                upgrades the `home_yellow_bias` column.
+ */
+export function predictYellowCards(
+  refereeStr?: string,
+  leagueKey?: string,
+  homeBias: number = 1.0,
+): { expected: number; home: number; away: number; over25: number; over35: number; over45: number; over55: number } {
   let avg = LEAGUE_AVG_CARDS[leagueKey || "bundesliga"] || 3.8;
   if (refereeStr) {
     const m = refereeStr.match(/(\d+[.,]\d+)\s*(Karten|cards|card)/i);
     if (m) avg = parseFloat(m[1].replace(",", "."));
   }
+  // Clamp homeBias into sane range so a pathological scrape doesn't blow up
+  // the engine. 0.5 / 2.0 are well outside any empirically observed bias.
+  const bias = Math.max(0.5, Math.min(2.0, Number.isFinite(homeBias) ? homeBias : 1.0));
+  const home = (bias * avg) / (1 + bias);
+  const away = avg / (1 + bias);
   const poissonCdf = (k: number, lam: number) => { let s = 0; for (let i = 0; i <= k; i++) { let t = Math.exp(-lam); for (let j = 1; j <= i; j++) t *= lam / j; s += t; } return s; };
-  return { expected: avg, over25: 1 - poissonCdf(2, avg), over35: 1 - poissonCdf(3, avg), over45: 1 - poissonCdf(4, avg), over55: 1 - poissonCdf(5, avg) };
+  return {
+    expected: avg,
+    home,
+    away,
+    over25: 1 - poissonCdf(2, avg),
+    over35: 1 - poissonCdf(3, avg),
+    over45: 1 - poissonCdf(4, avg),
+    over55: 1 - poissonCdf(5, avg),
+  };
 }
 
 export function getFirstGoalTime(lamH:number,lamA:number,minute:number):number {
@@ -672,6 +707,10 @@ const TAG_MAP:Record<string,{lH:number;lA:number;reason:string}> = {
   "MEISTERKAMPF":{lH:1.03,lA:1.03,reason:"Meisterkampf: +3%"},
   "GEISTERSPIEL":{lH:0.88,lA:1.12,reason:"Geisterspiel: Heimvorteil weg"},
   "POKAL":{lH:1.00,lA:1.05,reason:"Pokal: Underdogs +5%"},
+  // Scoppa 2013: fatigue effect only kicks in with European-Away + short
+  // rest + long travel. Tag set by scripts/_lib/matchday-enrich.mjs::
+  // flagShortRestEuropean (false today — awaiting UEFA-fixtures source).
+  "EURO-FATIGUE":{lH:0.95,lA:1.02,reason:"Europa-Reise ≤72h: λH −5%, λA +2%"},
 };
 
 export function applyTagCorrections(tags:string[]):{corrections:TagCorrection[];multH:number;multA:number} {
@@ -897,18 +936,34 @@ export function calculateBetsEnhanced(
   mk:Markets,mk_low:Markets,mk_high:Markets,
   odds:Record<string,number>,fraction:number,
   pinnacleOdds?:PinnacleOdds,anchorConfig?:Partial<AnchorConfig>,
-  league?:string
+  league?:string,
+  engine:"v1"|"v2"|"ensemble"="ensemble",
 ):EnhancedBetCalc[] {
   const has1X2=odds.h>0&&odds.d>0&&odds.a>0;
   const vig=has1X2?vigAdjustBest([odds.h,odds.d,odds.a]):null;
 
-  // ── Isotonic Calibration (if curves are loaded) ──
-  // Calibrate H/D/A independently, then renormalize to sum=1.0
-  // This prevents false edges from overconfidence (Gemini review, March 2026)
-  const cal = calibrate1X2(mk.H, mk.D, mk.A, league);
-  const calO25 = calibrateOU25(mk.O25, league);
+  // ── Phase 1.3: Benter Logit-Blend (BEFORE calibration) ──
+  // When Pinnacle odds are available and the benter-weights.json has been
+  // loaded with a real (β₁,β₂) pair for this engine/league, shrink the raw
+  // model's 1X2 toward Pinnacle before calibration. Passthrough otherwise
+  // (benterBlend returns applied=false with modelProbs intact).
+  const pinnImplied = pinnacleOdds && hasPinnacleData(pinnacleOdds)
+    ? pinnacleImpliedProbs(pinnacleOdds)
+    : null;
+  const blended = benterBlend(
+    { H: mk.H, D: mk.D, A: mk.A },
+    pinnImplied,
+    engine,
+    league,
+  );
 
-  // Also calibrate CI bounds for consistent confidence assessment
+  // ── Isotonic/Dirichlet Calibration ──
+  // Calibrate H/D/A independently, then renormalize to sum=1.0. Operates on
+  // the BLENDED posterior so Platt/Dirichlet sees a cleaner signal. CI
+  // bounds remain on raw mk_low/mk_high — Benter would artificially shrink
+  // confidence intervals toward Pinnacle, which is not what CI represents.
+  const cal = calibrate1X2(blended.H, blended.D, blended.A, league);
+  const calO25 = calibrateOU25(mk.O25, league);
   const calLow = calibrate1X2(mk_low.H, mk_low.D, mk_low.A, league);
   const calHigh = calibrate1X2(mk_high.H, mk_high.D, mk_high.A, league);
 
@@ -929,13 +984,25 @@ export function calculateBetsEnhanced(
     const pModel = calMap[m.key] ?? (mk[m.key] as number); // Calibrated P for edge/kelly
     const pMarket=(vig&&m.vigIdx!==null)?vig.probs[m.vigIdx]:1/q;
     const edge=pModel-pMarket, ev=pModel*q-1;
-    // Phase 4B: Pinnacle Bayesian Anchoring — dampen Kelly when fighting the tape
+    // Phase 4B: Pinnacle Bayesian Anchoring — dampens Kelly when the RAW
+    // model fights the tape. We deliberately use raw mk here (not blended/
+    // calibrated), so the KL divergence measures the model's honest
+    // disagreement with Pinnacle — untouched by Benter's pull-toward-market.
+    // This keeps the anchor as an independent safety net against broken
+    // engines, orthogonal to Benter's posterior shrinkage.
     let kellyDamp = 1.0;
     if (pinnacleOdds && hasPinnacleData(pinnacleOdds) && (m.key === "H" || m.key === "D" || m.key === "A")) {
-      const anchored = anchorToPinnacle({H:cal.H,D:cal.D,A:cal.A}, pinnacleOdds, anchorConfig);
+      const anchored = anchorToPinnacle({H:mk.H,D:mk.D,A:mk.A}, pinnacleOdds, anchorConfig);
       if (anchored) kellyDamp = anchored.kelly_dampening;
     }
-    const k=kellyFraction(pModel,q,fraction)*kellyDamp;
+    // Phase 2.5: Mondrian Conformal gate factor (1.0 when mode=off — the
+    // default until NEXT_PUBLIC_CONFORMAL_GATE is flipped). Applies only
+    // to 1X2 outcomes because the conformal calibration is trained on the
+    // 3-class classification task; O25/U25/BTTS gate factor stays 1.0.
+    const conformalFactor = (m.key === "H" || m.key === "D" || m.key === "A")
+      ? conformalKellyFactor({ H: cal.H, D: cal.D, A: cal.A }, league)
+      : 1.0;
+    const k=kellyFraction(pModel,q,fraction)*kellyDamp*conformalFactor;
     let pLow:number,pHigh:number;
     if(m.key==="H"){pLow=calLow.H;pHigh=calHigh.H;}
     else if(m.key==="D"){pLow=Math.min(calLow.D,calHigh.D);pHigh=Math.max(calLow.D,calHigh.D);}

@@ -327,7 +327,16 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
     }
   }
   const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
-  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction);
+  // Propagate sharpOdds + league so the Benter blend (Phase 1.3) can pull
+  // the raw mk toward Pinnacle per the v1-specific weights. Without these
+  // params the blend silently degrades to "no_pinnacle" passthrough and
+  // v1 would diverge from the ensemble path. Convert the engine's nullable
+  // {h,d,a} to PinnacleOdds shape {sharp_h,sharp_d,sharp_a}.
+  const sh = input.sharpOdds;
+  const pinOdds = sh && sh.h != null && sh.d != null && sh.a != null
+    ? { sharp_h: sh.h, sharp_d: sh.d, sharp_a: sh.a }
+    : undefined;
+  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v1");
 
   // ── 12b. Value Cap Guardrail ──────────────────────────────────
   // Compare model edge against vig-free Pinnacle odds (if available).

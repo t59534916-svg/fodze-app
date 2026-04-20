@@ -35,6 +35,8 @@
  *   node scripts/refresh-all.mjs --resume        # skip leagues already matchday-
  *                                                # seeded by an earlier crashed run
  *                                                # (progress file < 6h old)
+ *   node scripts/refresh-all.mjs --injuries      # include Transfermarkt injury scrape
+ *   node scripts/refresh-all.mjs --referees      # include FBref referee-stats scrape
  */
 
 import { spawn } from "child_process";
@@ -81,6 +83,11 @@ const RESUME = args.includes("--resume");
 // Transfermarkt scrape. Adds ~3s/team but populates the `injuries` field
 // the absence-parser + calcAbsenceImpact actually use.
 const WITH_INJURIES = args.includes("--injuries");
+// Opt-in: scrape FBref schedule pages per league to populate the
+// `referees` table. Adds ~6s/league (rate-limited) = ~2 min for all 19.
+// Matchdays will hydrate match.referee from this table when a pre-match
+// source supplies referee_name.
+const WITH_REFEREES = args.includes("--referees");
 
 // ─── Progress File (resumability) ───────────────────────────────────
 //
@@ -168,6 +175,29 @@ const phases = [
     emoji: "⚽",
     description: "Liga 3 xG aus OpenLigaDB nachziehen",
     run: () => runScript("scripts/backfill-liga3-openligadb.mjs", [], "liga3-backfill"),
+    abortOnFail: false,
+  },
+  {
+    name: "referees",
+    emoji: "🟨",
+    description: "Referee-Stats per Liga von FBref ziehen",
+    skip: () => !WITH_REFEREES,
+    run: async () => {
+      // Iterate the same LEAGUES list we use for matchdays — non-fatal
+      // per-league failures (league not in FBREF_COMPS, HTML 404, etc.)
+      // just skip that league, rest proceeds.
+      let ok = 0, fail = 0;
+      for (const lg of LEAGUES) {
+        try {
+          await runScript("scripts/scrape-referees.mjs", ["--league", lg], `referees ${lg}`);
+          ok++;
+        } catch (e) {
+          fail++;
+          if (!QUIET) console.warn(`     ⚠ ${lg}: ${e.message}`);
+        }
+      }
+      console.log(`   ${ok}/${LEAGUES.length} Ligen referees geseedet${fail ? ` (${fail} failed)` : ""}`);
+    },
     abortOnFail: false,
   },
   {

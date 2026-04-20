@@ -1,0 +1,17 @@
+{
+  "_version": 1,
+  "_meta": {
+    "method": "mondrian_conformal_classification",
+    "source_library": "MAPIE (method='mondrian')",
+    "alpha_default": 0.10,
+    "trained_at": null,
+    "status": "placeholder",
+    "note": "Global quantile 0.50 is permissive — only the arg-max class ever lands in the prediction set so every result is a singleton and the gate passes every bet. Replace once tools/fit_conformal.py has trained quantiles against OOT predictions + actual results."
+  },
+  "global": {
+    "0.05": 0.50,
+    "0.10": 0.50,
+    "0.20": 0.50
+  },
+  "leagues": {}
+}

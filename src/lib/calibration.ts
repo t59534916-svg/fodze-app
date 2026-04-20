@@ -70,8 +70,13 @@ let CALIBRATION: Record<string, number[]> = {
 
 let CALIBRATION_ACTIVE = true;
 
-// Calibration method: isotonic (101-point lookup) or platt (2-param sigmoid)
-let CALIBRATION_METHOD: "isotonic" | "platt" = "isotonic";
+// Calibration method:
+//   "isotonic" — 101-point curve lookup (legacy path, per-market calibration)
+//   "platt"    — 2-param sigmoid (current default, per-market + per-league)
+//   "dirichlet" — Kull 2019 ODIR-regularised 3-class calibration for 1X2
+//                 (O25 still runs through Platt/Isotonic, since it's 2-class)
+export type CalibrationMethod = "isotonic" | "platt" | "dirichlet";
+let CALIBRATION_METHOD: CalibrationMethod = "isotonic";
 let PLATT_PARAMS: Record<string, { a: number; b: number }> = {};
 
 // Per-league Platt params (loaded from retrained model)
@@ -79,6 +84,33 @@ let LEAGUE_PLATT_PARAMS: Record<string, Record<string, { a: number; b: number }>
 
 // Per-league calibration curves (loaded from retrained model)
 let LEAGUE_CALIBRATION: Record<string, Record<string, number[]>> = {};
+
+// ─── Dirichlet Calibration (Phase 2.1) ──────────────────────────────
+//
+// Three cluster tiers ("top5" / "mid_european" / "lower") each carry a
+// 3×3 weight matrix W and a 3-bias vector b. Runtime: given raw 1X2 probs,
+//   z = W @ log(probs) + b
+//   p' = softmax(z)
+// Identity W + zero b is a pass-through.
+
+export interface DirichletClusterParams {
+  W: number[][];
+  b: number[];
+  n_train?: number;
+  oot_logloss?: number;
+}
+export interface DirichletCalibrationJSON {
+  _version: 1;
+  _meta?: { method?: string; lambda?: number; trained_at?: string | null };
+  cluster_map: Record<string, string>;  // league → cluster
+  global: DirichletClusterParams;
+  clusters: Record<string, DirichletClusterParams>;
+}
+
+let DIRICHLET_CLUSTERS: Record<string, DirichletClusterParams> = {};
+let DIRICHLET_GLOBAL: DirichletClusterParams | null = null;
+let DIRICHLET_CLUSTER_MAP: Record<string, string> = {};
+let DIRICHLET_LOADED = false;
 
 export function loadCalibrationCurves(curves: any): void {
   // Identity: no calibration (raw probs are already well-calibrated)
@@ -134,6 +166,93 @@ export function loadCalibrationCurves(curves: any): void {
 
 export function isCalibrationActive(): boolean { return CALIBRATION_ACTIVE; }
 
+// ─── Dirichlet loader + runtime ─────────────────────────────────────
+
+export function setCalibrationMethod(method: CalibrationMethod): void {
+  CALIBRATION_METHOD = method;
+}
+export function getCalibrationMethod(): CalibrationMethod { return CALIBRATION_METHOD; }
+
+/**
+ * Load per-cluster 3×3 W + 3-bias b from the fit output
+ * (tools/calibrate_dirichlet.py → public/dirichlet-calibration.json).
+ *
+ * Throws on invalid schema — AppContext loader catches the throw and
+ * flags the `dirichlet` entry in modelErrors so the UI can warn.
+ */
+export function loadDirichletCalibration(json: DirichletCalibrationJSON): void {
+  if (!json || json._version !== 1 || !json.cluster_map || !json.global || !json.clusters) {
+    throw new Error("Invalid dirichlet-calibration schema (need _version=1, cluster_map, global, clusters)");
+  }
+  // Shallow-validate cluster shapes (3×3 W, length-3 b).
+  const ok = (p: any): p is DirichletClusterParams =>
+    Array.isArray(p?.W) && p.W.length === 3 && p.W.every((r: any) => Array.isArray(r) && r.length === 3)
+    && Array.isArray(p?.b) && p.b.length === 3;
+  if (!ok(json.global)) throw new Error("Invalid dirichlet global params (W 3×3 + b length-3 required)");
+  for (const [cluster, params] of Object.entries(json.clusters)) {
+    if (!ok(params)) throw new Error(`Invalid dirichlet cluster "${cluster}"`);
+  }
+  DIRICHLET_GLOBAL = json.global;
+  DIRICHLET_CLUSTERS = json.clusters;
+  DIRICHLET_CLUSTER_MAP = json.cluster_map;
+  DIRICHLET_LOADED = true;
+}
+
+export function isDirichletLoaded(): boolean { return DIRICHLET_LOADED; }
+
+// Test helper — clears Dirichlet state between unit tests.
+export function resetDirichlet(): void {
+  DIRICHLET_GLOBAL = null;
+  DIRICHLET_CLUSTERS = {};
+  DIRICHLET_CLUSTER_MAP = {};
+  DIRICHLET_LOADED = false;
+}
+
+/**
+ * Apply Dirichlet calibration to 1X2 probabilities for a given league.
+ *
+ *   logits = log(max(probs, 1e-9))
+ *   z      = W @ logits + b
+ *   p'     = softmax(z)
+ *
+ * Per-league cluster lookup via DIRICHLET_CLUSTER_MAP; falls back to the
+ * global params when the league isn't mapped. Returns `applied: false`
+ * + the raw input when nothing was loaded.
+ */
+export function applyDirichlet(
+  probs: { H: number; D: number; A: number },
+  league?: string,
+): { H: number; D: number; A: number; applied: boolean; cluster: string } {
+  if (!DIRICHLET_LOADED || !DIRICHLET_GLOBAL) {
+    return { ...probs, applied: false, cluster: "none" };
+  }
+  const clusterKey = (league && DIRICHLET_CLUSTER_MAP[league]) || "global";
+  const params = DIRICHLET_CLUSTERS[clusterKey] || DIRICHLET_GLOBAL;
+  const logits = [
+    Math.log(Math.max(probs.H, 1e-9)),
+    Math.log(Math.max(probs.D, 1e-9)),
+    Math.log(Math.max(probs.A, 1e-9)),
+  ];
+  const z = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    z[i] = params.b[i];
+    for (let j = 0; j < 3; j++) z[i] += params.W[i][j] * logits[j];
+  }
+  // Numerical stability: subtract max before exp.
+  const mz = Math.max(z[0], z[1], z[2]);
+  const e0 = Math.exp(z[0] - mz);
+  const e1 = Math.exp(z[1] - mz);
+  const e2 = Math.exp(z[2] - mz);
+  const s = e0 + e1 + e2;
+  return {
+    H: e0 / s,
+    D: e1 / s,
+    A: e2 / s,
+    applied: true,
+    cluster: clusterKey,
+  };
+}
+
 export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", league?: string): number {
   // Platt scaling: calibrated_p = 1 / (1 + exp(a * logit(p) + b))
   if (CALIBRATION_METHOD === "platt") {
@@ -173,6 +292,40 @@ export function calibrateProb(rawP: number, market: "H" | "D" | "A" | "O25", lea
 }
 
 export function calibrate1X2(rawH: number, rawD: number, rawA: number, league?: string): { H: number; D: number; A: number } {
+  // Dispatch: when method=dirichlet AND params are loaded, use ODIR 3-class
+  // calibration on the input distribution directly (no per-market Platt hop).
+  // The D-clamp below is Platt-specific — skipped in the Dirichlet path
+  // because Dirichlet's joint 3-class training already constrains each
+  // outcome's posterior shape.
+  if (CALIBRATION_METHOD === "dirichlet" && DIRICHLET_LOADED) {
+    // Inputs may not sum to 1 (rare but happens for CI bounds); re-normalise
+    // before taking logs so Dirichlet sees a valid distribution.
+    const s0 = Math.max(rawH + rawD + rawA, 1e-12);
+    const d = applyDirichlet({ H: rawH / s0, D: rawD / s0, A: rawA / s0 }, league);
+    if (d.applied) {
+      // Keep H/A safety cap — saturated outcomes > 95% are a data-curve
+      // pathology we see across all methods, not just Platt. Redistribute
+      // excess proportionally to the other two outcomes so the output
+      // still sums to 1 (parallel to the D-clamp below for Platt).
+      let H = d.H, D = d.D, A = d.A;
+      if (H > 0.95) {
+        const excess = H - 0.95;
+        H = 0.95;
+        const da = D + A;
+        if (da > 0) { D += excess * (D / da); A += excess * (A / da); }
+      }
+      if (A > 0.95) {
+        const excess = A - 0.95;
+        A = 0.95;
+        const hd = H + D;
+        if (hd > 0) { H += excess * (H / hd); D += excess * (D / hd); }
+      }
+      return { H, D, A };
+    }
+    // Fall through to Platt/Isotonic path when Dirichlet is selected but
+    // nothing was loaded yet.
+  }
+
   let calH = calibrateProb(rawH, "H", league);
   let calD = calibrateProb(rawD, "D", league);
   let calA = calibrateProb(rawA, "A", league);

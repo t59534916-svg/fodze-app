@@ -125,6 +125,94 @@ export interface TeamXGMatch {
   deep_allowed: number | null; // Deep completions conceded (v2.1)
   goals_for: number;
   goals_against: number;
+  // Game-state-adjusted xG (Phase 1.2 — scripts/backfill-xg-by-state.mjs).
+  // Optional/null on rows from shots-model / goals-proxy / pre-backfill
+  // Understat. Marked optional (not required|null) so that pre-existing
+  // callers that build partial TeamXGMatch literals stay type-compatible.
+  // Consumers fall back to season-total × STATE_RATIO_PRIOR when absent.
+  xg_while_level?: number | null;
+  xg_while_leading?: number | null;
+  xg_while_trailing?: number | null;
+  xga_while_level?: number | null;
+  xga_while_leading?: number | null;
+  xga_while_trailing?: number | null;
+  minutes_level?: number | null;
+  minutes_leading?: number | null;
+  minutes_trailing?: number | null;
+  // Phase 2.4 — set-piece vs open-play xG breakdown
+  // Nullable on rows scraped before the situation-aware ingestor (Phase 2.4)
+  // landed. Consumers fall back to season-total × SITUATION_RATIO_PRIOR.
+  xg_openplay?: number | null;
+  xg_setpiece?: number | null;
+  xga_openplay?: number | null;
+  xga_setpiece?: number | null;
+}
+
+/**
+ * Global per-state ratios derived from Understat 2018–2024 top-5 data
+ * (~30k matches). Mirrors STATE_RATIO_PRIOR in
+ * scripts/_lib/game-state-xg.mjs — duplicated here for the browser
+ * runtime which can't `import` from .mjs scripts.
+ *
+ * Sums to 1.0 by construction (0.58 + 0.19 + 0.23).
+ */
+export const STATE_RATIO_PRIOR = Object.freeze({
+  level: 0.58,
+  leading: 0.19,
+  trailing: 0.23,
+});
+
+/**
+ * Fill missing state-xG fields on a TeamXGMatch row using the global
+ * prior. Returns a new row with all six state columns populated — the
+ * original values win if already present.
+ *
+ * Callers (engine feature extraction) can treat the output as state-
+ * complete without a tri-valued null check at every call site.
+ */
+export function fillStateXGWithPrior(row: TeamXGMatch): TeamXGMatch {
+  const xg = Number(row.xg) || 0;
+  const xga = Number(row.xga) || 0;
+  const r = STATE_RATIO_PRIOR;
+  return {
+    ...row,
+    xg_while_level:     row.xg_while_level ?? +(xg * r.level).toFixed(4),
+    xg_while_leading:   row.xg_while_leading ?? +(xg * r.leading).toFixed(4),
+    xg_while_trailing:  row.xg_while_trailing ?? +(xg * r.trailing).toFixed(4),
+    xga_while_level:    row.xga_while_level ?? +(xga * r.level).toFixed(4),
+    xga_while_leading:  row.xga_while_leading ?? +(xga * r.leading).toFixed(4),
+    xga_while_trailing: row.xga_while_trailing ?? +(xga * r.trailing).toFixed(4),
+    minutes_level:     row.minutes_level ?? 52,     // 0.58 × 90
+    minutes_leading:   row.minutes_leading ?? 17,   // 0.19 × 90
+    minutes_trailing:  row.minutes_trailing ?? 21,  // 0.23 × 90
+  };
+}
+
+/**
+ * Global open-play vs set-piece ratio (top-5 Understat 2018-2024):
+ *   open-play : set-piece ≈ 73 : 27
+ * Mirrors SITUATION_RATIO_PRIOR in scripts/_lib/game-state-xg.mjs.
+ */
+export const SITUATION_RATIO_PRIOR = Object.freeze({
+  openplay: 0.73,
+  setpiece: 0.27,
+});
+
+/**
+ * Fill missing open-play/set-piece columns using the global prior. Real
+ * values (populated by scripts/backfill-xg-by-state.mjs) always win.
+ */
+export function fillSituationShareWithPrior(row: TeamXGMatch): TeamXGMatch {
+  const xg = Number(row.xg) || 0;
+  const xga = Number(row.xga) || 0;
+  const r = SITUATION_RATIO_PRIOR;
+  return {
+    ...row,
+    xg_openplay:  row.xg_openplay  ?? +(xg * r.openplay).toFixed(4),
+    xg_setpiece:  row.xg_setpiece  ?? +(xg * r.setpiece).toFixed(4),
+    xga_openplay: row.xga_openplay ?? +(xga * r.openplay).toFixed(4),
+    xga_setpiece: row.xga_setpiece ?? +(xga * r.setpiece).toFixed(4),
+  };
 }
 
 /**
@@ -216,6 +304,47 @@ export async function loadAllTeamXGHistory(
     .order("match_date", { ascending: false })
     .limit(limit);
   if (error) { console.error("loadAllTeamXGHistory error:", error); return []; }
+  return data || [];
+}
+
+// ─── Player xG history (Phase 2.3) ──────────────────────────────────
+//
+// Batch-load per-player season xG for a league so the absence-parser can
+// replace position-default xgShares with actual per-player values.
+// Called once on matchday load; the result is cached in a Map via
+// buildPlayerXgIndex in src/lib/player-impact.ts.
+
+export interface PlayerXgHistoryRow {
+  player_name: string;
+  team: string;
+  league: string;
+  season: string;
+  position: string | null;
+  minutes_played: number | null;
+  xg_per_90: number | null;
+  xa_per_90: number | null;
+  npxg_per_90: number | null;
+}
+
+export async function loadPlayerXGForLeague(
+  supabase: SupabaseClient,
+  league: string,
+  season: string,
+): Promise<PlayerXgHistoryRow[]> {
+  const { data, error } = await supabase
+    .from("player_xg_history")
+    .select("player_name,team,league,season,position,minutes_played,xg_per_90,xa_per_90,npxg_per_90")
+    .eq("league", league)
+    .eq("season", season)
+    .limit(2000);
+  if (error) {
+    // Table may not exist yet in dev environments — log-once + empty array.
+    if (!(loadPlayerXGForLeague as any)._warned) {
+      console.warn(`[player-xg] query failed for ${league}/${season}: ${error.message}`);
+      (loadPlayerXGForLeague as any)._warned = true;
+    }
+    return [];
+  }
   return data || [];
 }
 

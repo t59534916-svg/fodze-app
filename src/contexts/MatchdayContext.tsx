@@ -1,17 +1,20 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useMemo, useRef } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, type TeamXGMatch } from "@/lib/supabase";
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, loadPlayerXGForLeague, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, type TeamXGMatch, type PlayerXgHistoryRow } from "@/lib/supabase";
 import { matchKey } from "@/lib/format";
 import { parseAbsences } from "@/lib/absence-parser";
+import { buildPlayerXgIndex, hydrateAbsencesWithXG, type PlayerXgRow } from "@/lib/player-impact";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import { resolveBucket as resolveXGBucket } from "@/lib/xg-history-resolver";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
   validateXGData, calcMatchEnhanced, isCalibrationActive,
+  buildMatrix, deriveAllMarkets,
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
+import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
 import type { MatchdayData, RawMatch, OddsData, OddsSnapshot, MatchCalc, ProcessedMatch, ComboLeg, BetCalc } from "@/types/match";
@@ -70,6 +73,21 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   const [oddsSource, setOddsSource] = useState<"manual" | "live" | "history">("manual");
   const [saving, setSaving] = useState<number | null>(null);
   const [sosRatings, setSosRatings] = useState<SoSRatings | null>(null);
+  // Phase 2.3: per-league player-xg index for weighted absence impact.
+  // Empty Map when player_xg_history is unpopulated; hydrateAbsencesWithXG
+  // returns the input absences unchanged in that case.
+  const [playerXgIndex, setPlayerXgIndex] = useState<Map<string, PlayerXgRow>>(new Map());
+
+  useEffect(() => {
+    // Season code mirrors scripts/backfill-player-xg.mjs::currentSeason.
+    const now = new Date();
+    const yy = now.getFullYear();
+    const startYear = now.getMonth() >= 6 ? yy : yy - 1;
+    const season = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`;
+    loadPlayerXGForLeague(supabase, league, season).then((rows: PlayerXgHistoryRow[]) => {
+      setPlayerXgIndex(buildPlayerXgIndex(rows));
+    });
+  }, [supabase, league]);
 
   const ld = leagueConfig;
   const frac = kellyFraction;
@@ -301,6 +319,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     ensembleCalc: MatchCalc;
     v1Calc: MatchCalc | null;
     v2Calc: MatchCalc | null;
+    bayesCalc: MatchCalc | null;
   } | null {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
@@ -311,8 +330,17 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const matchHf = getHomeFactor(h.name, ld.hf);
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
 
-    const homeAbsences = parseAbsences(h.injuries, h.name || "");
-    const awayAbsences = parseAbsences(a.injuries, a.name || "");
+    const homeAbsencesRaw = parseAbsences(h.injuries, h.name || "");
+    const awayAbsencesRaw = parseAbsences(a.injuries, a.name || "");
+    // Phase 2.3: replace position-default xgShares with actual per-player
+    // season xG-per-90 when player_xg_history has a match for the player.
+    // teamTotalXGpg = team's average xG per match (xg_h8 sums 8 games).
+    const hGamesForAbs = h.games || 8;
+    const aGamesForAbs = a.games || 8;
+    const homeTeamXGpg = hGamesForAbs > 0 ? (h.xg_h8 || 0) / hGamesForAbs : ld.avg;
+    const awayTeamXGpg = aGamesForAbs > 0 ? (a.xg_a8 || 0) / aGamesForAbs : ld.avg;
+    const homeAbsences = hydrateAbsencesWithXG(homeAbsencesRaw, playerXgIndex, homeTeamXGpg);
+    const awayAbsences = hydrateAbsencesWithXG(awayAbsencesRaw, playerXgIndex, awayTeamXGpg);
     const absences =
       homeAbsences.length > 0 || awayAbsences.length > 0
         ? { home: homeAbsences, away: awayAbsences }
@@ -341,10 +369,22 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // insufficient-data cases; try/catch covers runtime failures on top.
     let v2Calc: MatchCalc | null = null;
     let v1Calc: MatchCalc | null = null;
+    let bayesCalc: MatchCalc | null = null;
     try { v2Calc = calcMatchPoissonMLv2(mlInputs); }
     catch (e) { console.warn("[FODZE] poisson-ml-v2 failed:", (e as Error).message); }
     try { v1Calc = calcMatchPoissonML(mlInputs); }
     catch (e) { console.warn("[FODZE] poisson-ml-v1 failed:", (e as Error).message); }
+    // footBayes (Phase 2.2) — returns null until posteriors are ingested
+    // from services/footbayes/. Handled below after enh is built so we can
+    // swap its λ-pair into the standard matrix pipeline.
+    const bayesLambdas = (() => {
+      try {
+        return calcMatchFootBayesLambdas({ homeTeam: h.name, awayTeam: a.name, league });
+      } catch (e) {
+        console.warn("[FODZE] footbayes failed:", (e as Error).message);
+        return null;
+      }
+    })();
 
     const warnings = validateXGData(h.xg_h8, h.xga_h8 || 0, h.games || 8, a.xg_a8, a.xga_a8 || 0, a.games || 8, ld.avg);
     const enh = calcMatchEnhanced(
@@ -380,7 +420,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     );
 
     const ensembleMk = { ...enh.mk, H: ensemble.H, D: ensemble.D, A: ensemble.A, O25: ensemble.O25 };
-    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, undefined, undefined, league);
+    // Propagate sharpOdds + engine="ensemble" so Benter (Phase 1.3) can
+    // blend the ensemble posterior toward Pinnacle with the ensemble-specific
+    // trained weights. Convert the _sharp {h,d,a} shape into PinnacleOdds.
+    const ensemblePin = o._sharp && o._sharp.h != null && o._sharp.d != null && o._sharp.a != null
+      ? { sharp_h: o._sharp.h, sharp_d: o._sharp.d, sharp_a: o._sharp.a }
+      : undefined;
+    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, ensemblePin, undefined, league, "ensemble");
 
     const ensembleCalc: MatchCalc = {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,
@@ -391,7 +437,34 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       ensemble,
     } as MatchCalc;
 
-    return { ensembleCalc, v1Calc, v2Calc };
+    // footBayes engine: wrap bayesLambdas into the standard matrix pipeline
+    // so it flows through the same Benter/Calibration/Kelly path. We reuse
+    // enh.mk_low/mk_high as CI bounds — the attack/defense posterior SDs
+    // would be a more honest bound but the simple per-match matrix is
+    // correct for the MVP display (Kelly gets dampened through the shared
+    // anchor anyway).
+    if (bayesLambdas) {
+      const bayesMx = buildMatrix(bayesLambdas.lambdaH, bayesLambdas.lambdaA);
+      const bayesMk = deriveAllMarkets(bayesMx);
+      const bayesPin = o._sharp && o._sharp.h != null && o._sharp.d != null && o._sharp.a != null
+        ? { sharp_h: o._sharp.h, sharp_d: o._sharp.d, sharp_a: o._sharp.a }
+        : undefined;
+      // Benter "engine" for the Bayes path reuses the ensemble weights so
+      // we don't multiply weight-file bloat. A dedicated "bayes" entry can
+      // be added to benter-weights.json post-validation if it ships.
+      const bayesBets = calculateBetsEnhanced(
+        bayesMk, enh.mk_low, enh.mk_high, no, frac, bayesPin, undefined, league, "ensemble",
+      );
+      bayesCalc = {
+        lambdaH: bayesLambdas.lambdaH, lambdaA: bayesLambdas.lambdaA,
+        lambdaH_raw: bayesLambdas.lambdaH, lambdaA_raw: bayesLambdas.lambdaA,
+        mk: bayesMk, bets: bayesBets, enh, topScores: topScores.slice(0, 5),
+        ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
+        hasValue: bayesBets.some(b => b.isValue), hasOdds, warnings,
+      } as MatchCalc;
+    }
+
+    return { ensembleCalc, v1Calc, v2Calc, bayesCalc };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -405,7 +478,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null } | null;
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -413,8 +486,10 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const matchIds = (data?.matches || [])
       .map(m => `${m.home?.name}:${m.away?.name}`)
       .join(",");
-    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|${matchIds}`;
-  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data]);
+    // Include playerXgIndex size so post-load hydration invalidates the
+    // memo cache and absences get re-enriched without a manual refresh.
+    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|pxg${playerXgIndex.size}|${matchIds}`;
+  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data, playerXgIndex]);
 
   const allEngineCalcs = useMemo(() => {
     // Clear inline before lookups — useEffect fires AFTER render, which
@@ -451,6 +526,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const chosen =
         engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
         engine === "poisson-ml" && all.v1Calc ? all.v1Calc :
+        engine === "footbayes-hierarchical" && all.bayesCalc ? all.bayesCalc :
         all.ensembleCalc;
       const primary: MatchCalc = {
         ...chosen,
@@ -458,6 +534,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           "ensemble-v1": all.ensembleCalc.mk,
           "poisson-ml": all.v1Calc?.mk || null,
           "poisson-ml-v2": all.v2Calc?.mk || null,
+          "footbayes-hierarchical": all.bayesCalc?.mk || null,
         },
       };
       return { ...m, idx: i, calc: primary };

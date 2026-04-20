@@ -5,7 +5,7 @@
 // Each engine produces the same MatchCalc output interface.
 // ═══════════════════════════════════════════════════════════════════════
 
-export type PredictionEngine = "ensemble-v1" | "poisson-ml" | "poisson-ml-v2";
+export type PredictionEngine = "ensemble-v1" | "poisson-ml" | "poisson-ml-v2" | "footbayes-hierarchical";
 
 export interface EngineInfo {
   id: PredictionEngine;
@@ -28,6 +28,11 @@ export const ENGINES: EngineInfo[] = [
     id: "poisson-ml-v2",
     name: "@annafrick13 v2",
     description: "LightGBM Tweedie → Monotone Constraints → Dixon-Coles Matrix",
+  },
+  {
+    id: "footbayes-hierarchical",
+    name: "Bayes Hierarchical",
+    description: "footBayes + Stan, Liga-Hyperprior Partial-Pooling (experimentell)",
   },
 ];
 

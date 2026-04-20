@@ -2,7 +2,7 @@
 // FODZE Matchday-Enrichment Helpers — shared by generate-matchday.mjs +
 // backfill-enrich-matchdays.mjs.
 //
-// Four concerns:
+// Concerns:
 //   1. normalizeTeamName — strips umlauts, punctuation, and common club
 //      prefixes so "1. FC Köln" ≈ "FC Koln" ≈ "Koln" across data sources.
 //   2. lookupTeamXG — fuzzy-match a team across Understat / shots-model /
@@ -10,9 +10,14 @@
 //   3. deriveForm — builds a "W W D L W" form string from last 5 matches
 //      (venue-agnostic) using goals_for vs goals_against.
 //   4. deriveTags — DERBY (rivalry map) + ROTATION (3 games / 7 days).
+//   5. OpenLigaDB helpers (German leagues).
+//   6. Referee-stat lookup + schema-format string (added 2026-04).
 //
-// No dependencies, plain ES modules. Works in any .mjs script.
+// No external npm deps; may import sibling _lib/*.mjs files.
 // ═══════════════════════════════════════════════════════════════════════
+
+import { slugifyReferee, resolveRefereeName } from "./referee-aliases.mjs";
+import { haversineKm } from "./geo.mjs";
 
 // ─── 1. Name normalization ──────────────────────────────────────────
 
@@ -589,4 +594,277 @@ export function inferMatchdayLabel(openLigaMatches, aroundDate = new Date()) {
   }
   if (labelCounts.size === 0) return null;
   return Array.from(labelCounts.entries()).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+// ─── 9. Referee stats (scraped by scripts/scrape-referees.mjs) ──────
+//
+// The `referees` table is populated with one row per (referee_slug, league,
+// season). `generate-matchday.mjs` calls loadRefereesForLeague() once per
+// league-run to hydrate a lookup map, then per-match uses deriveRefereeFeatures
+// to produce the `referee` string + raw stats consumed by the engine's
+// predictYellowCards() (src/lib/dixon-coles.ts:305).
+//
+// Output string format matches schemas.ts:158 validator:
+//   "Felix Zwayer, Ø 4.3 Karten/Spiel"
+// (the predictYellowCards regex /(\d+[.,]\d+)\s*(Karten|cards|card)/i parses
+// the decimal; source name comes before the comma for display.)
+
+/**
+ * Load all referee rows for a league+season into a slug→row Map.
+ *
+ * Takes SUPA_URL + SUPA_KEY directly (PostgREST-style) to match the fetch
+ * pattern used elsewhere in generate-matchday.mjs and friends — no
+ * @supabase/supabase-js dependency needed.
+ *
+ * Safe to call with a missing table or wrong creds (returns an empty Map
+ * and warns once). Never throws — enrichment must never crash the pipeline.
+ */
+export async function loadRefereesForLeague(supaUrl, supaKey, league, season) {
+  const out = new Map();
+  if (!supaUrl || !supaKey || !league || !season) return out;
+  const selectCols = "referee_name,referee_slug,yellows_per_game,reds_per_game,pens_per_game,home_yellow_bias,home_pen_bias,matches_analyzed,source";
+  const url = `${supaUrl}/rest/v1/referees?` + new URLSearchParams({
+    select: selectCols,
+    league: `eq.${league}`,
+    season: `eq.${season}`,
+  });
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+    });
+    if (!resp.ok) {
+      // 404 / relation-does-not-exist in dev environments is expected
+      // until the migration is applied. Warn once, return empty.
+      if (!loadRefereesForLeague._warned) {
+        console.warn(`[referees] query ${league}/${season} returned ${resp.status} — table may be missing?`);
+        loadRefereesForLeague._warned = true;
+      }
+      return out;
+    }
+    const rows = await resp.json();
+    for (const row of rows || []) {
+      if (row.referee_slug) out.set(row.referee_slug, row);
+    }
+  } catch (e) {
+    if (!loadRefereesForLeague._warned) {
+      console.warn(`[referees] unexpected: ${e.message || e}`);
+      loadRefereesForLeague._warned = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * Pure lookup: resolve a raw name → canonical name → slug → row from the Map.
+ * Returns null if no match; the empty-name case is also null (expected; most
+ * matchdays arrive without a pre-assigned referee).
+ */
+export function lookupReferee(refereeMap, rawName) {
+  if (!refereeMap || !rawName) return null;
+  const canonical = resolveRefereeName(rawName);
+  const slug = slugifyReferee(canonical);
+  if (!slug) return null;
+  return refereeMap.get(slug) || null;
+}
+
+/**
+ * Format a referee row into the schema-compliant card-string.
+ * Empty input → empty string (schemas.ts accepts "" as optional).
+ */
+export function formatRefereeCardString(refRow) {
+  if (!refRow || refRow.yellows_per_game == null) return "";
+  const avg = Number(refRow.yellows_per_game);
+  if (!Number.isFinite(avg)) return "";
+  // One decimal is what predictYellowCards() regex expects.
+  return `${refRow.referee_name}, Ø ${avg.toFixed(1)} Karten/Spiel`;
+}
+
+/**
+ * Convenience: lookup + format + raw-stats in one call.
+ *
+ * Returns:
+ *   {
+ *     ref_string: string,           // matchday.referee field (engine-ready)
+ *     yellows_pg: number | null,    // for Cards-Market edge compute
+ *     reds_pg: number | null,
+ *     home_yellow_bias: number,     // 1.0 if unknown (neutral)
+ *     matches_analyzed: number,
+ *     source: string | null,        // "fbref-schedule" | "fbref-detail" | ...
+ *   }
+ *
+ * Always returns an object (never null) so callers can destructure safely.
+ */
+export function deriveRefereeFeatures(refereeMap, rawName) {
+  const row = lookupReferee(refereeMap, rawName);
+  if (!row) {
+    return {
+      ref_string: "",
+      yellows_pg: null,
+      reds_pg: null,
+      home_yellow_bias: 1.0,
+      matches_analyzed: 0,
+      source: null,
+    };
+  }
+  return {
+    ref_string: formatRefereeCardString(row),
+    yellows_pg: row.yellows_per_game != null ? Number(row.yellows_per_game) : null,
+    reds_pg: row.reds_per_game != null ? Number(row.reds_per_game) : null,
+    home_yellow_bias: row.home_yellow_bias != null ? Number(row.home_yellow_bias) : 1.0,
+    matches_analyzed: Number(row.matches_analyzed || 0),
+    source: row.source || null,
+  };
+}
+
+// ─── 10. Travel + Congestion (Phase 1.4 — Scoppa 2013 fatigue inputs) ──
+//
+// Distance travelled and match-count over rolling windows. These are the
+// components the EURO-FATIGUE tag will eventually combine with UEFA-fixture
+// flags (see CLAUDE.md note on European placeholders). For now we surface
+// them as per-team features attached to the matchday, so the v2 engine +
+// engine-v3 Bayes can consume them when retrained.
+
+/**
+ * Batch-load stadium coords for a set of team names into a Map<team, row>.
+ * Read-only REST against `stadiums` (populated by scripts/scrape-stadiums.mjs).
+ * Safe to call before the migration lands — returns an empty map + logs once.
+ */
+export async function loadStadiumsForTeams(supaUrl, supaKey, teamNames) {
+  const out = new Map();
+  const unique = Array.from(new Set((teamNames || []).filter(Boolean)));
+  if (!supaUrl || !supaKey || unique.length === 0) return out;
+  // PostgREST `in.()` with URL-encoded comma-separated list.
+  const inList = unique.map(t => `"${t.replace(/"/g, '""')}"`).join(",");
+  const url = `${supaUrl}/rest/v1/stadiums?select=team,lat,lng,altitude_m,capacity,surface,stadium_name&team=in.(${encodeURIComponent(inList)})`;
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
+    });
+    if (!resp.ok) {
+      if (!loadStadiumsForTeams._warned) {
+        console.warn(`[stadium] query returned ${resp.status} — table may be missing?`);
+        loadStadiumsForTeams._warned = true;
+      }
+      return out;
+    }
+    const rows = await resp.json();
+    for (const r of rows || []) {
+      if (r.team) out.set(r.team, r);
+    }
+  } catch (e) {
+    if (!loadStadiumsForTeams._warned) {
+      console.warn(`[stadium] unexpected: ${e.message || e}`);
+      loadStadiumsForTeams._warned = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * Compute travel + congestion features for a single team relative to a
+ * given kickoff time.
+ *
+ * Inputs:
+ *   team          — FODZE team name (the one we're computing for)
+ *   teamStadium   — { lat, lng } object for that team's home ground
+ *                   (null/undefined → travel_km_last_7d is null)
+ *   historyRows   — team_xg_history rows for this team, order irrelevant
+ *                   (we sort internally). Each row has {venue, opponent,
+ *                    match_date}.
+ *   stadiumMap    — Map<team_name, { lat, lng, ... }> from loadStadiumsForTeams
+ *   kickoff       — ISO/Date-parseable string OR Date for reference point
+ *
+ * Returns:
+ *   {
+ *     matches_last_14d: number,
+ *     travel_km_last_7d: number | null,
+ *     consecutive_away_count: number,   // last N away matches in a row
+ *   }
+ *
+ * Semantics:
+ *   travel = sum of Haversine(home → opponent's home) × 2 for each away
+ *   match in the last 7 days. Home matches add 0. This is a crude proxy
+ *   for the actual multi-leg itinerary (teams often train on-site so
+ *   they don't round-trip between away-away consecutive weeks), but it
+ *   captures the signal that matters: long foreign trips × short rest.
+ */
+export function deriveTravelCongestion({
+  team,
+  teamStadium,
+  historyRows,
+  stadiumMap,
+  kickoff,
+  windowDays = 14,
+  travelDays = 7,
+}) {
+  const out = { matches_last_14d: 0, travel_km_last_7d: null, consecutive_away_count: 0 };
+  if (!team) return out;
+
+  const koTime = new Date(kickoff || Date.now()).getTime();
+  if (!Number.isFinite(koTime)) return out;
+
+  const rows = (historyRows || []).filter(r => r && r.match_date);
+  const ms14 = windowDays * 86400000;
+  const ms7 = travelDays * 86400000;
+
+  // Walk newest-first so we can detect "consecutive away streak" ending
+  // with the most-recent match.
+  const sorted = [...rows].sort(
+    (a, b) => new Date(b.match_date).getTime() - new Date(a.match_date).getTime(),
+  );
+  let consecutiveAway = 0;
+  let streakBroken = false;
+
+  let travelKm = 0;
+  let hadTravelLeg = false;
+
+  for (const r of sorted) {
+    const rowTime = new Date(r.match_date).getTime();
+    if (!Number.isFinite(rowTime)) continue;
+    const ageMs = koTime - rowTime;
+    if (ageMs < 0) continue; // ignore future entries
+    if (ageMs > ms14) break; // older than window → stop (list is sorted)
+
+    out.matches_last_14d++;
+
+    // Consecutive-away streak from most recent backwards.
+    if (!streakBroken) {
+      if (r.venue === "away") consecutiveAway++;
+      else streakBroken = true;
+    }
+
+    // Travel only for away games within the travel window.
+    if (ageMs <= ms7 && r.venue === "away" && teamStadium && teamStadium.lat != null) {
+      const opp = stadiumMap?.get?.(r.opponent);
+      if (opp && opp.lat != null) {
+        const leg = haversineKm(teamStadium.lat, teamStadium.lng, opp.lat, opp.lng);
+        if (leg != null) {
+          travelKm += leg * 2; // round-trip
+          hadTravelLeg = true;
+        }
+      }
+    }
+  }
+
+  out.consecutive_away_count = consecutiveAway;
+  out.travel_km_last_7d = hadTravelLeg ? +travelKm.toFixed(1) : null;
+  return out;
+}
+
+/**
+ * Given per-team fatigue features + a boolean "was in UEFA competition
+ * within 72h" (currently always false — no UEFA-fixtures source) emit
+ * the Scoppa-2013 interaction flag. EURO-FATIGUE tag trips when BOTH
+ * conditions hold: European away ≤72h AND home team's travel stack
+ * (≥800 km in the last 7 days OR ≥5 matches in the last 14d).
+ *
+ * Kept pure so the v2 engine's TAG_MAP can interpret the string.
+ * When the UEFA-fixture pipeline lands we flip euroAwayRecent to true
+ * and no other code changes.
+ */
+export function flagShortRestEuropean(teamFatigue, euroAwayRecent = false) {
+  if (!euroAwayRecent) return false;
+  const travel = Number(teamFatigue?.travel_km_last_7d || 0);
+  const matches = Number(teamFatigue?.matches_last_14d || 0);
+  return travel >= 800 || matches >= 5;
 }

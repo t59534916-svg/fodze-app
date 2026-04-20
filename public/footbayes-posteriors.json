@@ -1,0 +1,12 @@
+{
+  "_version": 1,
+  "_meta": {
+    "method": "biv_pois_dynamic",
+    "model_package": "footBayes",
+    "trained_at": null,
+    "status": "placeholder",
+    "note": "Empty posterior map — calcMatchFootBayes returns null for every team until services/footbayes/ produces a real posterior file. Once live, this JSON is rewritten by services/footbayes/fit_daily.R after each nightly Stan fit."
+  },
+  "leagues": {},
+  "teams": {}
+}

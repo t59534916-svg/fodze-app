@@ -1,0 +1,24 @@
+{
+  "_version": 1,
+  "_meta": {
+    "trained_at": null,
+    "n_oot_total": 0,
+    "loss_function": "log_loss",
+    "status": "placeholder",
+    "note": "No real weights yet. Beta = (1.0, 0.0) is a pure pass-through: the softmax of log(model_k) returns model_k unchanged. Replace this file with the output of tools/fit_benter_blend.py once odds_closing_history + v2 OOT predictions are available for at least one league."
+  },
+  "engines": {
+    "v2": {
+      "global": { "beta1": 1.0, "beta2": 0.0 },
+      "leagues": {}
+    },
+    "v1": {
+      "global": { "beta1": 1.0, "beta2": 0.0 },
+      "leagues": {}
+    },
+    "ensemble": {
+      "global": { "beta1": 1.0, "beta2": 0.0 },
+      "leagues": {}
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "_version": 1,
+  "_meta": {
+    "method": "hierarchical_poisson",
+    "model_package": "Stan via footBayes ext.",
+    "trained_at": null,
+    "status": "placeholder",
+    "note": "Empty players/teams maps. predictPlayerProps returns null for every lookup until services/footbayes/fit_player_props.R populates this file. That's the safe dormant state — the UI hides the market entirely instead of rendering unreliable priors."
+  },
+  "teams": {},
+  "players": {}
+}

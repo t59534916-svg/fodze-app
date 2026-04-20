@@ -447,9 +447,14 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 
 ## Zusätzliche Docs
 
+- `docs/ALPHA-ATLAS-IMPLEMENTATION.md` — **Master-Runbook der 13 Research-Phasen** (Referee / Benter / Dirichlet / footBayes / Conformal / Corners / Player-Props / Live-WP). Enthält Bootstrap-Reihenfolge, per-Phase Ops-Anweisungen, Feature-Flags, File-Inventory und Known Gaps. **Einstiegspunkt für alle Post-Baseline-Features.**
 - `docs/ARCHITECTURE.md` — tiefer Architektur-Überblick
 - `docs/DEBUGGING.md` — Operationaler Runbook (Symptom → Diagnose → Fix)
 - `docs/ENGINE.md` — Engine-Internals, Training, Backtest-Methodik
 - `docs/HANDBUCH.md` — End-User Handbuch (auch als `/handbuch` In-App)
 - `docs/LINEUP-INTEGRATION.md` — Design für Lineup-aware Predictions (nicht implementiert)
 - `docs/DESIGN-HANDOFF.md` — Design-System-Spec
+
+## Alpha-Atlas Status (Post-Baseline-Features)
+
+Die 13 Phasen aus dem Alpha-Atlas-Plan sind **code-complete** (`docs/ALPHA-ATLAS-IMPLEMENTATION.md`). Alle Runtime-Module sind wired aber **default-off** — pre-upgrade Output bleibt bit-identisch bis Feature-Flags geflippt werden. Outstanding Ops: 9 Migrations applyen, 6 Backfill-Scraper laufen lassen, 3 Python-Fits (Benter/Dirichlet/Conformal) trainieren, 2 R-Services deployen, UI-Tabs für Corners + Player-Props. **449 Tests passing, 0 neue TS-Errors.**

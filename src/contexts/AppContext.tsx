@@ -2,9 +2,14 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import { createClient, loadProfile, updateProfile, loadUserBets } from "@/lib/supabase";
 import { LEAGUES, loadCalibrationCurves, isCalibrationActive } from "@/lib/dixon-coles";
+import { loadDirichletCalibration, setCalibrationMethod } from "@/lib/calibration";
 import { loadEnsembleModel } from "@/lib/ensemble";
 import { loadPoissonModel } from "@/lib/poisson-regression";
 import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
+import { loadBenterWeights, setBenterMode } from "@/lib/benter-blend";
+import { loadFootBayesPosteriors } from "@/lib/footbayes-engine";
+import { loadConformalQuantiles, setConformalMode } from "@/lib/conformal-gate";
+import { loadPlayerPropsPosteriors } from "@/lib/player-props-engine";
 import { type PredictionEngine, DEFAULT_ENGINE, isValidEngine, ENGINES } from "@/lib/engine-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
@@ -85,6 +90,82 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     loadModel("/lgbm-model-v2.json", "lgbm", model => {
       if (loadLGBMModel(model)) validateGoldenTests();
     });
+    // Benter blend weights — optional. Default NEXT_PUBLIC_BENTER_BLEND=off
+    // keeps pre-upgrade pipeline behavior. Set to "on" (or "shadow" when
+    // the shadow-log infra lands) after fit_benter_blend.py produces a
+    // real public/benter-weights.json for at least one league.
+    const rawMode = (process.env.NEXT_PUBLIC_BENTER_BLEND || "off").toLowerCase();
+    const benterMode = rawMode === "on" || rawMode === "shadow" ? rawMode : "off";
+    setBenterMode(benterMode);
+    if (benterMode !== "off") {
+      loadModel("/benter-weights.json", "benter", weights => {
+        try { loadBenterWeights(weights); } catch (e) {
+          // Throw from loadBenterWeights = invalid schema; keep mode but loader
+          // flags it via modelErrors so UI can warn "benter disabled: bad json".
+          setBenterMode("off");
+          throw e;
+        }
+      });
+    }
+
+    // Player-props posteriors (Phase 3.2) — optional. Dormant with empty
+    // teams/players maps until services/footbayes/fit_player_props.R runs.
+    // Engine returns null for every player lookup in that state, so the
+    // UI layer hides the market instead of serving unreliable priors.
+    loadModel("/player-props-posteriors.json", "player-props", posteriors => {
+      loadPlayerPropsPosteriors(posteriors);
+    });
+
+    // footBayes hierarchical posteriors (Phase 2.2) — optional.
+    // Always attempt to load; the runtime engine returns null when teams
+    // are missing so silently-empty placeholders degrade cleanly. Setting
+    // NEXT_PUBLIC_SHOW_BAYES_ENGINE=false at build time would hide the
+    // engine from the selector entirely (not done here — dormant engine
+    // is preferable to a hidden surprise).
+    loadModel("/footbayes-posteriors.json", "footbayes", posteriors => {
+      // Placeholder file ships with empty teams/leagues maps — loader
+      // only throws on bad schema, not on empty maps. Dormant state is OK.
+      loadFootBayesPosteriors(posteriors);
+    });
+
+    // Dirichlet 3-class calibration (Phase 2.1) — optional.
+    // NEXT_PUBLIC_CALIBRATION_METHOD=platt|dirichlet|isotonic (default: platt/isotonic
+    // as set by calibration_curves.json above). If set to "dirichlet", override
+    // the method AFTER calibration_curves has been parsed so we don't conflict.
+    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "").toLowerCase();
+    if (rawCalMethod === "dirichlet") {
+      loadModel("/dirichlet-calibration.json", "dirichlet", weights => {
+        try {
+          loadDirichletCalibration(weights);
+          setCalibrationMethod("dirichlet");
+        } catch (e) {
+          // Broken schema → don't flip the method; existing Platt/Isotonic stays in force.
+          throw e;
+        }
+      });
+    } else if (rawCalMethod === "platt" || rawCalMethod === "isotonic") {
+      setCalibrationMethod(rawCalMethod);
+    }
+
+    // Conformal staking gate (Phase 2.5) — opt-in.
+    // NEXT_PUBLIC_CONFORMAL_GATE=off|warn|enforce|dampen (default: off)
+    //   off     — runtime helper returns 1.0 factor, no effect
+    //   warn    — compute + expose the gate classification, don't alter stakes
+    //   dampen  — Kelly scaled by set-size (1/0.6/0.3)
+    //   enforce — binary; non-singleton sets disable the bet entirely
+    const rawCfMode = (process.env.NEXT_PUBLIC_CONFORMAL_GATE || "off").toLowerCase();
+    const cfMode = ["off", "warn", "enforce", "dampen"].includes(rawCfMode) ? rawCfMode : "off";
+    setConformalMode(cfMode as "off" | "warn" | "enforce" | "dampen");
+    if (cfMode !== "off") {
+      loadModel("/conformal-quantiles.json", "conformal", quantiles => {
+        try { loadConformalQuantiles(quantiles); } catch (e) {
+          // Bad schema → keep the mode set but nothing will be "applied".
+          // conformalGate returns cluster="default" in that case, so UI
+          // can still render without crashing.
+          throw e;
+        }
+      });
+    }
   }, []);
 
   // Load user profile + bets + API check + league status

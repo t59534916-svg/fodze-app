@@ -420,7 +420,14 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
     }
   }
   const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
-  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction);
+  // Propagate sharpOdds + league + engine="v2" so Benter (Phase 1.3) can
+  // blend v2's posterior toward Pinnacle using v2-specific trained weights.
+  // Convert the engine's nullable {h,d,a} to PinnacleOdds shape.
+  const shV2 = input.sharpOdds;
+  const pinOdds = shV2 && shV2.h != null && shV2.d != null && shV2.a != null
+    ? { sharp_h: shV2.h, sharp_d: shV2.d, sharp_a: shV2.a }
+    : undefined;
+  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v2");
 
   // ── 9b. Goldilocks Guard (dual-track) ─────────────────────────
   // Use Track B (isotonic-calibrated) for edge calculation vs Pinnacle.

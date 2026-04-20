@@ -140,18 +140,30 @@ for (const league of leagues) {
     const homeXG = estimateXG(hst, hs);
     const awayXG = estimateXG(ast, as_);
 
+    // Phase 3.1: also persist corner counts when football-data.co.uk's
+    // HC/AC columns are present (they are on all Main-CSV seasons since
+    // 2005). Null-when-missing so rows from CSVs that drop the column
+    // don't get bogus zeros.
+    const hcRaw = row.HC, acRaw = row.AC;
+    const hc = hcRaw !== undefined && hcRaw !== "" && !Number.isNaN(+hcRaw) ? +hcRaw : null;
+    const ac = acRaw !== undefined && acRaw !== "" && !Number.isNaN(+acRaw) ? +acRaw : null;
+
     // Home perspective
     supaRows.push({
       team: ht, league, opponent: at, venue: "home",
       match_date: dateISO, xg: +homeXG.toFixed(4), xga: +awayXG.toFixed(4),
-      goals_for: hg, goals_against: ag, source: "shots-model",
+      goals_for: hg, goals_against: ag,
+      corners_for: hc, corners_against: ac,
+      source: "shots-model",
     });
 
     // Away perspective
     supaRows.push({
       team: at, league, opponent: ht, venue: "away",
       match_date: dateISO, xg: +awayXG.toFixed(4), xga: +homeXG.toFixed(4),
-      goals_for: ag, goals_against: hg, source: "shots-model",
+      goals_for: ag, goals_against: hg,
+      corners_for: ac, corners_against: hc,
+      source: "shots-model",
     });
   }
 
@@ -174,12 +186,16 @@ for (const league of leagues) {
     process.exit(1);
   }
 
-  // Batch upsert in chunks of 500
+  // Batch upsert in chunks of 500.
+  // on_conflict=... is REQUIRED by PostgREST when a table has multiple
+  // unique constraints — without it the Prefer: resolution=merge-duplicates
+  // header is silently ignored and we get 23505 duplicate-key errors.
   const BATCH = 500;
   let inserted = 0;
+  const upsertUrl = `${SUPA_URL}/rest/v1/team_xg_history?on_conflict=team,league,match_date,venue`;
   for (let i = 0; i < supaRows.length; i += BATCH) {
     const batch = supaRows.slice(i, i + BATCH);
-    const res = await fetch(`${SUPA_URL}/rest/v1/team_xg_history`, {
+    const res = await fetch(upsertUrl, {
       method: "POST",
       headers: {
         apikey: SUPA_KEY,
