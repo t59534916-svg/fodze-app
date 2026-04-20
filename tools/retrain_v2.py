@@ -790,6 +790,11 @@ def generate_golden_tests(model_home, model_away, test_features, n=10):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-optuna", action="store_true", help="Skip Optuna tuning")
+    parser.add_argument("--skip-public-export", action="store_true",
+                        help="Skip writing public/lgbm-model-v2.json. Use when "
+                             "regenerating only the OOT parquet for downstream "
+                             "calibration fits — prevents a low-quality --no-optuna "
+                             "run from clobbering a production-tuned model.")
     parser.add_argument("--use-npxg-csv", action="store_true", help="Use npxG CSV data")
     parser.add_argument("--use-full-csv", action="store_true", help="Use full Understat CSV (npxG + PPDA + deep)")
     parser.add_argument("--use-tactics", action="store_true", help="Use tactics CSV (setpiece, timing, gameState)")
@@ -995,6 +1000,100 @@ def main():
     for i in np.argsort(imp)[::-1]:
         print(f"    {FEATURE_NAMES[i]:25s} {imp[i]:5d}")
 
+    # ─── 7b. Export OOT Predictions (Benter / Dirichlet / Conformal / Backtest) ───
+    # Writes the per-match out-of-time test predictions to Parquet so that
+    # downstream scripts can fit calibration layers WITHOUT re-running the
+    # LightGBM training:
+    #
+    #   - tools/fit_benter.py         — β₁/β₂ logit-blend vs Pinnacle close
+    #   - tools/fit_dirichlet.py      — Dirichlet recalibration on (H,D,A)
+    #   - tools/fit_conformal.py      — split-conformal quantiles for Kelly gate
+    #   - tools/backtest/build_*.py   — ensemble backtest prediction-matrix
+    #
+    # The columns carry raw (uncalibrated, pre-Dirichlet) 1X2 + O25 + BTTS
+    # probs from the Dixon-Coles matrix at the optimal ρ, plus the 21-dim
+    # feature vector (so Benter can do feature-level blending) and ground
+    # truth goals. Sidecar .meta.json records feature_names and rho so the
+    # consumers don't need to re-import this script.
+    print("\n═══ 7b. EXPORTING OOT PREDICTIONS ═══")
+
+    oot_rows = []
+    size = 10  # dc_matrix size — keep in sync with dc_matrix(size=10) above
+    for i, f in enumerate(test_features):
+        mx = dc_matrix(pred_h[i], pred_a[i], rho=rho_opt, size=size)
+        H, D, A = matrix_1x2(mx)
+        o25 = float(sum(mx[ii, jj] for ii in range(size) for jj in range(size) if ii + jj >= 3))
+        btts = float(sum(mx[ii, jj] for ii in range(size) for jj in range(size) if ii >= 1 and jj >= 1))
+        oot_rows.append({
+            "match_date": f["date"].strftime("%Y-%m-%d") if pd.notna(f["date"]) else None,
+            "league": f["league"],
+            "home_team": f["ht"],
+            "away_team": f["at"],
+            "lambda_h_pred": float(pred_h[i]),
+            "lambda_a_pred": float(pred_a[i]),
+            "prob_h_raw": float(H),
+            "prob_d_raw": float(D),
+            "prob_a_raw": float(A),
+            "prob_o25_raw": o25,
+            "prob_btts_raw": btts,
+            "actual_h_goals": int(y_home_test[i]),
+            "actual_a_goals": int(y_away_test[i]),
+            "ft_result": "H" if y_home_test[i] > y_away_test[i] else ("D" if y_home_test[i] == y_away_test[i] else "A"),
+            "features": list(f["features"]),
+            "feature_version": f"v2.0-{len(FEATURE_NAMES)}f",
+            "split_label": "oot-test",
+            "rho_used": float(rho_opt),
+        })
+
+    oot_df = pd.DataFrame(oot_rows)
+    oot_dir = os.path.join(PROJECT_ROOT, "tools", "backtest")
+    os.makedirs(oot_dir, exist_ok=True)
+    oot_parquet = os.path.join(oot_dir, "v2-oot-predictions.parquet")
+    oot_csv = os.path.join(oot_dir, "v2-oot-predictions.csv")
+
+    wrote_parquet = False
+    try:
+        oot_df.to_parquet(oot_parquet, index=False)
+        wrote_parquet = True
+        print(f"  Parquet: {oot_parquet} ({len(oot_df)} rows)")
+    except (ImportError, ValueError) as e:
+        # ImportError: pyarrow/fastparquet not installed
+        # ValueError: some pandas + pyarrow combos barf on the `features` list column
+        oot_df.to_csv(oot_csv, index=False)
+        print(f"  CSV fallback ({type(e).__name__}): {oot_csv} ({len(oot_df)} rows)")
+
+    oot_meta = {
+        "feature_names": FEATURE_NAMES,
+        "feature_version": f"v2.0-{len(FEATURE_NAMES)}f",
+        "rho_used": float(rho_opt),
+        "oot_cutoff": str(OOT_CUTOFF.date()),
+        "n_rows": int(len(oot_df)),
+        "brier_oos": float(brier_score),
+        "mae_home": float(mae_h),
+        "mae_away": float(mae_a),
+        "trained_at": pd.Timestamp.now().isoformat(),
+        "format": "parquet" if wrote_parquet else "csv",
+        "schema": {
+            "match_date": "ISO-8601 date (nullable if original CSV had no date)",
+            "league": "FODZE league key (see DIV_TO_LEAGUE)",
+            "home_team / away_team": "football-data.co.uk canonical names",
+            "lambda_h_pred / lambda_a_pred": "clipped to [0.3, 4.5]",
+            "prob_*_raw": "Dixon-Coles matrix 1X2/O25/BTTS, NO isotonic/Dirichlet calibration",
+            "features": "21-dim vector matching feature_names",
+            "rho_used": "optimal ρ from this training run (applied to all test rows)",
+        },
+        "consumers": [
+            "tools/fit_benter.py",
+            "tools/fit_dirichlet.py",
+            "tools/fit_conformal.py",
+            "tools/backtest/build_prediction_matrix.py",
+        ],
+    }
+    oot_meta_path = os.path.join(oot_dir, "v2-oot-predictions.meta.json")
+    with open(oot_meta_path, "w") as f:
+        json.dump(oot_meta, f, indent=2)
+    print(f"  Meta:    {oot_meta_path}")
+
     # ─── 8. Golden Tests ───
     print("\n═══ 8. GOLDEN TESTS ═══")
     golden = generate_golden_tests(model_home, model_away, test_features, n=10)
@@ -1042,13 +1141,16 @@ def main():
     }
 
     output_path = os.path.join(PROJECT_ROOT, "public", "lgbm-model-v2.json")
-    with open(output_path, "w") as f:
-        json.dump(output, f)
-    print(f"  Model: {output_path}")
+    if args.skip_public_export:
+        print(f"  Model: SKIPPED (--skip-public-export) — tools/backtest/ parquet was still written.")
+    else:
+        with open(output_path, "w") as f:
+            json.dump(output, f)
+        print(f"  Model: {output_path}")
 
-    # File size
-    size_kb = os.path.getsize(output_path) / 1024
-    print(f"  Size: {size_kb:.0f} KB ({home_export['n_trees']} + {away_export['n_trees']} trees)")
+        # File size
+        size_kb = os.path.getsize(output_path) / 1024
+        print(f"  Size: {size_kb:.0f} KB ({home_export['n_trees']} + {away_export['n_trees']} trees)")
 
     print(f"\n{'═' * 60}")
     print(f"  @annafrick13 v2.0 — DONE")
