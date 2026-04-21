@@ -2,10 +2,10 @@
 import Kit from "@/components/shared/Kit";
 import TeamRadar from "@/components/match/TeamRadar";
 import MatchPulse from "@/components/match/MatchPulse";
+import EdgeBadge from "@/components/shared/EdgeBadge";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
-const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
 // Shortened team name: "FC Bayern München" → "Bayern München", "Bayer 04 Leverkusen" → "Leverkusen"
 const shortName = (name: string) => {
@@ -64,17 +64,14 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
             <span style={{ fontSize: 9, color: "#c47070", fontWeight: 600, minWidth: 24, textAlign: "right" }}>{pc(calc.mk.A)}</span>
           </div>
 
-          {/* Signal: VALUE badge or best tag */}
+          {/* Signal: zone-colored edge readout with Goldilocks meter
+              (green=authorized, amber=thin, warn=trap). Replaces the
+              plain all-green badge where +4.2% and +28% looked
+              identical — one is a real value signal, the other is a
+              value-trap the engine explicitly downgrades. */}
           <div style={{ flexShrink: 0 }}>
             {bestBet ? (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 4,
-                padding: "3px 8px", borderRadius: 6,
-                background: "#6aad5515", border: "1px solid #6aad5525",
-              }}>
-                <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#6aad55" }} />
-                <span style={{ fontSize: 10, fontWeight: 600, color: "#6aad55" }}>{pe(bestBet.edge)}</span>
-              </div>
+              <EdgeBadge edge={bestBet.edge} />
             ) : (match.tags?.length ?? 0) > 0 ? (
               <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#c4a26515", color: "#c4a26570" }}>
                 {match.tags![0]}
