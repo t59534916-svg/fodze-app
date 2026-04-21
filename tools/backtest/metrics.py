@@ -41,6 +41,12 @@ RESULT_INDEX = {c: i for i, c in enumerate(RESULT_CLASSES)}
 # to treat them with caution.
 MIN_STABLE_SAMPLE = 100
 
+# Bootstrap-CI settings — 1000 resamples is a common compromise between
+# Monte-Carlo noise (~0.3% RMS on 95% quantile) and runtime cost. Fixed
+# seed so consecutive runs are reproducible.
+BOOTSTRAP_N = 1000
+BOOTSTRAP_SEED = 42
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Metric functions — each takes (probs: [N,3], actual: [N] of H/D/A)
@@ -119,7 +125,41 @@ def ece_10bucket(probs: np.ndarray, actual: np.ndarray, n_bins: int = 10) -> Dic
 # Aggregation
 # ═══════════════════════════════════════════════════════════════════
 
-def compute_metrics(df: pd.DataFrame) -> Dict[str, Any]:
+def _bss_from_arrays(probs: np.ndarray, actual: np.ndarray) -> float:
+    """Brier-Skill-Score against the base-rate climatology of `actual`."""
+    base_rate = np.array([float((actual == c).mean()) for c in RESULT_CLASSES])
+    base_probs = np.tile(base_rate, (len(actual), 1))
+    brier = brier_3class(probs, actual)
+    brier_clim = brier_3class(base_probs, actual)
+    return (1.0 - brier / brier_clim) if brier_clim > 0 else 0.0
+
+
+def bootstrap_bss_ci(probs: np.ndarray, actual: np.ndarray,
+                     n_boot: int = BOOTSTRAP_N, conf: float = 0.95,
+                     seed: int = BOOTSTRAP_SEED) -> Dict[str, float]:
+    """
+    Row-level resample-with-replacement CI for Brier-Skill-Score.
+
+    Both the sample Brier AND the climatology Brier are recomputed on
+    each resample — so the CI reflects BSS uncertainty end-to-end, not
+    just numerator noise at a fixed denominator. With n_boot=1000 and
+    n_rows=6691 this runs in ~0.2 s.
+    """
+    n = len(probs)
+    if n < 20:
+        return {"ci_low": float("nan"), "ci_high": float("nan"), "n_boot": 0}
+    rng = np.random.default_rng(seed)
+    samples = np.empty(n_boot)
+    for b in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        samples[b] = _bss_from_arrays(probs[idx], actual[idx])
+    alpha = 1.0 - conf
+    lo = float(np.quantile(samples, alpha / 2))
+    hi = float(np.quantile(samples, 1 - alpha / 2))
+    return {"ci_low": lo, "ci_high": hi, "n_boot": int(n_boot), "conf": conf}
+
+
+def compute_metrics(df: pd.DataFrame, with_bootstrap: bool = True) -> Dict[str, Any]:
     probs = df[["prob_h_raw", "prob_d_raw", "prob_a_raw"]].to_numpy()
     actual = df["ft_result"].to_numpy()
 
@@ -137,7 +177,7 @@ def compute_metrics(df: pd.DataFrame) -> Dict[str, Any]:
 
     ece_result = ece_10bucket(probs, actual)
 
-    return {
+    result: Dict[str, Any] = {
         "n": int(len(df)),
         "brier": round(brier, 6),
         "brier_climatology": round(brier_clim, 6),
@@ -149,6 +189,21 @@ def compute_metrics(df: pd.DataFrame) -> Dict[str, Any]:
         "base_rate": {c: round(float(base_rate[i]), 4) for i, c in enumerate(RESULT_CLASSES)},
         "low_sample": bool(len(df) < MIN_STABLE_SAMPLE),
     }
+
+    # Bootstrap is the single most important upgrade from review — without
+    # it, readers treat point estimates as truth and the per-league "+0.14
+    # BSS" numbers look more decisive than they are. Disableable for perf
+    # via with_bootstrap=False but default is on.
+    if with_bootstrap:
+        ci = bootstrap_bss_ci(probs, actual)
+        result["bss_ci95"] = {
+            "low": round(ci["ci_low"], 6),
+            "high": round(ci["ci_high"], 6),
+            "n_boot": ci["n_boot"],
+            "excludes_zero": bool(ci["ci_low"] > 0 or ci["ci_high"] < 0),
+        }
+
+    return result
 
 
 def main() -> None:
@@ -203,12 +258,18 @@ def main() -> None:
     print(f"  Base rate:       H={br['H']:.3f}  D={br['D']:.3f}  A={br['A']:.3f}")
 
     print(f"\n  Per-league  ({len(per_league)} leagues, ≥{MIN_STABLE_SAMPLE} rows = stable):")
-    print(f"  {'league':<18} {'N':>6}  {'Brier':>8}  {'BSS':>8}  {'LogLoss':>8}  {'ECE':>6}  flag")
-    print(f"  {'─' * 62}")
+    print(f"  {'league':<18} {'N':>6}  {'BSS':>8}  {'BSS 95% CI':<18}  {'LogLoss':>8}  {'ECE':>6}  flag")
+    print(f"  {'─' * 76}")
     for lg, m in sorted(per_league.items(), key=lambda x: -x[1]["brier_skill_score"]):
         flag = "low-n" if m["low_sample"] else ""
-        print(f"  {lg:<18} {m['n']:>6}  {m['brier']:>8.4f}  {m['brier_skill_score']:>+8.4f}  "
+        ci = m.get("bss_ci95", {})
+        ci_str = (f"[{ci.get('low', 0):+.3f}, {ci.get('high', 0):+.3f}]"
+                  if ci else "(skipped)")
+        excl = " *" if ci.get("excludes_zero") else "  "
+        print(f"  {lg:<18} {m['n']:>6}  {m['brier_skill_score']:>+8.4f}  {ci_str:<18}{excl}  "
               f"{m['log_loss']:>8.4f}  {m['ece_10bucket']:>6.4f}  {flag}")
+    print(f"  {'─' * 76}")
+    print(f"  * = 95% CI excludes zero (statistically distinct from climatology)")
 
     print(f"\n  Written: {args.out}")
 

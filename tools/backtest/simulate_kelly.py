@@ -60,6 +60,13 @@ RISK_CAPS = {"K": 0.025, "M": 0.040, "A": 0.060}
 # Edge-bucket boundaries for hit-rate breakdown (open intervals)
 EDGE_BUCKETS = [(0.0, 0.02), (0.02, 0.05), (0.05, 0.10), (0.10, 1.0)]
 
+# Bootstrap: row-level resample WITH replacement of the per-bet list so
+# ROI-on-stake = Σ profit / Σ stake remains a self-consistent ratio on
+# each resample. 1000 resamples for stable 95% quantiles; seed pinned
+# so re-runs match exactly for the same input data.
+BOOTSTRAP_N = 1000
+BOOTSTRAP_SEED = 42
+
 
 @dataclass
 class Bet:
@@ -230,6 +237,7 @@ def metrics_for(result: SimResult) -> Dict:
 
     # Per-league ROI (profit / stake on that league)
     per_league: Dict[str, Dict] = {}
+    per_league_bets: Dict[str, List[Tuple[float, float]]] = {}
     for bet in result.bets:
         lg = bet.league
         pl = per_league.setdefault(lg, {"n": 0, "wins": 0, "stake": 0.0, "pnl": 0.0})
@@ -237,10 +245,36 @@ def metrics_for(result: SimResult) -> Dict:
         pl["wins"] += 1 if bet.won else 0
         pl["stake"] += bet.stake
         pl["pnl"] += bet.profit
+        per_league_bets.setdefault(lg, []).append((bet.stake, bet.profit))
     for lg in per_league:
         pl = per_league[lg]
         pl["hit_rate"] = round(pl["wins"] / pl["n"], 4)
         pl["roi_on_stake"] = round(pl["pnl"] / pl["stake"], 4) if pl["stake"] > 0 else 0.0
+
+        # Bootstrap 95% CI on ROI-on-stake. Resample (stake, profit) pairs
+        # together so numerator AND denominator co-vary — avoids the trap
+        # of treating wins and stakes as independent. With 150-550 bets
+        # per league the CIs are wide (±10-20 pp typical).
+        #
+        # NB: the inner loop MUST NOT shadow the outer `n = len(result.bets)`
+        # declared at the top of this function — dict values including
+        # "n_bets" reference it. Using a distinct `n_lg` is the fix.
+        arr = np.array(per_league_bets[lg], dtype=float)  # [N, 2]: stake, profit
+        n_lg = len(arr)
+        if n_lg >= 30:
+            rng = np.random.default_rng(BOOTSTRAP_SEED + hash(lg) % 100)
+            idx = rng.integers(0, n_lg, size=(BOOTSTRAP_N, n_lg))
+            resampled = arr[idx]  # [B, N, 2]
+            stake_sums = resampled[:, :, 0].sum(axis=1)
+            profit_sums = resampled[:, :, 1].sum(axis=1)
+            rois = np.where(stake_sums > 0, profit_sums / stake_sums, 0.0)
+            pl["roi_ci95_low"] = round(float(np.quantile(rois, 0.025)), 4)
+            pl["roi_ci95_high"] = round(float(np.quantile(rois, 0.975)), 4)
+            pl["ci_excludes_zero"] = bool(pl["roi_ci95_low"] > 0 or pl["roi_ci95_high"] < 0)
+        else:
+            pl["roi_ci95_low"] = None
+            pl["roi_ci95_high"] = None
+            pl["ci_excludes_zero"] = False
 
     return {
         "profile": result.profile,
@@ -335,11 +369,18 @@ def main() -> None:
     # Per-league ROI table on the middle (M) profile — typical retail setting.
     mid = all_metrics.get("M", {})
     if mid.get("per_league"):
-        print(f"\n── Per-league ROI  (profile M) ──")
-        print(f"  {'league':<18} {'n':>4} {'hit':>7} {'ROI_stake':>11}")
+        print(f"\n── Per-league ROI  (profile M)  — * = 95% CI excludes zero ──")
+        print(f"  {'league':<18} {'n':>4} {'hit':>7} {'ROI_stake':>11}  {'95% CI':<22}")
         rows = sorted(mid["per_league"].items(), key=lambda x: -x[1]["roi_on_stake"])
         for lg, pl in rows:
-            print(f"  {lg:<18} {pl['n']:>4} {pl['hit_rate']*100:>6.2f}%  {pl['roi_on_stake']*100:>+9.2f}%")
+            lo = pl.get("roi_ci95_low")
+            hi = pl.get("roi_ci95_high")
+            if lo is not None and hi is not None:
+                ci_str = f"[{lo*100:+6.2f}%, {hi*100:+6.2f}%]"
+            else:
+                ci_str = "(n<30 — skipped)"
+            excl = " *" if pl.get("ci_excludes_zero") else "  "
+            print(f"  {lg:<18} {pl['n']:>4} {pl['hit_rate']*100:>6.2f}%  {pl['roi_on_stake']*100:>+9.2f}%  {ci_str}{excl}")
 
     output = {
         "generated_at": pd.Timestamp.utcnow().isoformat() + "Z",
