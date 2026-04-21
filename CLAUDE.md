@@ -432,6 +432,18 @@ npm run suggest-aliases              # Falls missings in missing-tm-aliases.log
 
 **Nach Spielende:** Auto via settle-bets.yml Cron (oder täglich 02:17/08:17 UTC via GitHub Actions, oder täglich 07:30 lokal via launchd).
 
+**Nach v2-Retrain (`retrain_v2.py`):** Die downstream Model-Artifacts (`public/dirichlet-calibration.json`, `public/conformal-quantiles.json`, `public/benter-weights.json`, `public/backtest-summary.json`) werden NICHT von `refresh:full` aktualisiert. Sie sind statische Fit-Outputs die den v2-OOT-Parquet konsumieren. Nach jedem v2-Retrain:
+
+```bash
+bash tools/backtest/refit-all.sh         # reihenfolge-kritisch:
+                                          # Dirichlet → Conformal → v1-OOT → Summary
+# --skip-benter wenn odds-close-oot.parquet fehlt
+git diff public/*.json                    # Review
+git commit -am 'chore(models): refit artifacts'
+```
+
+Skipping a step leaves downstream quantiles/calibrations scored on a DIFFERENT probability distribution than the runtime pipeline produces — exactly the bug fixed in `f9c6ce7` where conformal coverage under-covered by 5 pp after the Dirichlet default-flip. Der Orchestrator [`tools/backtest/refit-all.sh`](tools/backtest/refit-all.sh) erzwingt die richtige Reihenfolge.
+
 ---
 
 ## AI-Integration

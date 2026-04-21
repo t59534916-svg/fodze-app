@@ -3,7 +3,7 @@
   "_meta": {
     "method": "dirichlet_odir",
     "lambda": 0.01,
-    "trained_at": "2026-04-21T17:37:46.387633+00:00Z"
+    "trained_at": "2026-04-21T18:37:02.271182+00:00Z"
   },
   "cluster_map": {
     "bundesliga": "top5",
