@@ -298,8 +298,8 @@ export default function PerformancePage() {
     <AppShell>
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <h1 style={{ ...S.goldText, fontSize: 18, fontFamily: "Georgia, serif", margin: 0 }}>MODEL PERFORMANCE</h1>
-        <div style={S.small}>Dixon-Coles Bivariate Poisson · Isotonic Calibration</div>
+        <h1 style={{ ...S.goldText, fontSize: 18, fontFamily: "Georgia, serif", margin: 0 }}>Modell-Performance</h1>
+        <div style={S.small}>Dixon-Coles Bivariate Poisson · Dirichlet-ODIR Kalibrierung · v2 LightGBM Tweedie</div>
       </div>
 
       {/* Tab Bar */}
@@ -333,11 +333,17 @@ export default function PerformancePage() {
 
           {/* Training Info */}
           <div style={S.card}>
-            <div style={{ ...S.label, marginBottom: 8 }}>Trainingsdaten</div>
+            <div style={{ ...S.label, marginBottom: 8 }}>
+              Trainingsdaten <span style={{ fontSize: 9, color: "#c4a26560", fontWeight: 400 }}>— historischer Snapshot v7.0</span>
+            </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               <Stat label="Spiele" value={BACKTEST.totalGames.toLocaleString()} sub={BACKTEST.seasons} />
-              <Stat label="OOS Test" value={BACKTEST.oosGames.toLocaleString()} sub="2025/26 (unseen)" />
+              <Stat label="OOS-Holdout" value={BACKTEST.oosGames.toLocaleString()} sub="2025/26 unseen" />
               <Stat label="Ligen" value="5" sub={BACKTEST.leagues} />
+            </div>
+            <div style={{ fontSize: 10, color: "#c4a26570", marginTop: 8, lineHeight: 1.5 }}>
+              Aktuelle v2+Dirichlet Zahlen auf dem <strong style={{ color: "#d4b86a" }}>Cross-Engine</strong> Tab
+              (6.691 OOT-Zeilen, 19 Ligen, Stand 2023-08-01 cutoff).
             </div>
           </div>
 
@@ -382,12 +388,12 @@ export default function PerformancePage() {
             <div style={{ ...S.label, marginBottom: 8 }}>Wett-Simulation (Edge ≥ {BACKTEST.edgeThreshold}%, ¼Kelly)</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
               <Stat label="Wetten" value={String(BACKTEST.bettingAvg.bets)} sub="Avg Odds" />
-              <Stat label="Win Rate" value={`${BACKTEST.bettingAvg.wr}%`} good />
+              <Stat label="Trefferquote" value={`${BACKTEST.bettingAvg.wr}%`} good />
               <Stat label="ROI" value={`+${BACKTEST.bettingAvg.roi}%`} sub="nach 312 Bets" good />
               <Stat label="CLV (Sim.)" value={`+${(BACKTEST.bettingAvg.clv * 100).toFixed(2)}%`} sub="Backtest, nicht live" good />
             </div>
             <div style={{ ...S.small, padding: "8px 10px", background: "#6aad5510", borderRadius: 6, border: "1px solid #6aad5520" }}>
-              Bei Max Odds: {BACKTEST.bettingMax.bets} Bets, {BACKTEST.bettingMax.wr}% WR, <strong style={{ color: "#6aad55" }}>+{BACKTEST.bettingMax.roi}% ROI</strong>
+              Bei Max Odds: {BACKTEST.bettingMax.bets} Wetten, {BACKTEST.bettingMax.wr}% Trefferquote, <strong style={{ color: "#6aad55" }}>+{BACKTEST.bettingMax.roi}% ROI</strong>
             </div>
           </div>
         </>
@@ -396,12 +402,22 @@ export default function PerformancePage() {
       {/* ═══ CALIBRATION TAB ═══ */}
       {tab === "calibration" && (
         <>
+          <div style={{ ...S.card, background: "#c4a26508", borderColor: "#c4a26525" }}>
+            <div style={{ fontSize: 11, color: "#c4a265", fontWeight: 600, marginBottom: 4 }}>Hinweis</div>
+            <div style={{ fontSize: 11, color: "#c4a26590", lineHeight: 1.5 }}>
+              Diese Kurven zeigen die <strong>Legacy-Isotonic-Kalibrierung</strong> aus v7.0.
+              Live läuft seit dem letzten Deploy <strong style={{ color: "#d4b86a" }}>Dirichlet-ODIR per Liga-Cluster</strong>.
+              ECE auf 6.691 OOT-Zeilen: 0,0049 (2,6× besser als roh). Details + Pro-Engine-Coverage auf dem <strong style={{ color: "#d4b86a" }}>Cross-Engine</strong> Tab.
+            </div>
+          </div>
+
           <div style={S.card}>
-            <div style={{ ...S.label, marginBottom: 8 }}>Isotonische Kalibrierungskurven</div>
+            <div style={{ ...S.label, marginBottom: 8 }}>Isotonische Kalibrierungskurven (Legacy-Fallback)</div>
             <CalibrationChart curves={curves} />
             <div style={{ ...S.small, marginTop: 8 }}>
               Gestrichelte Linie = perfekte Kalibrierung (Vorhersage = Realität).
               Je näher eine Kurve an der Diagonale, desto besser kalibriert der Markt.
+              Bleiben als Fallback geladen falls Dirichlet-JSON fehlt.
             </div>
           </div>
 
@@ -531,7 +547,7 @@ export default function PerformancePage() {
       {/* Footer */}
       <div style={{ textAlign: "center", marginTop: 16 }}>
         <div style={{ fontSize: 9, color: "#c4a26540" }}>
-          FODZE Engine v7 · Dixon-Coles Bivariate Poisson · ρ=-0.05 · 15×15 Matrix · Isotonic Calibration (101pt)
+          FODZE v7 · Dixon-Coles Bivariate Poisson (15×15) · v2 LightGBM Tweedie (21 Features, ρ=-0.053) · Dirichlet-ODIR per Liga-Cluster
         </div>
       </div>
     </AppShell>
