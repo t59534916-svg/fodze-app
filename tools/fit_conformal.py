@@ -59,6 +59,59 @@ except ImportError:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_PATH = REPO_ROOT / "public" / "conformal-quantiles.json"
+DIRICHLET_PATH = REPO_ROOT / "public" / "dirichlet-calibration.json"
+
+
+# ─── Post-hoc calibration (optional) ─────────────────────────────────
+# Mirrors src/lib/calibration.ts::applyDirichlet so the conformal gate
+# sees the same probability distribution the production pipeline
+# actually routes through it. Before the 2026-04-21 Dirichlet
+# default-flip this was a no-op; after it, refitting without this
+# post-processing produces quantiles that under-cover by ~4.8 pp at
+# α=0.10 (measured via tools/backtest/run-cross-engine-oot.mjs).
+
+def _load_dirichlet_params() -> dict | None:
+    if not DIRICHLET_PATH.exists():
+        print(f"[conformal-fit]   missing {DIRICHLET_PATH.relative_to(REPO_ROOT)}", file=sys.stderr)
+        return None
+    payload = json.loads(DIRICHLET_PATH.read_text())
+    if payload.get("_version") != 1 or "cluster_map" not in payload:
+        print("[conformal-fit]   dirichlet-calibration.json schema invalid", file=sys.stderr)
+        return None
+    return payload
+
+
+def apply_dirichlet(probs: np.ndarray, leagues: np.ndarray, params: dict) -> np.ndarray:
+    """
+    Apply the W @ log(p) + b softmax transform per-row using the league's
+    cluster. Input shape (N, 3) → output shape (N, 3), rows sum to 1.
+
+    Leagues missing from cluster_map fall back to `global` params
+    (which ships as identity when the fit hit the null-space, so those
+    rows pass through unchanged — matching the TS runtime).
+    """
+    cluster_map = params.get("cluster_map", {})
+    clusters = params.get("clusters", {})
+    global_params = params.get("global", {})
+
+    def _get(cluster_key: str) -> dict:
+        return clusters.get(cluster_key) or global_params
+
+    out = np.empty_like(probs)
+    logits = np.log(np.clip(probs, 1e-9, 1.0))
+    # Process row-by-row to respect per-league W + b (vectorising across
+    # variable W matrices adds complexity without runtime benefit for
+    # the O(10⁴) rows we fit on).
+    for i in range(len(probs)):
+        cluster_key = cluster_map.get(leagues[i], "global")
+        p = _get(cluster_key)
+        W = np.asarray(p.get("W", np.eye(3)))
+        b = np.asarray(p.get("b", np.zeros(3)))
+        z = W @ logits[i] + b
+        z = z - z.max()  # numerical stability
+        e = np.exp(z)
+        out[i] = e / e.sum()
+    return out
 
 
 # ─── Core math ──────────────────────────────────────────────────────
@@ -132,7 +185,7 @@ def load_oot_predictions(engine: str) -> pd.DataFrame | None:
 
 # ─── Main ───────────────────────────────────────────────────────────
 
-def fit_for_engine(engine: str, alphas: list[float]) -> dict | None:
+def fit_for_engine(engine: str, alphas: list[float], calibration: str = "raw") -> dict | None:
     df = load_oot_predictions(engine)
     if df is None or df.empty:
         return None
@@ -147,6 +200,26 @@ def fit_for_engine(engine: str, alphas: list[float]) -> dict | None:
 
     probs_all = df[["model_prob_h", "model_prob_d", "model_prob_a"]].to_numpy()
     y_all = df["y_true_class"].to_numpy().astype(int)
+
+    if calibration == "dirichlet":
+        params = _load_dirichlet_params()
+        if params is None:
+            print("[conformal-fit] dirichlet requested but params missing — aborting", file=sys.stderr)
+            return None
+        leagues_arr = df["league"].to_numpy()
+        probs_all = apply_dirichlet(probs_all, leagues_arr, params)
+        # Overwrite the model_prob_* columns in df so the per-league loop
+        # below sees the Dirichlet-transformed probs instead of the raw
+        # ones. Without this, per-league quantiles are silently fit on a
+        # DIFFERENT probability distribution than the global one, which
+        # is exactly the under-coverage bug that shipped in the previous
+        # conformal-quantiles.json payload.
+        df = df.assign(
+            model_prob_h=probs_all[:, 0],
+            model_prob_d=probs_all[:, 1],
+            model_prob_a=probs_all[:, 2],
+        )
+        print(f"[conformal-fit]   applied Dirichlet calibration to {len(probs_all)} rows")
 
     output = {"global": {}, "leagues": {}}
 
@@ -182,6 +255,10 @@ def main():
     ap.add_argument("--engines", help="comma-separated override for --engine")
     ap.add_argument("--alpha", type=float, default=0.10)
     ap.add_argument("--alphas", help="comma-separated override for --alpha (e.g. 0.05,0.10,0.20)")
+    ap.add_argument("--calibration", default="raw", choices=["raw", "dirichlet"],
+                    help="post-hoc calibration to apply before fitting quantiles. "
+                         "Must match the runtime pipeline: production runs Dirichlet "
+                         "since 2026-04-21 (3c306da), so raw quantiles under-cover.")
     ap.add_argument("--dry", action="store_true")
     args = ap.parse_args()
 
@@ -195,8 +272,8 @@ def main():
     merged = {"global": {}, "leagues": {}}
     any_success = False
     for eng in engines:
-        print(f"\n[conformal-fit] fitting engine={eng}")
-        out = fit_for_engine(eng, alphas)
+        print(f"\n[conformal-fit] fitting engine={eng}  calibration={args.calibration}")
+        out = fit_for_engine(eng, alphas, calibration=args.calibration)
         if out is None:
             continue
         any_success = True
@@ -218,6 +295,7 @@ def main():
             "method": "mondrian_conformal_classification",
             "alpha_default": alphas[0] if alphas else 0.10,
             "engines": engines,
+            "calibration": args.calibration,
             "trained_at": pd.Timestamp.utcnow().isoformat() + "Z",
             "source_library": "MAPIE" if HAVE_MAPIE else "in-house",
         },
