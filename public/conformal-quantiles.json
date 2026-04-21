@@ -2,16 +2,108 @@
   "_version": 1,
   "_meta": {
     "method": "mondrian_conformal_classification",
-    "source_library": "MAPIE (method='mondrian')",
-    "alpha_default": 0.10,
-    "trained_at": null,
-    "status": "placeholder",
-    "note": "Global quantile 0.50 is permissive — only the arg-max class ever lands in the prediction set so every result is a singleton and the gate passes every bet. Replace once tools/fit_conformal.py has trained quantiles against OOT predictions + actual results."
+    "alpha_default": 0.05,
+    "engines": [
+      "v2"
+    ],
+    "trained_at": "2026-04-21T00:12:36.806182+00:00Z",
+    "source_library": "in-house"
   },
   "global": {
-    "0.05": 0.50,
-    "0.10": 0.50,
-    "0.20": 0.50
+    "0.05": 0.7801,
+    "0.10": 0.7538,
+    "0.20": 0.7316
   },
-  "leagues": {}
+  "leagues": {
+    "bundesliga": {
+      "0.05": 0.8161,
+      "0.10": 0.7899,
+      "0.20": 0.7598
+    },
+    "bundesliga2": {
+      "0.05": 0.7825,
+      "0.10": 0.7574,
+      "0.20": 0.74
+    },
+    "championship": {
+      "0.05": 0.7617,
+      "0.10": 0.7397,
+      "0.20": 0.7248
+    },
+    "epl": {
+      "0.05": 0.8193,
+      "0.10": 0.7645,
+      "0.20": 0.74
+    },
+    "eredivisie": {
+      "0.05": 0.7912,
+      "0.10": 0.7697,
+      "0.20": 0.7472
+    },
+    "greek_sl": {
+      "0.05": 0.8033,
+      "0.10": 0.7623,
+      "0.20": 0.7213
+    },
+    "jupiler_pro": {
+      "0.05": 0.7778,
+      "0.10": 0.76,
+      "0.20": 0.7418
+    },
+    "la_liga": {
+      "0.05": 0.7894,
+      "0.10": 0.7514,
+      "0.20": 0.7279
+    },
+    "la_liga2": {
+      "0.05": 0.753,
+      "0.10": 0.7322,
+      "0.20": 0.7177
+    },
+    "league_one": {
+      "0.05": 0.754,
+      "0.10": 0.739,
+      "0.20": 0.725
+    },
+    "league_two": {
+      "0.05": 0.7513,
+      "0.10": 0.7332,
+      "0.20": 0.7244
+    },
+    "ligue_1": {
+      "0.05": 0.8094,
+      "0.10": 0.7789,
+      "0.20": 0.7414
+    },
+    "ligue_2": {
+      "0.05": 0.7802,
+      "0.10": 0.7622,
+      "0.20": 0.7313
+    },
+    "primeira_liga": {
+      "0.05": 0.7648,
+      "0.10": 0.7411,
+      "0.20": 0.723
+    },
+    "scottish_prem": {
+      "0.05": 0.7975,
+      "0.10": 0.7585,
+      "0.20": 0.7295
+    },
+    "serie_a": {
+      "0.05": 0.8283,
+      "0.10": 0.7916,
+      "0.20": 0.7515
+    },
+    "serie_b": {
+      "0.05": 0.7542,
+      "0.10": 0.739,
+      "0.20": 0.7245
+    },
+    "super_lig": {
+      "0.05": 0.7807,
+      "0.10": 0.7558,
+      "0.20": 0.7365
+    }
+  }
 }
