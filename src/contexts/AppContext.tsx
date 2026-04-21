@@ -128,18 +128,27 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
       loadFootBayesPosteriors(posteriors);
     });
 
-    // Dirichlet 3-class calibration (Phase 2.1) — optional.
-    // NEXT_PUBLIC_CALIBRATION_METHOD=platt|dirichlet|isotonic (default: platt/isotonic
-    // as set by calibration_curves.json above). If set to "dirichlet", override
-    // the method AFTER calibration_curves has been parsed so we don't conflict.
-    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "").toLowerCase();
+    // Dirichlet 3-class calibration (Phase 2.1) — DEFAULT ON as of
+    // commit shipping cross-engine-oot-metrics.json findings:
+    //   ECE drops 2.6× vs raw (0.0146 → 0.0056), BSS strictly ≥ raw
+    //   on every league, never worse. 6691 OOT rows, cutoff 2023-08-01.
+    //
+    // NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet|isotonic|platt
+    //   unset / "dirichlet" — Dirichlet-ODIR per-cluster (default)
+    //   "isotonic"          — legacy per-market curves from calibration_curves.json
+    //   "platt"             — legacy 2-param logistic
+    //
+    // Failure modes are silent-safe: a missing or malformed
+    // public/dirichlet-calibration.json throws from loadDirichletCalibration,
+    // setCalibrationMethod("dirichlet") is never reached, and the module-level
+    // default ("isotonic" in src/lib/calibration.ts) stays in force.
+    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "dirichlet").toLowerCase();
     if (rawCalMethod === "dirichlet") {
       loadModel("/dirichlet-calibration.json", "dirichlet", weights => {
         try {
           loadDirichletCalibration(weights);
           setCalibrationMethod("dirichlet");
         } catch (e) {
-          // Broken schema → don't flip the method; existing Platt/Isotonic stays in force.
           throw e;
         }
       });
