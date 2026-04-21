@@ -140,6 +140,8 @@ function parseArgs() {
     conformalPath: DEFAULTS.conformal,
     conformalGate: "off",
     conformalAlpha: CONFORMAL_DEFAULT_ALPHA,
+    // Ships a slim summary to public/ so /performance can read it.
+    publish: false,
   };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -165,6 +167,11 @@ function parseArgs() {
     else if (a === "--conformal-path") out.conformalPath = next();
     else if (a === "--conformal-gate") { out.conformalGate = next(); out.conformal = true; }
     else if (a === "--conformal-alpha") { out.conformalAlpha = parseFloat(next()); out.conformal = true; }
+    else if (a === "--publish") {
+      out.publish = true;
+      out.conformal = true;
+      out.kelly = true;
+    }
     else if (a === "--help" || a === "-h") {
       process.stdout.write(
         "Usage: node tools/backtest/run-cross-engine-oot.mjs [opts]\n" +
@@ -185,7 +192,8 @@ function parseArgs() {
           "  --max-market-prob <F>       skip market probs above (default 0.65)\n" +
           "  --conformal                 report coverage/set-size/singleton-rate per engine\n" +
           "  --conformal-gate off|enforce|dampen  gate Kelly on prediction-set singleton (default off)\n" +
-          "  --conformal-alpha <F>       target miscoverage rate: 0.05, 0.10 (default), 0.20\n",
+          "  --conformal-alpha <F>       target miscoverage rate: 0.05, 0.10 (default), 0.20\n" +
+          "  --publish                   also write slim summary to public/backtest-summary.json (ships to UI)\n",
       );
       process.exit(0);
     } else {
@@ -1162,6 +1170,81 @@ function main() {
   }
   writeFileSync(opts.outPath, JSON.stringify(outputJson, null, 2));
   process.stdout.write(`\n  written: ${relative(PROJECT_ROOT, opts.outPath)}\n`);
+
+  if (opts.publish) {
+    const publicDir = join(PROJECT_ROOT, "public");
+    if (!existsSync(publicDir)) mkdirSync(publicDir, { recursive: true });
+    const publishPath = join(publicDir, "backtest-summary.json");
+    writeFileSync(publishPath, JSON.stringify(buildPublicSummary(outputJson), null, 2));
+    process.stdout.write(`  published: ${relative(PROJECT_ROOT, publishPath)}\n`);
+  }
+}
+
+// Strip the full-detail JSON down to the numbers a UI actually needs:
+// overall metrics, per-league BSS (scalar only — drop reliability diagrams
+// and bootstrap CIs' n_boot/excludes_zero flag), conformal coverage
+// summary, Kelly top-line. Target: < 10 KB gzipped so it ships in the
+// bundle without bloat.
+function buildPublicSummary(full) {
+  const slim = {
+    generated_at: full.generated_at,
+    n_rows: full.n_rows,
+    n_leagues: full.n_leagues,
+    engines: {},
+  };
+  for (const [name, r] of Object.entries(full.engines)) {
+    const ov = r.overall;
+    slim.engines[name] = {
+      overall: {
+        n: ov.n,
+        brier: ov.brier,
+        brier_skill_score: ov.brier_skill_score,
+        log_loss: ov.log_loss,
+        rps: ov.rps,
+        ece_10bucket: ov.ece_10bucket,
+        base_rate: ov.base_rate,
+        bss_ci95: ov.bss_ci95 ? { low: ov.bss_ci95.low, high: ov.bss_ci95.high } : null,
+      },
+      applied_n: r.applied_n,
+      per_league_bss: Object.fromEntries(
+        Object.entries(r.per_league).map(([lg, m]) => [lg, {
+          n: m.n, bss: m.brier_skill_score, log_loss: m.log_loss, ece: m.ece_10bucket,
+        }]),
+      ),
+    };
+    if (r.conformal) {
+      slim.engines[name].conformal = Object.fromEntries(
+        Object.entries(r.conformal).map(([alpha, d]) => [alpha, {
+          nominal_coverage: d.nominal_coverage,
+          empirical_coverage: d.empirical_coverage,
+          avg_set_size: d.avg_set_size,
+          singleton_rate: d.singleton_rate,
+        }]),
+      );
+    }
+  }
+  if (full.kelly) {
+    slim.kelly = {
+      profile: full.kelly.profile,
+      starting_bankroll: full.kelly.starting_bankroll,
+      edge_min: full.kelly.edge_min,
+      edge_max: full.kelly.edge_max,
+      conformal_gate: full.kelly.conformal_gate,
+      conformal_alpha: full.kelly.conformal_alpha,
+      per_engine: Object.fromEntries(
+        Object.entries(full.kelly.per_engine).map(([name, k]) => [name, {
+          n_bets: k.n_bets,
+          hit_rate: k.hit_rate ?? 0,
+          roi: k.roi ?? 0,
+          final_bankroll: k.final_bankroll ?? k.starting_bankroll ?? 0,
+          max_drawdown: k.max_drawdown ?? 0,
+          sharpe_daily_annualised: k.sharpe_daily_annualised ?? 0,
+          note: k.note ?? null,
+        }]),
+      ),
+    };
+  }
+  return slim;
 }
 
 main();

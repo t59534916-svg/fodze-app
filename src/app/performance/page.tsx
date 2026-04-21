@@ -5,6 +5,7 @@ import AppShell from "@/components/layout/AppShell";
 import BetHistoryShare from "@/components/performance/BetHistoryShare";
 import LiveCalibration from "@/components/performance/LiveCalibration";
 import ClvChart from "@/components/performance/ClvChart";
+import CrossEngineBacktest from "@/components/performance/CrossEngineBacktest";
 import { computeBetStats, computeClvStats } from "@/lib/bet-metrics";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 import { text } from "@/styles/components";
@@ -284,7 +285,7 @@ function LivePerformance() {
 
 export default function PerformancePage() {
   const [curves, setCurves] = useState<Record<string, number[]> | null>(null);
-  const [tab, setTab] = useState<"overview" | "calibration" | "pnl">("overview");
+  const [tab, setTab] = useState<"overview" | "calibration" | "pnl" | "backtest">("overview");
 
   useEffect(() => {
     fetch("/calibration_curves.json")
@@ -303,14 +304,14 @@ export default function PerformancePage() {
 
       {/* Tab Bar */}
       <div style={{ display: "flex", gap: 4, marginBottom: 12, justifyContent: "center" }}>
-        {(["overview", "calibration", "pnl"] as const).map(t => (
+        {(["overview", "calibration", "pnl", "backtest"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             background: tab === t ? "#c4a26515" : "transparent",
             border: `1px solid ${tab === t ? "#c4a26540" : "#c4a26515"}`,
             color: tab === t ? "#d4b86a" : "#c4a26560",
             borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 11, fontWeight: tab === t ? 600 : 400
           }}>
-            {t === "overview" ? "Übersicht" : t === "calibration" ? "Kalibrierung" : "P&L Simulation"}
+            {t === "overview" ? "Übersicht" : t === "calibration" ? "Kalibrierung" : t === "pnl" ? "P&L Simulation" : "Cross-Engine"}
           </button>
         ))}
       </div>
@@ -523,6 +524,9 @@ export default function PerformancePage() {
           </div>
         </>
       )}
+
+      {/* ═══ CROSS-ENGINE TAB ═══ */}
+      {tab === "backtest" && <CrossEngineBacktest />}
 
       {/* Footer */}
       <div style={{ textAlign: "center", marginTop: 16 }}>

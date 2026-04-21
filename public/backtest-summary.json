@@ -1,0 +1,485 @@
+{
+  "generated_at": "2026-04-21T17:29:39.179Z",
+  "n_rows": 6691,
+  "n_leagues": 18,
+  "engines": {
+    "v2_raw": {
+      "overall": {
+        "n": 6691,
+        "brier": 0.610223,
+        "brier_skill_score": 0.061958,
+        "log_loss": 1.01803,
+        "rps": 0.209168,
+        "ece_10bucket": 0.014616,
+        "base_rate": {
+          "H": 0.434,
+          "D": 0.2614,
+          "A": 0.3046
+        },
+        "bss_ci95": null
+      },
+      "applied_n": 6691,
+      "per_league_bss": {
+        "bundesliga": {
+          "n": 306,
+          "bss": 0.083102,
+          "log_loss": 0.999137,
+          "ece": 0.053778
+        },
+        "bundesliga2": {
+          "n": 297,
+          "bss": 0.023542,
+          "log_loss": 1.040446,
+          "ece": 0.060844
+        },
+        "championship": {
+          "n": 552,
+          "bss": 0.026146,
+          "log_loss": 1.04336,
+          "ece": 0.024643
+        },
+        "epl": {
+          "n": 380,
+          "bss": 0.119878,
+          "log_loss": 0.948416,
+          "ece": 0.050001
+        },
+        "eredivisie": {
+          "n": 306,
+          "bss": 0.144848,
+          "log_loss": 0.938249,
+          "ece": 0.073386
+        },
+        "greek_sl": {
+          "n": 240,
+          "bss": 0.152965,
+          "log_loss": 0.927365,
+          "ece": 0.079615
+        },
+        "jupiler_pro": {
+          "n": 304,
+          "bss": 0.049038,
+          "log_loss": 1.025541,
+          "ece": 0.023132
+        },
+        "la_liga": {
+          "n": 380,
+          "bss": 0.113491,
+          "log_loss": 0.967689,
+          "ece": 0.040761
+        },
+        "la_liga2": {
+          "n": 462,
+          "bss": 0.007432,
+          "log_loss": 1.050639,
+          "ece": 0.02627
+        },
+        "league_one": {
+          "n": 552,
+          "bss": 0.025857,
+          "log_loss": 1.051742,
+          "ece": 0.019297
+        },
+        "league_two": {
+          "n": 552,
+          "bss": 0.013479,
+          "log_loss": 1.052381,
+          "ece": 0.030786
+        },
+        "ligue_1": {
+          "n": 306,
+          "bss": 0.045256,
+          "log_loss": 1.040723,
+          "ece": 0.036914
+        },
+        "ligue_2": {
+          "n": 380,
+          "bss": -0.01232,
+          "log_loss": 1.100257,
+          "ece": 0.054029
+        },
+        "primeira_liga": {
+          "n": 306,
+          "bss": 0.112942,
+          "log_loss": 0.969865,
+          "ece": 0.073497
+        },
+        "scottish_prem": {
+          "n": 228,
+          "bss": 0.1154,
+          "log_loss": 0.970575,
+          "ece": 0.052527
+        },
+        "serie_a": {
+          "n": 380,
+          "bss": 0.103516,
+          "log_loss": 0.98438,
+          "ece": 0.055556
+        },
+        "serie_b": {
+          "n": 380,
+          "bss": 0.006953,
+          "log_loss": 1.090284,
+          "ece": 0.046433
+        },
+        "super_lig": {
+          "n": 380,
+          "bss": 0.070547,
+          "log_loss": 1.004024,
+          "ece": 0.06461
+        }
+      },
+      "conformal": {
+        "0.05": {
+          "nominal_coverage": 0.95,
+          "empirical_coverage": 0.9685,
+          "avg_set_size": 2.7609,
+          "singleton_rate": 0.0435
+        },
+        "0.10": {
+          "nominal_coverage": 0.9,
+          "empirical_coverage": 0.9304,
+          "avg_set_size": 2.5564,
+          "singleton_rate": 0.1157
+        },
+        "0.20": {
+          "nominal_coverage": 0.8,
+          "empirical_coverage": 0.8253,
+          "avg_set_size": 2.1435,
+          "singleton_rate": 0.3318
+        }
+      }
+    },
+    "v2_dirichlet": {
+      "overall": {
+        "n": 6691,
+        "brier": 0.608247,
+        "brier_skill_score": 0.064996,
+        "log_loss": 1.014848,
+        "rps": 0.208317,
+        "ece_10bucket": 0.005617,
+        "base_rate": {
+          "H": 0.434,
+          "D": 0.2614,
+          "A": 0.3046
+        },
+        "bss_ci95": null
+      },
+      "applied_n": 6691,
+      "per_league_bss": {
+        "bundesliga": {
+          "n": 306,
+          "bss": 0.083102,
+          "log_loss": 0.999137,
+          "ece": 0.053778
+        },
+        "bundesliga2": {
+          "n": 297,
+          "bss": 0.021643,
+          "log_loss": 1.043453,
+          "ece": 0.05583
+        },
+        "championship": {
+          "n": 552,
+          "bss": 0.028342,
+          "log_loss": 1.042048,
+          "ece": 0.01444
+        },
+        "epl": {
+          "n": 380,
+          "bss": 0.119878,
+          "log_loss": 0.948416,
+          "ece": 0.050001
+        },
+        "eredivisie": {
+          "n": 306,
+          "bss": 0.159788,
+          "log_loss": 0.920497,
+          "ece": 0.059071
+        },
+        "greek_sl": {
+          "n": 240,
+          "bss": 0.162182,
+          "log_loss": 0.912281,
+          "ece": 0.102614
+        },
+        "jupiler_pro": {
+          "n": 304,
+          "bss": 0.054983,
+          "log_loss": 1.020501,
+          "ece": 0.033771
+        },
+        "la_liga": {
+          "n": 380,
+          "bss": 0.113491,
+          "log_loss": 0.967689,
+          "ece": 0.040761
+        },
+        "la_liga2": {
+          "n": 462,
+          "bss": 0.007222,
+          "log_loss": 1.05037,
+          "ece": 0.031542
+        },
+        "league_one": {
+          "n": 552,
+          "bss": 0.032645,
+          "log_loss": 1.045122,
+          "ece": 0.02566
+        },
+        "league_two": {
+          "n": 552,
+          "bss": 0.01818,
+          "log_loss": 1.046819,
+          "ece": 0.02562
+        },
+        "ligue_1": {
+          "n": 306,
+          "bss": 0.045256,
+          "log_loss": 1.040723,
+          "ece": 0.036914
+        },
+        "ligue_2": {
+          "n": 380,
+          "bss": -0.019855,
+          "log_loss": 1.109088,
+          "ece": 0.063341
+        },
+        "primeira_liga": {
+          "n": 306,
+          "bss": 0.131669,
+          "log_loss": 0.95212,
+          "ece": 0.071818
+        },
+        "scottish_prem": {
+          "n": 228,
+          "bss": 0.117037,
+          "log_loss": 0.967783,
+          "ece": 0.068245
+        },
+        "serie_a": {
+          "n": 380,
+          "bss": 0.103516,
+          "log_loss": 0.98438,
+          "ece": 0.055556
+        },
+        "serie_b": {
+          "n": 380,
+          "bss": 0.009326,
+          "log_loss": 1.088609,
+          "ece": 0.052512
+        },
+        "super_lig": {
+          "n": 380,
+          "bss": 0.072636,
+          "log_loss": 1.002229,
+          "ece": 0.087496
+        }
+      },
+      "conformal": {
+        "0.05": {
+          "nominal_coverage": 0.95,
+          "empirical_coverage": 0.9517,
+          "avg_set_size": 2.6684,
+          "singleton_rate": 0.069
+        },
+        "0.10": {
+          "nominal_coverage": 0.9,
+          "empirical_coverage": 0.9027,
+          "avg_set_size": 2.4389,
+          "singleton_rate": 0.1668
+        },
+        "0.20": {
+          "nominal_coverage": 0.8,
+          "empirical_coverage": 0.8015,
+          "avg_set_size": 2.0429,
+          "singleton_rate": 0.3629
+        }
+      }
+    },
+    "v2_benter": {
+      "overall": {
+        "n": 6691,
+        "brier": 0.607716,
+        "brier_skill_score": 0.065811,
+        "log_loss": 1.013902,
+        "rps": 0.207958,
+        "ece_10bucket": 0.009809,
+        "base_rate": {
+          "H": 0.434,
+          "D": 0.2614,
+          "A": 0.3046
+        },
+        "bss_ci95": null
+      },
+      "applied_n": 1373,
+      "per_league_bss": {
+        "bundesliga": {
+          "n": 306,
+          "bss": 0.083102,
+          "log_loss": 0.999137,
+          "ece": 0.053778
+        },
+        "bundesliga2": {
+          "n": 297,
+          "bss": 0.039955,
+          "log_loss": 1.024487,
+          "ece": 0.05669
+        },
+        "championship": {
+          "n": 552,
+          "bss": 0.026146,
+          "log_loss": 1.04336,
+          "ece": 0.024643
+        },
+        "epl": {
+          "n": 380,
+          "bss": 0.119878,
+          "log_loss": 0.948416,
+          "ece": 0.050001
+        },
+        "eredivisie": {
+          "n": 306,
+          "bss": 0.144848,
+          "log_loss": 0.938249,
+          "ece": 0.073386
+        },
+        "greek_sl": {
+          "n": 240,
+          "bss": 0.184332,
+          "log_loss": 0.891299,
+          "ece": 0.049729
+        },
+        "jupiler_pro": {
+          "n": 304,
+          "bss": 0.049038,
+          "log_loss": 1.025541,
+          "ece": 0.023132
+        },
+        "la_liga": {
+          "n": 380,
+          "bss": 0.137328,
+          "log_loss": 0.942054,
+          "ece": 0.032823
+        },
+        "la_liga2": {
+          "n": 462,
+          "bss": 0.017243,
+          "log_loss": 1.04093,
+          "ece": 0.044804
+        },
+        "league_one": {
+          "n": 552,
+          "bss": 0.025857,
+          "log_loss": 1.051742,
+          "ece": 0.019297
+        },
+        "league_two": {
+          "n": 552,
+          "bss": 0.013479,
+          "log_loss": 1.052381,
+          "ece": 0.030786
+        },
+        "ligue_1": {
+          "n": 306,
+          "bss": 0.045256,
+          "log_loss": 1.040723,
+          "ece": 0.036914
+        },
+        "ligue_2": {
+          "n": 380,
+          "bss": -0.01232,
+          "log_loss": 1.100257,
+          "ece": 0.054029
+        },
+        "primeira_liga": {
+          "n": 306,
+          "bss": 0.112942,
+          "log_loss": 0.969865,
+          "ece": 0.073497
+        },
+        "scottish_prem": {
+          "n": 228,
+          "bss": 0.1154,
+          "log_loss": 0.970575,
+          "ece": 0.052527
+        },
+        "serie_a": {
+          "n": 380,
+          "bss": 0.103516,
+          "log_loss": 0.98438,
+          "ece": 0.055556
+        },
+        "serie_b": {
+          "n": 380,
+          "bss": 0.006953,
+          "log_loss": 1.090284,
+          "ece": 0.046433
+        },
+        "super_lig": {
+          "n": 380,
+          "bss": 0.070547,
+          "log_loss": 1.004024,
+          "ece": 0.06461
+        }
+      },
+      "conformal": {
+        "0.05": {
+          "nominal_coverage": 0.95,
+          "empirical_coverage": 0.959,
+          "avg_set_size": 2.7018,
+          "singleton_rate": 0.0644
+        },
+        "0.10": {
+          "nominal_coverage": 0.9,
+          "empirical_coverage": 0.9168,
+          "avg_set_size": 2.4899,
+          "singleton_rate": 0.1507
+        },
+        "0.20": {
+          "nominal_coverage": 0.8,
+          "empirical_coverage": 0.8135,
+          "avg_set_size": 2.0951,
+          "singleton_rate": 0.3547
+        }
+      }
+    }
+  },
+  "kelly": {
+    "profile": "M",
+    "starting_bankroll": 10000,
+    "edge_min": 0.025,
+    "edge_max": 0.075,
+    "conformal_gate": "off",
+    "conformal_alpha": null,
+    "per_engine": {
+      "v2_raw": {
+        "n_bets": 3040,
+        "hit_rate": 0.274,
+        "roi": -1,
+        "final_bankroll": 0.16,
+        "max_drawdown": -1,
+        "sharpe_daily_annualised": -1.913,
+        "note": null
+      },
+      "v2_dirichlet": {
+        "n_bets": 2952,
+        "hit_rate": 0.2707,
+        "roi": -1,
+        "final_bankroll": 0.01,
+        "max_drawdown": -1,
+        "sharpe_daily_annualised": -3.144,
+        "note": null
+      },
+      "v2_benter": {
+        "n_bets": 2853,
+        "hit_rate": 0.3067,
+        "roi": -0.9988,
+        "final_bankroll": 11.51,
+        "max_drawdown": -0.9992,
+        "sharpe_daily_annualised": -0.548,
+        "note": null
+      }
+    }
+  }
+}
