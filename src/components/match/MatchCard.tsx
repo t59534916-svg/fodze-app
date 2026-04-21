@@ -1,6 +1,7 @@
 "use client";
 import Kit from "@/components/shared/Kit";
 import TeamRadar from "@/components/match/TeamRadar";
+import MatchPulse from "@/components/match/MatchPulse";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
@@ -80,6 +81,15 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
               </span>
             ) : null}
           </div>
+        </div>
+      )}
+
+      {/* Row 2b: MatchPulse — Favorit-Pfeil + Spannung-Dots +
+          Mismatch-Glow auf einem 180×24 Strip. Ergänzt die Probability-
+          Bar um die drei Meta-Signale (wer, wie eng, wo Edge). */}
+      {calc && (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
+          <MatchPulse calc={calc} width={180} height={22} />
         </div>
       )}
 
