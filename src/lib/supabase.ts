@@ -494,6 +494,7 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
   npxg?: number; npxga?: number;
   ppda_att?: number; ppda_def?: number;
   deep?: number; deep_allowed?: number;
+  goals_for?: number; goals_against?: number;
   date: string; opponent?: string;
 }> {
   const entries = matches.map((m) => ({
@@ -505,6 +506,8 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
     ppda_def: m.ppda_def ?? undefined,
     deep: m.deep ?? undefined,
     deep_allowed: m.deep_allowed ?? undefined,
+    goals_for: m.goals_for ?? undefined,
+    goals_against: m.goals_against ?? undefined,
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));

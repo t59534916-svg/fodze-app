@@ -49,6 +49,7 @@ interface MatchdayContextValue {
   totalStake: number;
   comboLegs: ComboLeg[];
   topTips: TopTip[];
+  sosRatings: SoSRatings | null;
   setData: (d: MatchdayData | null) => void;
 }
 
@@ -678,10 +679,10 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     oddsData, oddsHistory, liveOdds, oddsSource, saving,
     setOdds, loadCached, handleImport, doAutoFetch, handleStartManual,
     handleSaveOdds, handleDelHist,
-    matches, processed, valueMatches, totalStake, comboLegs, topTips, setData,
+    matches, processed, valueMatches, totalStake, comboLegs, topTips, sosRatings, setData,
   }), [data, loading, loadMsg, error, oddsData, oddsHistory, liveOdds, oddsSource, saving,
     setOdds, loadCached, handleImport, doAutoFetch, handleStartManual, handleSaveOdds, handleDelHist,
-    matches, processed, valueMatches, totalStake, comboLegs, topTips]);
+    matches, processed, valueMatches, totalStake, comboLegs, topTips, sosRatings]);
 
   return <MatchdayContext.Provider value={value}>{children}</MatchdayContext.Provider>;
 }

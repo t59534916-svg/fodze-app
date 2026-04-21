@@ -3,6 +3,9 @@ import Kit from "@/components/shared/Kit";
 import TeamRadar from "@/components/match/TeamRadar";
 import MatchPulse from "@/components/match/MatchPulse";
 import EdgeBadge from "@/components/shared/EdgeBadge";
+import XGQualityDots from "@/components/shared/XGQualityDots";
+import { useMatchdayContext } from "@/contexts/MatchdayContext";
+import { conversionFrom, sosFrom } from "@/lib/xg-quality";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
@@ -22,6 +25,18 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
   match: RawMatch; calc: MatchCalc | null; isOpen: boolean; onClick: () => void;
 }) {
   const bestBet = calc?.bets?.find((b: BetCalc) => b.isValue);
+  const { sosRatings } = useMatchdayContext();
+
+  // Pre-compute xG-quality signals per team. Shows only dots for
+  // actionable deviations (xG-vs-goals gap > 15%, schedule strength
+  // off league-avg by > 7%). No signals = no dots = clean team.
+  // Especially valuable in less-coverage leagues (Championship,
+  // Liga 3, Eredivisie) where raw xG can mislead if a team either
+  // wastes chances or piles up xG against weak defenses.
+  const homeConv = conversionFrom(match.home?.xg_h_history);
+  const awayConv = conversionFrom(match.away?.xg_a_history);
+  const homeSos = sosFrom(match.home?.xg_h_history, sosRatings);
+  const awaySos = sosFrom(match.away?.xg_a_history, sosRatings);
 
   return (
     <button onClick={onClick} className="match-card" aria-expanded={isOpen}
@@ -38,11 +53,13 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
           <span style={{ fontSize: 14, fontWeight: 600, color: "#ede4d4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {shortName(match.home?.name)}
           </span>
+          <XGQualityDots conversion={homeConv} sos={homeSos} />
           <span style={{ color: "#c4a26530", fontSize: 12, flexShrink: 0 }}>–</span>
           <Kit team={match.away?.name} size={16} />
           <span style={{ fontSize: 14, fontWeight: 600, color: "#ede4d4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {shortName(match.away?.name)}
           </span>
+          <XGQualityDots conversion={awayConv} sos={awaySos} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
           {match.kickoff && <span style={{ color: "#c4a26565", fontSize: 11 }}>{match.kickoff}</span>}
