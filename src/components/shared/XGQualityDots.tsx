@@ -4,50 +4,42 @@ import type { ConversionSignal, SoSSignal } from "@/lib/xg-quality";
 
 // ─── Visual Contract ─────────────────────────────────────────────────
 //
-// Two 6×6 dots inline with the team name. No color = no signal.
-// Colored only when deviation is meaningful (|conv-1| > 15%, SoS > ±7%),
-// so a casual scan sees trouble on teams that need a second look and
-// skips past teams with clean signal profiles.
+// Replaced the earlier dot-pair (required hover to decode) with short
+// self-explaining chips. Reader sees "–xG" / "+xG" / "weich-Ø" / "hart-Ø"
+// and gets the signal direction from the label itself, color from the
+// deviation severity, detail from the tooltip.
 //
-//   ● (conversion)  ● (schedule)
-//   ─────────────   ─────────────
-//   green           = over-performing    strong schedule
-//   red             = under-performing   (unused; "weak" shown as warn)
-//   warn-red        = under-conv warn    weak schedule (xG inflated)
-//   transparent     = normal / unknown   normal / unknown
+//   chip       color   meaning
+//   ────────   ─────   ──────────────────────────────────────
+//   −xG        warn    Chancenverwertung unter xG (vergibt)
+//   +xG        value   Chancenverwertung über xG (klinisch)
+//   weich-Ø    warn    Gegner schwächer als Liga-Ø (xG inflated)
+//   hart-Ø     value   Gegner stärker als Liga-Ø (xG impressiv)
 //
-// Tooltip surfaces the note string — full explanation on hover.
+// Only rendered for actionable deviations — clean teams stay chip-less
+// so the eye learns to skip past them and pounces on whatever is flagged.
 
-const DOT_SIZE = 6;
-const GAP = 3;
-
-function convColor(label: ConversionSignal["label"]): string | null {
-  if (label === "under") return color.warn;        // wasting chances — flag
-  if (label === "over") return color.value;         // overperforming / clinical
-  return null; // normal / unknown = no dot
-}
-
-function sosColor(label: SoSSignal["label"]): string | null {
-  if (label === "weak") return color.warn;          // xG inflated by weak D
-  if (label === "strong") return color.value;       // xG earned vs strong D
-  return null; // normal / unknown = no dot
-}
-
-function Dot({ fill, title, ariaLabel }: { fill: string | null; title: string; ariaLabel: string }) {
+function Chip({ label, fg, title }: { label: string; fg: string; title: string }) {
   return (
     <span
-      aria-label={ariaLabel}
       title={title}
       style={{
         display: "inline-block",
-        width: DOT_SIZE,
-        height: DOT_SIZE,
-        borderRadius: "50%",
-        background: fill || "transparent",
-        border: fill ? `1px solid ${fill}` : `1px solid ${color.goldMid}25`,
-        flexShrink: 0,
+        fontSize: 9,
+        fontWeight: 700,
+        lineHeight: 1,
+        padding: "2px 5px",
+        borderRadius: 3,
+        background: `${fg}18`,
+        color: fg,
+        border: `1px solid ${fg}30`,
+        letterSpacing: "0.02em",
+        fontVariantNumeric: "tabular-nums",
+        whiteSpace: "nowrap",
       }}
-    />
+    >
+      {label}
+    </span>
   );
 }
 
@@ -58,20 +50,37 @@ export default function XGQualityDots({
   conversion: ConversionSignal;
   sos: SoSSignal;
 }) {
-  const cFill = convColor(conversion.label);
-  const sFill = sosColor(sos.label);
+  const chips: React.ReactNode[] = [];
 
-  // Skip entirely if both signals are neutral — keeps clean teams visually clean
-  if (!cFill && !sFill) return null;
+  if (conversion.label === "under") {
+    chips.push(
+      <Chip key="c-" label="−xG" fg={color.warn} title={conversion.note} />
+    );
+  } else if (conversion.label === "over") {
+    chips.push(
+      <Chip key="c+" label="+xG" fg={color.value} title={conversion.note} />
+    );
+  }
+
+  if (sos.label === "weak") {
+    chips.push(
+      <Chip key="s-" label="weich-Ø" fg={color.warn} title={sos.note} />
+    );
+  } else if (sos.label === "strong") {
+    chips.push(
+      <Chip key="s+" label="hart-Ø" fg={color.value} title={sos.note} />
+    );
+  }
+
+  if (chips.length === 0) return null;
 
   return (
     <span
-      style={{ display: "inline-flex", alignItems: "center", gap: GAP, marginLeft: 4 }}
+      style={{ display: "inline-flex", alignItems: "center", gap: 3, marginLeft: 4, flexWrap: "wrap" }}
       role="group"
       aria-label="xG-Qualität"
     >
-      <Dot fill={cFill} title={conversion.note} ariaLabel={`Chancenverwertung: ${conversion.label}`} />
-      <Dot fill={sFill} title={sos.note} ariaLabel={`Spielplan-Stärke: ${sos.label}`} />
+      {chips}
     </span>
   );
 }
