@@ -1,5 +1,6 @@
 "use client";
 import Kit from "@/components/shared/Kit";
+import TeamRadar from "@/components/match/TeamRadar";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
@@ -79,6 +80,22 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
               </span>
             ) : null}
           </div>
+        </div>
+      )}
+
+      {/* Row 3: Team-Radar-Paar — 5-Achsen-Profil pro Team
+          (Angriff · Defensive · Form · Kader · Δ xG). Nur wenn
+          mindestens eines der Teams xG-Historie hat — sonst bleibt
+          die Card kompakt wie vorher. Radar selbst hover-öffnet
+          den Tooltip mit Werten; keine extra Labels auf der Card. */}
+      {calc && (match.home?.xg_h8 != null || match.away?.xg_a8 != null) && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "center",
+          gap: 10, marginTop: 8, paddingTop: 4, borderTop: "1px dashed #c4a26510",
+        }}>
+          <TeamRadar team={match.home} venue="home" size={52} />
+          <span style={{ fontSize: 9, color: "#c4a26540", fontWeight: 500, letterSpacing: "0.08em" }}>vs</span>
+          <TeamRadar team={match.away} venue="away" size={52} />
         </div>
       )}
     </button>
