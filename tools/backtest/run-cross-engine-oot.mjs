@@ -1115,12 +1115,10 @@ function main() {
 
   // ─── Kelly simulation (opt-in) ──────────────────────────────────
   let kellyResults = null;
-  if (opts.kelly) {
-    // Chronological ordering matters for compounding bankroll math to
-    // match the Python simulation exactly. The merged JSONL order is
-    // inherited from pandas.merge, which isn't guaranteed sorted.
-    const sortedRows = rows.slice().sort((a, b) => a.match_date.localeCompare(b.match_date));
-    kellyResults = {};
+  let kellyEnforceResults = null;
+  const sortedRows = rows.slice().sort((a, b) => a.match_date.localeCompare(b.match_date));
+  function runKelly(gateMode) {
+    const out = {};
     for (const name of opts.engines) {
       const sim = simulateKelly(sortedRows, engineFns[name], {
         profile: opts.kellyProfile,
@@ -1130,13 +1128,27 @@ function main() {
         maxOverround: opts.maxOverround,
         minMarketProb: opts.minMarketProb,
         maxMarketProb: opts.maxMarketProb,
-        conformalGateFn: conformalGateFn,
-        conformalGateMode: opts.conformalGate,
+        conformalGateFn: gateMode !== "off" ? conformalGateFn : null,
+        conformalGateMode: gateMode,
         conformalAlpha: opts.conformalAlpha,
       });
-      kellyResults[name] = kellyMetrics(sim);
+      out[name] = kellyMetrics(sim);
     }
+    return out;
+  }
+  if (opts.kelly) {
+    // Chronological ordering matters for compounding bankroll math to
+    // match the Python simulation exactly. The merged JSONL order is
+    // inherited from pandas.merge, which isn't guaranteed sorted.
+    kellyResults = runKelly(opts.conformalGate);
     printKellyTable(kellyResults, opts);
+  }
+  // When publishing to the UI, also run an "enforce α=0.10" pair so the
+  // tab can show the gated vs. unguarded story side-by-side without a
+  // second CLI invocation. Skipped outside --publish to keep the default
+  // run fast.
+  if (opts.publish && conformalGateFn && opts.conformalGate === "off") {
+    kellyEnforceResults = runKelly("enforce");
   }
 
   const outDir = dirname(opts.outPath);
@@ -1166,6 +1178,20 @@ function main() {
       conformal_gate: opts.conformalGate,
       conformal_alpha: opts.conformalGate !== "off" ? opts.conformalAlpha : null,
       per_engine: kellyResults,
+    };
+  }
+  if (kellyEnforceResults) {
+    outputJson.kelly_enforce = {
+      profile: opts.kellyProfile,
+      starting_bankroll: opts.bankroll,
+      edge_min: opts.edgeMin,
+      edge_max: opts.edgeMax,
+      max_overround: opts.maxOverround,
+      min_market_prob: opts.minMarketProb,
+      max_market_prob: opts.maxMarketProb,
+      conformal_gate: "enforce",
+      conformal_alpha: opts.conformalAlpha,
+      per_engine: kellyEnforceResults,
     };
   }
   writeFileSync(opts.outPath, JSON.stringify(outputJson, null, 2));
@@ -1223,27 +1249,27 @@ function buildPublicSummary(full) {
       );
     }
   }
-  if (full.kelly) {
-    slim.kelly = {
-      profile: full.kelly.profile,
-      starting_bankroll: full.kelly.starting_bankroll,
-      edge_min: full.kelly.edge_min,
-      edge_max: full.kelly.edge_max,
-      conformal_gate: full.kelly.conformal_gate,
-      conformal_alpha: full.kelly.conformal_alpha,
-      per_engine: Object.fromEntries(
-        Object.entries(full.kelly.per_engine).map(([name, k]) => [name, {
-          n_bets: k.n_bets,
-          hit_rate: k.hit_rate ?? 0,
-          roi: k.roi ?? 0,
-          final_bankroll: k.final_bankroll ?? k.starting_bankroll ?? 0,
-          max_drawdown: k.max_drawdown ?? 0,
-          sharpe_daily_annualised: k.sharpe_daily_annualised ?? 0,
-          note: k.note ?? null,
-        }]),
-      ),
-    };
-  }
+  const slimKelly = (k) => ({
+    profile: k.profile,
+    starting_bankroll: k.starting_bankroll,
+    edge_min: k.edge_min,
+    edge_max: k.edge_max,
+    conformal_gate: k.conformal_gate,
+    conformal_alpha: k.conformal_alpha,
+    per_engine: Object.fromEntries(
+      Object.entries(k.per_engine).map(([name, p]) => [name, {
+        n_bets: p.n_bets,
+        hit_rate: p.hit_rate ?? 0,
+        roi: p.roi ?? 0,
+        final_bankroll: p.final_bankroll ?? p.starting_bankroll ?? 0,
+        max_drawdown: p.max_drawdown ?? 0,
+        sharpe_daily_annualised: p.sharpe_daily_annualised ?? 0,
+        note: p.note ?? null,
+      }]),
+    ),
+  });
+  if (full.kelly) slim.kelly = slimKelly(full.kelly);
+  if (full.kelly_enforce) slim.kelly_enforce = slimKelly(full.kelly_enforce);
   return slim;
 }
 

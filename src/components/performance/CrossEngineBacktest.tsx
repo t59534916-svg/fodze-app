@@ -46,20 +46,23 @@ interface KellyEnginePayload {
   note: string | null;
 }
 
+interface KellyBlock {
+  profile: string;
+  starting_bankroll: number;
+  edge_min: number;
+  edge_max: number;
+  conformal_gate: string;
+  conformal_alpha: number | null;
+  per_engine: Record<string, KellyEnginePayload>;
+}
+
 interface BacktestSummary {
   generated_at: string;
   n_rows: number;
   n_leagues: number;
   engines: Record<string, EngineSummary>;
-  kelly?: {
-    profile: string;
-    starting_bankroll: number;
-    edge_min: number;
-    edge_max: number;
-    conformal_gate: string;
-    conformal_alpha: number | null;
-    per_engine: Record<string, KellyEnginePayload>;
-  };
+  kelly?: KellyBlock;
+  kelly_enforce?: KellyBlock;
 }
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -89,6 +92,62 @@ function pct2(x: number) {
 
 function num4(x: number) {
   return x.toFixed(4);
+}
+
+function KellyCard({ block, engines, title }: { block: KellyBlock; engines: string[]; title: string }) {
+  const gateLabel = block.conformal_gate !== "off"
+    ? `, Gate ${block.conformal_gate} (α=${block.conformal_alpha})`
+    : "";
+  return (
+    <div style={S.card}>
+      <div style={{ ...S.label, marginBottom: 6 }}>
+        {title} — Profil {block.profile}, Goldilocks {(block.edge_min * 100).toFixed(1)}–{(block.edge_max * 100).toFixed(1)}%
+        {gateLabel}
+      </div>
+      <div style={{ ...S.small, marginBottom: 10 }}>
+        Bankroll {block.starting_bankroll.toLocaleString("de-DE")}€, Wetten vs. Pinnacle Close.
+        Negative ROI ist erwartet: Pinnacle ≈ true prob, echter Edge entsteht
+        erst mit Soft-Book-Quoten (Bet365 etc.) die hier nicht vorliegen.
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={S.table}>
+          <thead>
+            <tr>
+              <th style={S.thLeft}>Engine</th>
+              <th style={S.th}>Wetten</th>
+              <th style={S.th}>Hit%</th>
+              <th style={S.th}>ROI</th>
+              <th style={S.th}>Final</th>
+              <th style={S.th}>max DD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {engines.map((e) => {
+              const k = block.per_engine[e];
+              if (!k || k.n_bets === 0) {
+                return (
+                  <tr key={e}>
+                    <td style={S.tdLeft}>{ENGINE_LABEL[e] ?? e}</td>
+                    <td style={{ ...S.td, color: `${color.gold}40` }} colSpan={5}>{k?.note ?? "—"}</td>
+                  </tr>
+                );
+              }
+              return (
+                <tr key={e}>
+                  <td style={S.tdLeft}>{ENGINE_LABEL[e] ?? e}</td>
+                  <td style={S.td}>{k.n_bets.toLocaleString("de-DE")}</td>
+                  <td style={S.td}>{pct2(k.hit_rate)}</td>
+                  <td style={{ ...S.td, color: k.roi > 0 ? color.value : color.warn, fontWeight: fontWeight.semibold }}>{sign4(k.roi)}</td>
+                  <td style={S.td}>{k.final_bankroll.toLocaleString("de-DE", { maximumFractionDigits: 0 })}</td>
+                  <td style={S.td}>{pct2(k.max_drawdown)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export default function CrossEngineBacktest() {
@@ -199,56 +258,8 @@ export default function CrossEngineBacktest() {
         </div>
       )}
 
-      {data.kelly && (
-        <div style={S.card}>
-          <div style={{ ...S.label, marginBottom: 6 }}>
-            Kelly Simulation — Profil {data.kelly.profile}, Goldilocks {(data.kelly.edge_min * 100).toFixed(1)}–{(data.kelly.edge_max * 100).toFixed(1)}%
-            {data.kelly.conformal_gate !== "off" && `, Gate ${data.kelly.conformal_gate} (α=${data.kelly.conformal_alpha})`}
-          </div>
-          <div style={{ ...S.small, marginBottom: 10 }}>
-            Bankroll {data.kelly.starting_bankroll.toLocaleString("de-DE")}€, Wetten vs. Pinnacle Close.
-            Negative ROI ist erwartet: Pinnacle ≈ true prob, echter Edge entsteht
-            erst mit Soft-Book-Quoten (Bet365 etc.) die hier nicht vorliegen.
-          </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.thLeft}>Engine</th>
-                  <th style={S.th}>Wetten</th>
-                  <th style={S.th}>Hit%</th>
-                  <th style={S.th}>ROI</th>
-                  <th style={S.th}>Final</th>
-                  <th style={S.th}>max DD</th>
-                </tr>
-              </thead>
-              <tbody>
-                {engines.map((e) => {
-                  const k = data.kelly!.per_engine[e];
-                  if (!k || k.n_bets === 0) {
-                    return (
-                      <tr key={e}>
-                        <td style={S.tdLeft}>{ENGINE_LABEL[e] ?? e}</td>
-                        <td style={{ ...S.td, color: `${color.gold}40` }} colSpan={5}>{k?.note ?? "—"}</td>
-                      </tr>
-                    );
-                  }
-                  return (
-                    <tr key={e}>
-                      <td style={S.tdLeft}>{ENGINE_LABEL[e] ?? e}</td>
-                      <td style={S.td}>{k.n_bets.toLocaleString("de-DE")}</td>
-                      <td style={S.td}>{pct2(k.hit_rate)}</td>
-                      <td style={{ ...S.td, color: k.roi > 0 ? color.value : color.warn, fontWeight: fontWeight.semibold }}>{sign4(k.roi)}</td>
-                      <td style={S.td}>{k.final_bankroll.toLocaleString("de-DE", { maximumFractionDigits: 0 })}</td>
-                      <td style={S.td}>{pct2(k.max_drawdown)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {data.kelly && <KellyCard block={data.kelly} engines={engines} title="Kelly — ohne Konformal-Gate" />}
+      {data.kelly_enforce && <KellyCard block={data.kelly_enforce} engines={engines} title="Kelly — mit Konformal-Gate (enforce)" />}
 
       <div style={S.card}>
         <div style={{ ...S.label, marginBottom: 6 }}>Per-Liga BSS (v2 + Dirichlet)</div>

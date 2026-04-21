@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-21T17:29:39.179Z",
+  "generated_at": "2026-04-21T17:33:32.326Z",
   "n_rows": 6691,
   "n_leagues": 18,
   "engines": {
@@ -478,6 +478,43 @@
         "final_bankroll": 11.51,
         "max_drawdown": -0.9992,
         "sharpe_daily_annualised": -0.548,
+        "note": null
+      }
+    }
+  },
+  "kelly_enforce": {
+    "profile": "M",
+    "starting_bankroll": 10000,
+    "edge_min": 0.025,
+    "edge_max": 0.075,
+    "conformal_gate": "enforce",
+    "conformal_alpha": 0.1,
+    "per_engine": {
+      "v2_raw": {
+        "n_bets": 306,
+        "hit_rate": 0.2255,
+        "roi": -0.8013,
+        "final_bankroll": 1986.83,
+        "max_drawdown": -0.8898,
+        "sharpe_daily_annualised": -0.95,
+        "note": null
+      },
+      "v2_dirichlet": {
+        "n_bets": 331,
+        "hit_rate": 0.2598,
+        "roi": -0.4705,
+        "final_bankroll": 5294.98,
+        "max_drawdown": -0.7698,
+        "sharpe_daily_annualised": 0.212,
+        "note": null
+      },
+      "v2_benter": {
+        "n_bets": 337,
+        "hit_rate": 0.3472,
+        "roi": -0.13,
+        "final_bankroll": 8700.31,
+        "max_drawdown": -0.6407,
+        "sharpe_daily_annualised": 0.586,
         "note": null
       }
     }
