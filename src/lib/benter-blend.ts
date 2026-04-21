@@ -151,6 +151,20 @@ export function benterBlend(
   }
   if (betas.beta1 + betas.beta2 <= 0) return passthrough("degenerate_betas");
 
+  // Gate 3: model-weight-share guard. Backtest Apr-2026 showed the MLE fit
+  // against Pinnacle close lands at β₁=0 for 12 of 16 leagues — meaning
+  // the blend effectively replaces the model posterior with the market.
+  // Activating that would collapse FODZE's value-detection loop because
+  // the edge = model − market would drift to ≈ 0 everywhere. Refuse any
+  // blend where the model gets less than 15% of the log-pool weight so
+  // a future fit accident can't ship a "pure Pinnacle" payload. The
+  // 0.15 threshold passes the +EV whitelist (la_liga2 β=0.593/0.659 →
+  // share 0.47, la_liga β=0.438/0.888 → 0.33, greek_sl 0.257/0.960 →
+  // 0.21, bundesliga2 0.169/0.947 → 0.15) and rejects the "β₁=0"
+  // cases that dominate the current fit.
+  const modelShare = betas.beta1 / (betas.beta1 + betas.beta2);
+  if (modelShare < 0.15) return passthrough("market_dominated");
+
   // Gate 2: outlier detector. If the model disagrees by more than 2.5 log-
   // units on ALL outcomes (very rare but real — e.g. broken engine fallback
   // to uniform), don't pull it toward Pinnacle; log and pass through so

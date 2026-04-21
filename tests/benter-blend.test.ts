@@ -121,6 +121,55 @@ describe("benterBlend — gates", () => {
     );
     expect(out.applied).toBe(true);
   });
+
+  it("passthrough when model-weight-share < 15% (market_dominated guard)", () => {
+    // The Apr-2026 fit landed at β₁≈0 for 12 / 16 leagues. Shipping those
+    // betas and flipping the env flag would replace the model posterior
+    // with Pinnacle — collapsing FODZE's value-detection edge.
+    // The runtime refuses to apply any (β₁, β₂) where β₁ / (β₁+β₂) < 0.15.
+    const pinnacleDominated: BenterWeightsJSON = {
+      _version: 1,
+      engines: {
+        v2: {
+          global: { beta1: 0.0, beta2: 1.103 },  // share = 0   → blocked
+          leagues: {
+            epl:        { beta1: 0.0,  beta2: 1.175 },  // share = 0   → blocked
+            bundesliga: { beta1: 0.10, beta2: 0.90  },  // share = 0.10 → blocked
+            la_liga2:   { beta1: 0.593, beta2: 0.659 }, // share = 0.47 → applies
+          },
+        },
+        v1:       { global: { beta1: 1.0, beta2: 0.0 }, leagues: {} },
+        ensemble: { global: { beta1: 1.0, beta2: 0.0 }, leagues: {} },
+      },
+    };
+    resetBenterBlend();
+    loadBenterWeights(pinnacleDominated);
+    setBenterMode("on");
+
+    const model = { H: 0.55, D: 0.25, A: 0.20 };
+    const pinn  = { H: 0.45, D: 0.30, A: 0.25 };
+
+    // global fit is pure-Pinnacle → blocked
+    const globalOut = benterBlend(model, pinn, "v2");
+    expect(globalOut.applied).toBe(false);
+    expect(globalOut.reason).toBe("market_dominated");
+    expect(globalOut.H).toBe(model.H);
+
+    // epl fit likewise pure-Pinnacle → blocked
+    const eplOut = benterBlend(model, pinn, "v2", "epl");
+    expect(eplOut.applied).toBe(false);
+    expect(eplOut.reason).toBe("market_dominated");
+
+    // bundesliga at share=0.10 is right below threshold → blocked
+    const bdOut = benterBlend(model, pinn, "v2", "bundesliga");
+    expect(bdOut.applied).toBe(false);
+    expect(bdOut.reason).toBe("market_dominated");
+
+    // la_liga2 share=0.47 clears the threshold → blend applies
+    const llOut = benterBlend(model, pinn, "v2", "la_liga2");
+    expect(llOut.applied).toBe(true);
+    expect(llOut.reason).toBe("blend:v2:la_liga2");
+  });
 });
 
 describe("benterBlend — math", () => {
@@ -170,18 +219,30 @@ describe("benterBlend — math", () => {
     expect(out.A).toBeCloseTo(0.25, 6);
   });
 
-  it("a pure-market weight (β1=0, β2=1) returns Pinnacle", () => {
+  it("pure-market weight (β1=0, β2=1) is now blocked by the market_dominated guard", () => {
+    // Before Apr 2026 this test asserted that β1=0 returned Pinnacle
+    // unchanged. That semantic is correct per the math but dangerous for
+    // FODZE's pipeline — it would collapse edge detection. The new runtime
+    // guard refuses any blend below model-share 15%, so the expected
+    // behaviour is now "return the model unchanged with reason=market_dominated".
     resetBenterBlend();
     loadBenterWeights({
       _version: 1,
-      engines: { v2: { global: { beta1: 0, beta2: 1 }, leagues: {} }, v1: { global: {beta1:0,beta2:1}, leagues: {}}, ensemble: { global: {beta1:0,beta2:1}, leagues: {}} },
+      engines: {
+        v2:       { global: { beta1: 0, beta2: 1 }, leagues: {} },
+        v1:       { global: { beta1: 0, beta2: 1 }, leagues: {} },
+        ensemble: { global: { beta1: 0, beta2: 1 }, leagues: {} },
+      },
     });
     setBenterMode("on");
-    const pinn = { H: 0.55, D: 0.25, A: 0.20 };
-    const out = benterBlend({ H: 0.40, D: 0.35, A: 0.25 }, pinn, "v2");
-    expect(out.H).toBeCloseTo(pinn.H, 6);
-    expect(out.D).toBeCloseTo(pinn.D, 6);
-    expect(out.A).toBeCloseTo(pinn.A, 6);
+    const model = { H: 0.40, D: 0.35, A: 0.25 };
+    const pinn  = { H: 0.55, D: 0.25, A: 0.20 };
+    const out = benterBlend(model, pinn, "v2");
+    expect(out.applied).toBe(false);
+    expect(out.reason).toBe("market_dominated");
+    expect(out.H).toBeCloseTo(model.H, 6);
+    expect(out.D).toBeCloseTo(model.D, 6);
+    expect(out.A).toBeCloseTo(model.A, 6);
   });
 
   it("handles zero-prob model outcome without NaN (safeLog floor)", () => {
