@@ -299,6 +299,9 @@ function Seiten() {
       <h3 style={S.h3}>Stats · <LinkPath href="/performance">/performance</LinkPath></h3>
       <p style={S.p}>
         Deine Wett-Historie, Live-Kalibrierung, Teilen-Funktion (1080×1350 Instagram-Wettscheine).
+        Zusätzlich vier Tabs: <span style={S.em}>Übersicht</span>, <span style={S.em}>Kalibrierung</span>
+        (Isotonic-Kurven als Legacy-Fallback), <span style={S.em}>P&amp;L Simulation</span>,
+        <span style={S.em}> Cross-Engine</span> (aktuelle OOT-Brier/BSS/ECE/Coverage pro Engine, 4×4 Kelly-Matrix).
       </p>
 
       <h3 style={S.h3}>Kombis &amp; Simulator</h3>
@@ -319,25 +322,34 @@ function Engines() {
         Oben im Spieltag kannst du zwischen 3 Engines wechseln. Jede hat Stärken und Schwächen.
       </p>
 
+      <h3 style={S.h3}>@annafrick13 v2 + Dirichlet (Default)</h3>
+      <p style={S.p}>
+        LightGBM Tweedie mit 21 npxG-Features (Momentum, Volatility, PPDA, Setpiece-Share, Game-State-xG),
+        Monotonic Constraints auf 10/14 physisch eindeutigen Features, Optuna-tuned ρ=−0,053.
+        Danach Dirichlet-ODIR Kalibrierung pro Liga-Cluster (top5 / mid_european / lower).
+      </p>
+      <p style={S.p}>
+        OOT-Metriken auf 6.691 Zeilen (2023-08 → 2024-06):
+        Brier 0,6083 · BSS +0,0649 · ECE 0,0049 (2,6× besser kalibriert als roh).
+        Details + Per-Liga-Breakdown im <LinkPath href="/performance">Cross-Engine</LinkPath> Tab.
+      </p>
+      <p style={S.muted}>→ Default seit Deploy. Nutze wenn du unsicher bist — schlägt Climatology in 18/18 Ligen.</p>
+
+      <h3 style={S.h3}>@annafrick13 v1 (poisson-ml)</h3>
+      <p style={S.p}>
+        Poisson GLM mit 9 Features + Dixon-Coles 15×15 Matrix. Alle Märkte aus einer konsistenten Quelle.
+      </p>
+      <p style={S.p}>
+        OOT-Brier 0,6518 · BSS −0,0019 (verliert knapp gegen Climatology).
+      </p>
+      <p style={S.muted}>→ Wähle nur für konsistente Over/Under + Correct Score; bei 1X2 ist v2 besser.</p>
+
       <h3 style={S.h3}>Standard (ensemble-v1)</h3>
       <p style={S.p}>
-        4-Modell Ensemble: Dixon-Coles + Elo + Logistic + Market.
-        Robust, nutzt alle Datenquellen.
+        4-Modell Ensemble: Dixon-Coles + Elo + Logistic + Market. Historischer Default der Version 7.0,
+        immer noch verfügbar als Fallback.
       </p>
-      <p style={S.muted}>→ Default. Nutze wenn du unsicher bist.</p>
-
-      <h3 style={S.h3}>@annafrick13 (poisson-ml)</h3>
-      <p style={S.p}>
-        Poisson GLM + Dixon-Coles 15×15 Matrix. Alle Märkte aus einer konsistenten Quelle.
-      </p>
-      <p style={S.muted}>→ Wenn du konsistente Over/Under + Correct Score willst.</p>
-
-      <h3 style={S.h3}>@annafrick13 v2 (poisson-ml-v2)</h3>
-      <p style={S.p}>
-        LightGBM Tweedie + 14 npxG-Features + Monotonic Constraints.
-        Bester Brier-Score (0.5808). Goldilocks Guard filtert extreme Vorhersagen.
-      </p>
-      <p style={S.muted}>→ State-of-the-Art für Top-5-Ligen mit voller xG-Historie.</p>
+      <p style={S.muted}>→ Nutze wenn v2 refuses (fehlende xG-Historie) und du trotzdem 1X2 brauchst.</p>
 
       <h3 style={S.h3}>Engine-Vergleich im Match-Detail</h3>
       <p style={S.p}>
@@ -346,6 +358,13 @@ function Engines() {
       <ul style={S.list}>
         <li>Spread &lt; 8pp → <TagAgree /> → verlässlich</li>
         <li>Spread ≥ 8pp → <TagDisagree /> → im Zweifel nicht wetten</li>
+      </ul>
+
+      <h3 style={S.h3}>Nachgeschaltete Layer (optional per Env-Flag)</h3>
+      <ul style={S.list}>
+        <li><span style={S.em}>Dirichlet-ODIR</span> — 3×3 W-Matrix + Bias pro Liga-Cluster, default an seit März 2026</li>
+        <li><span style={S.em}>Benter-Blend</span> — Log-Pool mit Pinnacle Close, nur auf 4 Ligen aktiv (β₁ ≥ 0,15 Gate)</li>
+        <li><span style={S.em}>Conformal Gate</span> — Singleton-Prediction-Sets als Kelly-Filter (off/warn/enforce/dampen), default off</li>
       </ul>
     </>
   );
@@ -366,7 +385,7 @@ function ValueBetting() {
         Nur wenn die Buchmacher-Quote höher ist als dein Modell es fair findet, hast du Edge.
       </p>
 
-      <h3 style={S.h3}>Edge-Grading</h3>
+      <h3 style={S.h3}>Edge-Grading (Goldilocks-aligned)</h3>
       <table style={S.table}>
         <thead>
           <tr>
@@ -376,12 +395,17 @@ function ValueBetting() {
           </tr>
         </thead>
         <tbody>
-          <tr><td style={S.td}><TagA /></td><td style={S.td}>≥ 8%</td><td style={S.td}>Wetten!</td></tr>
-          <tr><td style={S.td}><TagB /></td><td style={S.td}>5–8%</td><td style={S.td}>Wetten</td></tr>
-          <tr><td style={S.td}><TagC /></td><td style={S.td}>3–5%</td><td style={S.td}>Marginal — nur wenn sonst nichts</td></tr>
-          <tr><td style={S.td}><TagDF /></td><td style={S.td}>&lt; 3%</td><td style={S.td}>Skip</td></tr>
+          <tr><td style={S.td}><TagA /></td><td style={S.td}>5,0–7,5%</td><td style={S.td}>Stärkste Picks — Kelly voll fahren (gecappt)</td></tr>
+          <tr><td style={S.td}><TagB /></td><td style={S.td}>4,0–5,0%</td><td style={S.td}>Solide — Kelly voll fahren</td></tr>
+          <tr><td style={S.td}><TagC /></td><td style={S.td}>2,5–4,0%</td><td style={S.td}>Marginal — nur wenn sonst nichts</td></tr>
+          <tr><td style={S.td}><TagDF /></td><td style={S.td}>&lt; 2,5% oder &gt; 7,5%</td><td style={S.td}>Skip (Rauschen bzw. verdächtig)</td></tr>
         </tbody>
       </table>
+      <p style={S.muted}>
+        Konsistent mit der <LinkPath href="/goldilocks">Goldilocks-Zone</LinkPath>. Alles außerhalb
+        [2,5% – 7,5%] wird nicht angezeigt — nicht weil die App vorsichtig ist, sondern weil die
+        Zahlen außerhalb der Bande nicht zuverlässig ROI bringen.
+      </p>
 
       <h3 style={S.h3}>Kelly-Kriterium</h3>
       <p style={S.p}>
@@ -482,11 +506,11 @@ function Workflow() {
 
       <h3 style={S.h3}>Pro-Tipps</h3>
       <ul style={S.list}>
-        <li>Nur Top-5-Ligen wenn du unsicher bist — dort sind alle Daten vollständig</li>
-        <li>Ü/U 2.5 hat oft weniger Varianz als 1X2</li>
-        <li>Abendquoten sind schärfer — frühe Freitagsquoten haben oft mehr Mispricings</li>
+        <li>Top-5-Ligen haben die vollständigste xG-Historie — Brier 0,6083 (v2+Dirichlet); niedrigere Ligen streuen +0,03 bis +0,05 höher</li>
+        <li>Ü/U 2.5 hat oft weniger Varianz als 1X2 — kommt aus der gleichen Dixon-Coles-Matrix, ist aber weniger Extrem-resistent</li>
+        <li>Abendquoten sind schärfer. Frühe Freitags-Openings haben oft +3–5 bps mehr Edge, verschwinden bis Samstagmorgen</li>
         <li>Kombi-Wetten = Varianz-Gift. Singles fast immer besser.</li>
-        <li>Mehrere Bookies nutzen → immer beste Quote picken</li>
+        <li>Mehrere Bookies nutzen → immer beste Quote picken (Max-Close schlägt Pinnacle-Close um +0,11 auf Home, +0,25 auf Away im Schnitt)</li>
       </ul>
 
       <h3 style={S.h3}>Häufige Fehler</h3>
@@ -502,7 +526,7 @@ function Workflow() {
           <tr><td style={S.td}>Bauchgefühl über Modell</td><td style={S.td}>Engines einig + Edge gut → folgen</td></tr>
           <tr><td style={S.td}>Einsatz nach Verlust verdoppeln</td><td style={S.td}>Kelly-Empfehlung einhalten</td></tr>
           <tr><td style={S.td}>Lieblings-Team bewetten</td><td style={S.td}>Gegen Modell prüfen</td></tr>
-          <tr><td style={S.td}>5-Leg-Kombis</td><td style={S.td}>Max 2–3 Legs, mit Banker</td></tr>
+          <tr><td style={S.td}>5-Leg-Kombis</td><td style={S.td}>Max 2–3 Legs, nur Grade-A-Picks</td></tr>
         </tbody>
       </table>
     </>
@@ -516,7 +540,9 @@ function Faq() {
 
       <h3 style={S.h3}>Welche Engine soll ich nutzen?</h3>
       <p style={S.p}>
-        Standard als Default. @annafrick13 v2 für Top-5-Ligen wenn Engines einig sind.
+        v2 + Dirichlet ist Default und schlägt Climatology in 18/18 Ligen (BSS +0,0649, ECE 0,0049).
+        Standard (ensemble-v1) nur als Fallback wenn v2 refuses. v1 Poisson-GLM ist verfügbar, aber OOT-Brier
+        ist 7pp schlechter als v2 — keine Empfehlung für 1X2.
       </p>
 
       <h3 style={S.h3}>Warum zeigt Liga X &quot;Ohne xG&quot;?</h3>
