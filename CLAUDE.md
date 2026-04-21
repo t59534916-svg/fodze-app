@@ -466,6 +466,7 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 - `docs/HANDBUCH.md` — End-User Handbuch (auch als `/handbuch` In-App)
 - `docs/LINEUP-INTEGRATION.md` — Design für Lineup-aware Predictions (nicht implementiert)
 - `docs/DESIGN-HANDOFF.md` — Design-System-Spec
+- `docs/BRAND-VOICE.md` — Brand-Voice Guide: 5 Attribute, Tone-Spektrum nach Kontext, Terminologie (Edge/Modell/Spieltag/Sharp), Before/After-Beispiele. Ankern für UI-Copy, Release-Notes, Anna-Prompts, Marketing-Assets.
 
 ## Alpha-Atlas Status (Post-Baseline-Features)
 
