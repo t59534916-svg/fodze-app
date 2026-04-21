@@ -12,8 +12,15 @@ three calibration variants that are wired into the live app:
   v2_dirichlet    — Dirichlet-ODIR calibration from
                     public/dirichlet-calibration.json (per-cluster)
   v2_benter       — Benter log-pool blend with Pinnacle close from
-                    public/benter-weights.json (per-league); runtime
-                    gates mirror src/lib/benter-blend.ts 1:1
+                    public/benter-weights.json (per-league). Runtime
+                    gates mirror src/lib/benter-blend.ts for the cases
+                    that apply off-line (pinn_degenerate, degenerate_betas,
+                    market_dominated at modelShare < 0.15, outlier at
+                    logDiff > 2.5). The runtime-only gates are omitted:
+                    the mode_off/no_weights branches (no feature flag in
+                    backtest), and pinn_not_normalised (we vig-remove
+                    ourselves from raw Pinnacle odds so the invariant
+                    holds by construction).
 
 and reports the same metrics.py-style scorecard for each:
 
@@ -212,16 +219,43 @@ function ensureMergedFresh(mergedPath) {
 // JSONL loader
 // ═══════════════════════════════════════════════════════════════════
 
+// Validate a merged row has every field the scoring + metrics code depends
+// on. Missing `ft_result` in particular is silent-garbage-producing — the
+// downstream onehot() builds oh[i][undefined]=1 which leaves the [0,0,0]
+// baseline, so Brier is computed against all-zero actuals and produces a
+// nonsense number with no thrown error. Fail loudly at load time instead.
+function validateRow(row, idx, path) {
+  const req = ["league", "match_date", "prob_h_raw", "prob_d_raw", "prob_a_raw", "ft_result"];
+  for (const f of req) {
+    if (row[f] === undefined || row[f] === null) {
+      throw new Error(`row ${idx} in ${path}: missing required field '${f}'`);
+    }
+  }
+  if (row.ft_result !== "H" && row.ft_result !== "D" && row.ft_result !== "A") {
+    throw new Error(`row ${idx} in ${path}: ft_result must be H/D/A, got ${JSON.stringify(row.ft_result)}`);
+  }
+  for (const p of ["prob_h_raw", "prob_d_raw", "prob_a_raw"]) {
+    if (!Number.isFinite(row[p])) {
+      throw new Error(`row ${idx} in ${path}: ${p} is not finite (${row[p]})`);
+    }
+  }
+}
+
 function loadMerged(path) {
   const raw = readFileSync(path, "utf8");
   const rows = [];
-  for (const line of raw.split("\n")) {
+  const lines = raw.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (!line.trim()) continue;
+    let parsed;
     try {
-      rows.push(JSON.parse(line));
+      parsed = JSON.parse(line);
     } catch (err) {
-      throw new Error(`Invalid JSONL row in ${path}: ${err.message}`);
+      throw new Error(`Invalid JSONL at ${path}:${i + 1}: ${err.message}`);
     }
+    validateRow(parsed, i + 1, path);
+    rows.push(parsed);
   }
   return rows;
 }
@@ -263,9 +297,13 @@ function makeDirichletEngine(dirichletJson) {
 }
 
 // ─── Benter: log-pool β₁·log(model) + β₂·log(pinn) → softmax ────
-// Gates are a 1:1 port of src/lib/benter-blend.ts (market-dominated,
-// pinn-degenerate, outlier). Any deviation here would mean the backtest
-// doesn't reflect the live app; keep these identical.
+// Gates are a port of the off-line-applicable subset of
+// src/lib/benter-blend.ts: pinn_degenerate, degenerate_betas,
+// market_dominated, outlier. The runtime-only gates (mode_off /
+// no_weights / pinn_not_normalised) are omitted — see the header
+// docstring for rationale. Any change to the remaining gates MUST be
+// made in both files together, otherwise the backtest drifts from
+// what the live app would produce.
 function makeBenterEngine(benterJson) {
   const engine = benterJson?.engines?.v2;
   if (!engine) {
@@ -584,7 +622,10 @@ function printPerLeagueTable(results) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Kelly simulation — matches tools/backtest/simulate_kelly.py 1:1
+// Kelly simulation — mirrors tools/backtest/simulate_kelly.py. Point
+// estimates (ROI, DD, Sharpe, Calmar, per-league ROI-on-stake) match
+// exactly; bootstrap CI endpoints drift by ≤ 1 sample because this
+// uses nearest-rank quantiles while numpy.quantile interpolates.
 //
 // Sane-market filters (519556b): Pinnacle overround cap + market-prob
 // band. These are a proxy for the live Goldilocks dual-source guard
@@ -751,7 +792,10 @@ function kellyMetrics(sim) {
   for (const key of Object.keys(buckets)) {
     const b = buckets[key];
     b.hit_rate = b.n > 0 ? round4(b.wins / b.n) : null;
-    b.avg_pnl = b.n > 0 ? round4(b.pnl / b.n) : null;
+    // Keep the Python key name (`roi_on_bucket`) so consumers that already
+    // read v2-oot-simulation.json don't need a rename. Value semantics are
+    // identical: total profit / bet count for that edge bucket.
+    b.roi_on_bucket = b.n > 0 ? round4(b.pnl / b.n) : null;
   }
 
   // Per-league ROI on stake (with bootstrap CI where n ≥ 30).
