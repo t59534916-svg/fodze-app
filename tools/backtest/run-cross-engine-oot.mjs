@@ -26,11 +26,20 @@ and reports the same metrics.py-style scorecard for each:
 
   Brier · BSS (+ 95% bootstrap CI) · Log-Loss · RPS · ECE 10-bucket
 
+Optional per-engine conformal diagnostics (--conformal) report
+empirical coverage, average prediction-set size, and singleton rate
+at α ∈ {0.05, 0.10, 0.20} using public/conformal-quantiles.json. A
+well-calibrated conformal gate should hit coverage ≈ 1−α; set size
+and singleton rate measure how much information the gate is leaving
+on the table vs. a pure point-prediction.
+
 The point is a head-to-head decision-theoretic comparison: each
 variant feeds a different Kelly stake + Goldilocks selection at
 runtime, so knowing which one leads on the holdout tells us whether
 the Dirichlet / Benter layers actually earn their inclusion in the
-stack — or whether they just move numbers around.
+stack — or whether they just move numbers around. With --kelly
+--conformal-gate enforce/dampen layered on top, the same answer is
+available for the staking gate.
 
 Usage:
   node tools/backtest/run-cross-engine-oot.mjs
@@ -41,6 +50,9 @@ Usage:
   node tools/backtest/run-cross-engine-oot.mjs --out tools/backtest/my.json
   node tools/backtest/run-cross-engine-oot.mjs --kelly             # Kelly ROI per engine
   node tools/backtest/run-cross-engine-oot.mjs --kelly --kelly-profile A --bankroll 5000
+  node tools/backtest/run-cross-engine-oot.mjs --conformal         # + coverage diagnostics
+  node tools/backtest/run-cross-engine-oot.mjs --kelly --conformal-gate enforce
+  node tools/backtest/run-cross-engine-oot.mjs --kelly --conformal-gate dampen --conformal-alpha 0.10
 
 On first run (or whenever the upstream parquets are newer than the
 JSONL cache) the Python bridge _export_oot_merged.py is invoked
@@ -63,6 +75,7 @@ const DEFAULTS = {
   odds: join(HERE, "odds-close-oot.parquet"),
   dirichlet: join(PROJECT_ROOT, "public", "dirichlet-calibration.json"),
   benter: join(PROJECT_ROOT, "public", "benter-weights.json"),
+  conformal: join(PROJECT_ROOT, "public", "conformal-quantiles.json"),
   out: join(HERE, "cross-engine-oot-metrics.json"),
   python: join(PROJECT_ROOT, "tools", "venv", "bin", "python"),
   bridge: join(HERE, "_export_oot_merged.py"),
@@ -84,6 +97,18 @@ const EDGE_BUCKETS = [
   { lo: 0.10, hi: 1.0, key: "0.10-1.00" },
 ];
 const PER_LEAGUE_CI_MIN_N = 30;
+
+// Conformal — mirrors src/lib/conformal-gate.ts.
+// α levels match what public/conformal-quantiles.json ships by default
+// (0.05, 0.10, 0.20). DEFAULT_ALPHA=0.10 matches the TS reference.
+const CONFORMAL_ALPHAS = [0.05, 0.10, 0.20];
+const CONFORMAL_DEFAULT_ALPHA = 0.10;
+// Permissive fallback when a league has no quantile at the requested
+// alpha. q=0.50 means only arg-max gets in → always singleton. Keeps
+// the gate from silently dropping every bet.
+const CONFORMAL_FALLBACK_QUANTILE = 0.50;
+// Dampen factors from src/lib/conformal-gate.ts (|S|=1→1.0, 2→0.6, 3→0.3).
+const CONFORMAL_DAMPEN_FACTORS = { 1: 1.0, 2: 0.6, 3: 0.3 };
 
 // ═══════════════════════════════════════════════════════════════════
 // CLI
@@ -110,6 +135,11 @@ function parseArgs() {
     maxOverround: 0.05,
     minMarketProb: 0.10,
     maxMarketProb: 0.65,
+    // Conformal
+    conformal: false,
+    conformalPath: DEFAULTS.conformal,
+    conformalGate: "off",
+    conformalAlpha: CONFORMAL_DEFAULT_ALPHA,
   };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -131,6 +161,10 @@ function parseArgs() {
     else if (a === "--max-overround") out.maxOverround = parseFloat(next());
     else if (a === "--min-market-prob") out.minMarketProb = parseFloat(next());
     else if (a === "--max-market-prob") out.maxMarketProb = parseFloat(next());
+    else if (a === "--conformal") out.conformal = true;
+    else if (a === "--conformal-path") out.conformalPath = next();
+    else if (a === "--conformal-gate") { out.conformalGate = next(); out.conformal = true; }
+    else if (a === "--conformal-alpha") { out.conformalAlpha = parseFloat(next()); out.conformal = true; }
     else if (a === "--help" || a === "-h") {
       process.stdout.write(
         "Usage: node tools/backtest/run-cross-engine-oot.mjs [opts]\n" +
@@ -148,7 +182,10 @@ function parseArgs() {
           "  --edge-max <F>              Goldilocks upper bound (default 0.075)\n" +
           "  --max-overround <F>         skip matches with Pinn overround > F (default 0.05)\n" +
           "  --min-market-prob <F>       skip market probs below (default 0.10)\n" +
-          "  --max-market-prob <F>       skip market probs above (default 0.65)\n",
+          "  --max-market-prob <F>       skip market probs above (default 0.65)\n" +
+          "  --conformal                 report coverage/set-size/singleton-rate per engine\n" +
+          "  --conformal-gate off|enforce|dampen  gate Kelly on prediction-set singleton (default off)\n" +
+          "  --conformal-alpha <F>       target miscoverage rate: 0.05, 0.10 (default), 0.20\n",
       );
       process.exit(0);
     } else {
@@ -164,6 +201,14 @@ function parseArgs() {
   }
   if (!RISK_CAPS[out.kellyProfile]) {
     process.stderr.write(`unknown kelly profile: ${out.kellyProfile} (valid: K, M, A)\n`);
+    process.exit(2);
+  }
+  if (!["off", "enforce", "dampen"].includes(out.conformalGate)) {
+    process.stderr.write(`unknown conformal-gate: ${out.conformalGate} (valid: off, enforce, dampen)\n`);
+    process.exit(2);
+  }
+  if (!CONFORMAL_ALPHAS.some((a) => Math.abs(a - out.conformalAlpha) < 1e-6)) {
+    process.stderr.write(`unknown conformal-alpha: ${out.conformalAlpha} (valid: ${CONFORMAL_ALPHAS.join(", ")})\n`);
     process.exit(2);
   }
   return out;
@@ -360,6 +405,86 @@ function makeBenterEngine(benterJson) {
       note: leagueBetas[row.league] ? `blend:v2:${row.league}` : "blend:v2:global",
     };
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Conformal prediction gate — port of src/lib/conformal-gate.ts
+//
+// Returns a closure that classifies a (probs, league) pair against the
+// per-league Mondrian quantile at the requested α. The set is built by
+// keeping every outcome whose non-conformity score (1 − p_k) ≤ q. When
+// no outcome qualifies (q too tight) we keep the argmax — matches the
+// defensive fallback in conformal-gate.ts:118.
+// ═══════════════════════════════════════════════════════════════════
+
+function alphaKey(alpha) {
+  return alpha.toFixed(2);
+}
+
+function makeConformalGate(conformalJson) {
+  const globalQ = conformalJson?.global || {};
+  const leagueQ = conformalJson?.leagues || {};
+
+  return function gate(probs, league, alpha = CONFORMAL_DEFAULT_ALPHA) {
+    const key = alphaKey(alpha);
+    let q, cluster;
+    if (league && leagueQ[league] && typeof leagueQ[league][key] === "number") {
+      q = leagueQ[league][key];
+      cluster = "league";
+    } else if (typeof globalQ[key] === "number") {
+      q = globalQ[key];
+      cluster = "global";
+    } else {
+      q = CONFORMAL_FALLBACK_QUANTILE;
+      cluster = "default";
+    }
+    const scores = [
+      { k: "H", s: 1 - probs.H },
+      { k: "D", s: 1 - probs.D },
+      { k: "A", s: 1 - probs.A },
+    ];
+    let set = scores.filter((x) => x.s <= q).map((x) => x.k);
+    if (set.length === 0) {
+      // argmin of s = argmax of p — keep the most confident outcome
+      // so a too-tight quantile doesn't blank every bet.
+      const argmax = scores.reduce((best, x) => (x.s < best.s ? x : best)).k;
+      set = [argmax];
+    }
+    return {
+      inSet: set,
+      setSize: set.length,
+      isSingleton: set.length === 1,
+      quantile: q,
+      cluster,
+      applied: cluster !== "default",
+    };
+  };
+}
+
+// Coverage = P(actual ∈ prediction set). A well-calibrated conformal
+// gate at confidence (1−α) should hit coverage ≈ 1−α; overshoots waste
+// information, undershoots violate the guarantee. Set-size and
+// singleton rate measure how much information the gate leaves on the
+// table vs. a plain argmax point prediction.
+function computeConformalDiagnostics(rows, probs, gateFn, alphas) {
+  const out = {};
+  for (const alpha of alphas) {
+    let hit = 0, setSizeSum = 0, singletons = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const probMap = { H: probs[i][0], D: probs[i][1], A: probs[i][2] };
+      const g = gateFn(probMap, rows[i].league, alpha);
+      setSizeSum += g.setSize;
+      if (g.isSingleton) singletons++;
+      if (g.inSet.includes(rows[i].ft_result)) hit++;
+    }
+    out[alphaKey(alpha)] = {
+      nominal_coverage: 1 - alpha,
+      empirical_coverage: round4(hit / rows.length),
+      avg_set_size: round4(setSizeSum / rows.length),
+      singleton_rate: round4(singletons / rows.length),
+    };
+  }
+  return out;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -657,6 +782,20 @@ function simulateKelly(rows, engineFn, opts) {
     const odds = { H: psch, D: pscd, A: psca };
     const actual = row.ft_result;
 
+    // Conformal gate (opt-in). Two modes mirror src/lib/conformal-gate.ts:
+    //   enforce — non-singleton sets disable all bets on this match
+    //   dampen  — keep betting but scale Kelly by 1 / 0.6 / 0.3 for |S|=1/2/3
+    let cfGate = null;
+    let cfFactor = 1.0;
+    if (opts.conformalGateFn && opts.conformalGateMode !== "off") {
+      cfGate = opts.conformalGateFn(probs, row.league, opts.conformalAlpha);
+      if (opts.conformalGateMode === "enforce") {
+        if (!cfGate.isSingleton) continue;
+      } else if (opts.conformalGateMode === "dampen") {
+        cfFactor = CONFORMAL_DAMPEN_FACTORS[Math.min(3, cfGate.setSize)] ?? 1.0;
+      }
+    }
+
     for (const k of RESULT_CLASSES) {
       const mk = market[k];
       if (mk < opts.minMarketProb || mk > opts.maxMarketProb) continue;
@@ -670,7 +809,9 @@ function simulateKelly(rows, engineFn, opts) {
       const kelly = (b * p - q) / b;
       if (kelly <= 0) continue;
 
-      const fraction = Math.min(kelly, cap);
+      // Apply conformal dampen factor to the kelly before cap — keeps the
+      // cap semantics intact (cap is "max fraction of bankroll per bet").
+      const fraction = Math.min(kelly * cfFactor, cap);
       const stake = fraction * bankroll;
       if (stake <= 0) continue;
 
@@ -682,6 +823,7 @@ function simulateKelly(rows, engineFn, opts) {
         date: row.match_date, league: row.league, outcome: k,
         model_prob: p, market_prob: mk, edge, odds: odds[k],
         fraction, stake, won, profit,
+        ...(cfGate ? { conformal_set_size: cfGate.setSize, conformal_factor: cfFactor } : {}),
       });
       trajectory.push([row.match_date, bankroll]);
     }
@@ -848,10 +990,38 @@ function kellyMetrics(sim) {
   };
 }
 
+function printConformalTable(results) {
+  process.stdout.write("\n" + "═".repeat(92) + "\n");
+  process.stdout.write("CONFORMAL DIAGNOSTICS  —  empirical coverage vs nominal (1−α), avg set size, singleton rate\n");
+  process.stdout.write("═".repeat(92) + "\n");
+  const alphaKeys = CONFORMAL_ALPHAS.map(alphaKey);
+  process.stdout.write(
+    `  ${"engine".padEnd(16)} ${"α".padStart(4)}  ${"nominal".padStart(8)}  ${"empirical".padStart(10)}  ${"delta".padStart(7)}  ${"set size".padStart(9)}  ${"singleton%".padStart(11)}\n`,
+  );
+  process.stdout.write(`  ${"─".repeat(92)}\n`);
+  for (const [name, payload] of Object.entries(results)) {
+    if (!payload.conformal) continue;
+    for (const ak of alphaKeys) {
+      const d = payload.conformal[ak];
+      if (!d) continue;
+      const delta = d.empirical_coverage - d.nominal_coverage;
+      const deltaStr = (delta >= 0 ? "+" : "") + (delta * 100).toFixed(2) + "%";
+      process.stdout.write(
+        `  ${name.padEnd(16)} ${ak.padStart(4)}  ${(d.nominal_coverage * 100).toFixed(1).padStart(7)}%  ${(d.empirical_coverage * 100).toFixed(2).padStart(9)}%  ${deltaStr.padStart(7)}  ${d.avg_set_size.toFixed(3).padStart(9)}  ${(d.singleton_rate * 100).toFixed(1).padStart(10)}%\n`,
+      );
+    }
+    process.stdout.write(`  ${"·".repeat(92)}\n`);
+  }
+  process.stdout.write("  delta > 0 = over-covers (wastes set size); delta < 0 = under-covers (guarantee violated)\n");
+}
+
 function printKellyTable(kellyResults, opts) {
   process.stdout.write("\n" + "═".repeat(96) + "\n");
+  const gateStr = opts.conformalGate !== "off"
+    ? `,  conformal-gate ${opts.conformalGate} (α=${opts.conformalAlpha})`
+    : "";
   process.stdout.write(
-    `KELLY ROI  —  profile ${opts.kellyProfile} (cap ${(RISK_CAPS[opts.kellyProfile] * 100).toFixed(1)}%),  Goldilocks [${(opts.edgeMin * 100).toFixed(1)}%, ${(opts.edgeMax * 100).toFixed(1)}%],  bankroll ${opts.bankroll}\n`,
+    `KELLY ROI  —  profile ${opts.kellyProfile} (cap ${(RISK_CAPS[opts.kellyProfile] * 100).toFixed(1)}%),  Goldilocks [${(opts.edgeMin * 100).toFixed(1)}%, ${(opts.edgeMax * 100).toFixed(1)}%],  bankroll ${opts.bankroll}${gateStr}\n`,
   );
   process.stdout.write("═".repeat(96) + "\n");
   process.stdout.write(
@@ -894,6 +1064,13 @@ function main() {
   const dirichletJson = JSON.parse(readFileSync(opts.dirichletPath, "utf8"));
   const benterJson = JSON.parse(readFileSync(opts.benterPath, "utf8"));
 
+  // Conformal loader — only materializes when the user asks for
+  // diagnostics or kelly gating. Skipping the read keeps the happy-path
+  // startup cost at two JSON parses, same as before.
+  const wantConformal = opts.conformal || opts.conformalGate !== "off";
+  const conformalJson = wantConformal ? JSON.parse(readFileSync(opts.conformalPath, "utf8")) : null;
+  const conformalGateFn = conformalJson ? makeConformalGate(conformalJson) : null;
+
   const engineFns = {};
   for (const name of opts.engines) {
     if (name === "v2_raw") engineFns[name] = engineV2Raw;
@@ -917,10 +1094,16 @@ function main() {
       per_league[lg] = computeMetrics(lgProbs, lgAct, opts.bootstrap);
     }
     results[name] = { overall, per_league, applied_n: payload.applied_n };
+    if (opts.conformal && conformalGateFn) {
+      results[name].conformal = computeConformalDiagnostics(
+        rows, payload.probs, conformalGateFn, CONFORMAL_ALPHAS,
+      );
+    }
   }
 
   printOverallTable(results, rows);
   if (opts.perLeague) printPerLeagueTable(results);
+  if (opts.conformal && conformalGateFn) printConformalTable(results);
 
   // ─── Kelly simulation (opt-in) ──────────────────────────────────
   let kellyResults = null;
@@ -939,6 +1122,9 @@ function main() {
         maxOverround: opts.maxOverround,
         minMarketProb: opts.minMarketProb,
         maxMarketProb: opts.maxMarketProb,
+        conformalGateFn: conformalGateFn,
+        conformalGateMode: opts.conformalGate,
+        conformalAlpha: opts.conformalAlpha,
       });
       kellyResults[name] = kellyMetrics(sim);
     }
@@ -957,6 +1143,9 @@ function main() {
     league_filter: opts.league,
     engines: results,
   };
+  if (conformalJson) {
+    outputJson.conformal_artifact = relative(PROJECT_ROOT, opts.conformalPath);
+  }
   if (kellyResults) {
     outputJson.kelly = {
       profile: opts.kellyProfile,
@@ -966,6 +1155,8 @@ function main() {
       max_overround: opts.maxOverround,
       min_market_prob: opts.minMarketProb,
       max_market_prob: opts.maxMarketProb,
+      conformal_gate: opts.conformalGate,
+      conformal_alpha: opts.conformalGate !== "off" ? opts.conformalAlpha : null,
       per_engine: kellyResults,
     };
   }

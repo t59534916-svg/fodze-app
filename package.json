@@ -26,7 +26,9 @@
     "wfr:all": "npm run wfr:export && npm run wfr:import",
     "backtest:cross": "node tools/backtest/run-cross-engine-oot.mjs",
     "backtest:cross:per-league": "node tools/backtest/run-cross-engine-oot.mjs --per-league",
-    "backtest:cross:kelly": "node tools/backtest/run-cross-engine-oot.mjs --kelly"
+    "backtest:cross:kelly": "node tools/backtest/run-cross-engine-oot.mjs --kelly",
+    "backtest:cross:conformal": "node tools/backtest/run-cross-engine-oot.mjs --conformal",
+    "backtest:cross:conformal:enforce": "node tools/backtest/run-cross-engine-oot.mjs --kelly --conformal-gate enforce"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
