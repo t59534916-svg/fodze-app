@@ -81,7 +81,7 @@ const DEFAULTS = {
   bridge: join(HERE, "_export_oot_merged.py"),
 };
 
-const ENGINE_NAMES = ["v2_raw", "v2_dirichlet", "v2_benter"];
+const ENGINE_NAMES = ["v1", "v2_raw", "v2_dirichlet", "v2_benter"];
 const RESULT_CLASSES = ["H", "D", "A"];
 const RESULT_IDX = { H: 0, D: 1, A: 2 };
 const MIN_STABLE_SAMPLE = 100;
@@ -319,6 +319,23 @@ function loadMerged(path) {
 
 function engineV2Raw(row) {
   return { H: row.prob_h_raw, D: row.prob_d_raw, A: row.prob_a_raw, applied: true, note: "raw" };
+}
+
+// v1 probs come pre-computed from tools/backtest/export_v1_oot.py and are
+// merged into the JSONL by _export_oot_merged.py as v1_prob_*_raw. Rows
+// without a v1 prediction fall back to NaN → the scoring path filters
+// them via the loadMerged validator downstream of this function.
+function engineV1(row) {
+  if (row.v1_prob_h_raw == null) {
+    return { H: 0, D: 0, A: 0, applied: false, note: "no_v1_prediction" };
+  }
+  return {
+    H: row.v1_prob_h_raw,
+    D: row.v1_prob_d_raw,
+    A: row.v1_prob_a_raw,
+    applied: true,
+    note: "v1-from-v2-npxg",
+  };
 }
 
 // ─── Dirichlet: per-cluster W·log(p) + b → softmax ────────────
@@ -1084,6 +1101,7 @@ function main() {
     if (name === "v2_raw") engineFns[name] = engineV2Raw;
     else if (name === "v2_dirichlet") engineFns[name] = makeDirichletEngine(dirichletJson);
     else if (name === "v2_benter") engineFns[name] = makeBenterEngine(benterJson);
+    else if (name === "v1") engineFns[name] = engineV1;
   }
 
   const scored = scoreAll(rows, engineFns);

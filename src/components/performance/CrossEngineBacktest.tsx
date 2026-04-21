@@ -66,6 +66,7 @@ interface BacktestSummary {
 }
 
 const ENGINE_LABEL: Record<string, string> = {
+  v1: "v1 Poisson-GLM",
   v2_raw: "v2 roh",
   v2_dirichlet: "v2 + Dirichlet",
   v2_benter: "v2 + Benter",
