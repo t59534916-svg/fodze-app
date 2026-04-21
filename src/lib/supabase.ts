@@ -264,6 +264,84 @@ export async function loadTeamXGHistory(
 }
 
 /**
+ * As-of-date variant of `loadTeamXGHistory` — returns the last N venue-
+ * specific matches strictly BEFORE the cutoff date. Needed for backtest
+ * and shadow-eval use-cases where the loader must NOT leak rows that
+ * hadn't happened yet at the target match's kickoff.
+ *
+ * `cutoffDate` is an ISO date string (e.g. "2024-03-22"). The filter is
+ * strictly-less-than so passing the target match's own date excludes
+ * the match itself — the standard "shift(1)" semantic the feature
+ * pipeline already uses everywhere else.
+ *
+ * The fuzzy fallback path mirrors `loadTeamXGHistory` — it applies the
+ * SAME cutoff so there's no way for future rows to sneak in through a
+ * looser team-name match.
+ */
+export async function loadTeamXGHistoryAsOf(
+  supabase: SupabaseClient,
+  team: string,
+  league: string,
+  venue: "home" | "away",
+  cutoffDate: string,
+  limit: number = 8,
+): Promise<TeamXGMatch[]> {
+  const exact = await supabase
+    .from("team_xg_history")
+    .select("*")
+    .eq("team", team)
+    .eq("league", league)
+    .eq("venue", venue)
+    .lt("match_date", cutoffDate)
+    .order("match_date", { ascending: false })
+    .limit(limit);
+  if (exact.error) { console.error("loadTeamXGHistoryAsOf error:", exact.error); return []; }
+  if (exact.data && exact.data.length > 0) return exact.data.reverse();
+
+  const tokens = team
+    .toLowerCase()
+    .replace(/[._]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3 && !/^(fc|sc|sv|vfl|vfb|tsg|tsv|rb|afc|the|club)$/.test(w));
+  if (tokens.length === 0) return [];
+  const probe = tokens.sort((a, b) => b.length - a.length)[0];
+  const fuzzy = await supabase
+    .from("team_xg_history")
+    .select("*")
+    .ilike("team", `%${probe}%`)
+    .eq("league", league)
+    .eq("venue", venue)
+    .lt("match_date", cutoffDate)
+    .order("match_date", { ascending: false })
+    .limit(limit);
+  if (fuzzy.error || !fuzzy.data || fuzzy.data.length === 0) return [];
+  return fuzzy.data.reverse();
+}
+
+/**
+ * As-of-date variant of `loadLeagueXGHistory`. Returns every league
+ * match strictly before the cutoff, ordered ascending — the shape the
+ * engine's feature-engineering pipeline walks chronologically.
+ */
+export async function loadLeagueXGHistoryAsOf(
+  supabase: SupabaseClient,
+  league: string,
+  cutoffDate: string,
+  seasonStartDate: string = "2017-08-01",
+): Promise<TeamXGMatch[]> {
+  const { data, error } = await supabase
+    .from("team_xg_history")
+    .select("*")
+    .eq("league", league)
+    .eq("venue", "home") // One row per match (home perspective)
+    .gte("match_date", seasonStartDate)
+    .lt("match_date", cutoffDate)
+    .order("match_date", { ascending: true });
+  if (error) { console.error("loadLeagueXGHistoryAsOf error:", error); return []; }
+  return data || [];
+}
+
+/**
  * Load all match xG data for a league (for SoS computation).
  * Returns all matches from the current season.
  */
