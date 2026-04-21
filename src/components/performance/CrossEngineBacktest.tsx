@@ -53,6 +53,7 @@ interface KellyBlock {
   edge_max: number;
   conformal_gate: string;
   conformal_alpha: number | null;
+  odds_source?: string;
   per_engine: Record<string, KellyEnginePayload>;
 }
 
@@ -63,6 +64,8 @@ interface BacktestSummary {
   engines: Record<string, EngineSummary>;
   kelly?: KellyBlock;
   kelly_enforce?: KellyBlock;
+  kelly_best?: KellyBlock;
+  kelly_best_enforce?: KellyBlock;
 }
 
 const ENGINE_LABEL: Record<string, string> = {
@@ -99,6 +102,8 @@ function KellyCard({ block, engines, title }: { block: KellyBlock; engines: stri
   const gateLabel = block.conformal_gate !== "off"
     ? `, Gate ${block.conformal_gate} (α=${block.conformal_alpha})`
     : "";
+  const isBest = block.odds_source === "best";
+  const pricingLabel = isBest ? "bester Soft-Book-Close (football-data Max)" : "Pinnacle Close";
   return (
     <div style={S.card}>
       <div style={{ ...S.label, marginBottom: 6 }}>
@@ -106,9 +111,10 @@ function KellyCard({ block, engines, title }: { block: KellyBlock; engines: stri
         {gateLabel}
       </div>
       <div style={{ ...S.small, marginBottom: 10 }}>
-        Bankroll {block.starting_bankroll.toLocaleString("de-DE")}€, Wetten vs. Pinnacle Close.
-        Negative ROI ist erwartet: Pinnacle ≈ true prob, echter Edge entsteht
-        erst mit Soft-Book-Quoten (Bet365 etc.) die hier nicht vorliegen.
+        Bankroll {block.starting_bankroll.toLocaleString("de-DE")}€, Wetten gegen {pricingLabel}.
+        {isBest
+          ? " Das ist die Quote die ein realer Bettor durch Quote-Shopping bekommt — die Produktionsnahe ROI-Kurve."
+          : " Negative ROI ist erwartet: Pinnacle ≈ true prob, kein Platzierungs-Edge."}
       </div>
       <div style={{ overflowX: "auto" }}>
         <table style={S.table}>
@@ -259,8 +265,10 @@ export default function CrossEngineBacktest() {
         </div>
       )}
 
-      {data.kelly && <KellyCard block={data.kelly} engines={engines} title="Kelly — ohne Konformal-Gate" />}
-      {data.kelly_enforce && <KellyCard block={data.kelly_enforce} engines={engines} title="Kelly — mit Konformal-Gate (enforce)" />}
+      {data.kelly && <KellyCard block={data.kelly} engines={engines} title="Kelly — Pinnacle Close (Baseline)" />}
+      {data.kelly_enforce && <KellyCard block={data.kelly_enforce} engines={engines} title="Kelly — Pinnacle + Konformal-Gate (enforce)" />}
+      {data.kelly_best && <KellyCard block={data.kelly_best} engines={engines} title="Kelly — Quote-Shopping (Max Soft-Book Close)" />}
+      {data.kelly_best_enforce && <KellyCard block={data.kelly_best_enforce} engines={engines} title="Kelly — Quote-Shopping + Konformal-Gate (enforce) [produktionsnah]" />}
 
       <div style={S.card}>
         <div style={{ ...S.label, marginBottom: 6 }}>Per-Liga BSS (v2 + Dirichlet)</div>

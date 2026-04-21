@@ -47,6 +47,7 @@ No side effects beyond writing --out.
 """
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -57,7 +58,24 @@ PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__f
 DEFAULT_PRED = os.path.join(PROJECT_ROOT, "tools", "backtest", "v2-oot-predictions.parquet")
 DEFAULT_V1   = os.path.join(PROJECT_ROOT, "tools", "backtest", "v1-oot-predictions.parquet")
 DEFAULT_ODDS = os.path.join(PROJECT_ROOT, "tools", "backtest", "odds-close-oot.parquet")
+DEFAULT_HIST = os.path.join(PROJECT_ROOT, "Historie")
 DEFAULT_OUT  = os.path.join(PROJECT_ROOT, "tools", "backtest", "v2-oot-merged.jsonl")
+
+# football-data.co.uk Div → FODZE league key. Copied from
+# tools/train_ensemble.py:89 so the JSONL stays consistent with the
+# rest of the training stack. Liga 3 is missing here (football-data
+# doesn't cover the German 3rd tier) — liga3 rows simply won't get
+# best-book odds merged, and Kelly falls back to Pinnacle.
+DIV_TO_LEAGUE = {
+    "D1": "bundesliga", "D2": "bundesliga2",
+    "E0": "epl", "E1": "championship", "E2": "league_one", "E3": "league_two",
+    "SP1": "la_liga", "SP2": "la_liga2",
+    "I1": "serie_a", "I2": "serie_b",
+    "F1": "ligue_1", "F2": "ligue_2",
+    "N1": "eredivisie",
+    "B1": "jupiler_pro", "P1": "primeira_liga", "T1": "super_lig",
+    "SC0": "scottish_prem", "G1": "greek_sl",
+}
 
 # Only the columns a downstream engine actually needs. Excluding the 21-dim
 # feature vector + lambda predictions keeps the JSONL ~5× smaller without
@@ -69,6 +87,91 @@ KEEP_COLS = [
 ]
 
 
+def _parse_dd_mm_yyyy(s):
+    """Parse 'DD/MM/YYYY' or 'DD/MM/YY' → 'YYYY-MM-DD'. Matches
+    scripts/_lib/football-data-parse.mjs::parseDate 1:1."""
+    if not s or "/" not in s:
+        return None
+    parts = s.split("/")
+    if len(parts) != 3:
+        return None
+    d, m, y = parts
+    if not (d.isdigit() and m.isdigit() and y.isdigit()):
+        return None
+    if len(y) == 2:
+        y = "20" + y
+    try:
+        return f"{int(y):04d}-{int(m):02d}-{int(d):02d}"
+    except ValueError:
+        return None
+
+
+def load_football_data_max_close(histdir, date_min, date_max):
+    """
+    Walk Historie/data*/ for every CSV, extract
+    (league, match_date, home_team, away_team, MaxCH, MaxCD, MaxCA)
+    within the date window. Columns MaxCH/CD/CA = best 1X2 closing odds
+    across the ~7 soft books that football-data.co.uk tracks; this is
+    the "quote shopping" proxy the Kelly backtest needs.
+
+    Rows outside DIV_TO_LEAGUE (uncovered leagues like Liga 3) or
+    outside the date window are dropped silently.
+    """
+    out_rows = []
+    folders = sorted(glob.glob(os.path.join(histdir, "data*")))
+    for folder in folders:
+        for csv_path in sorted(glob.glob(os.path.join(folder, "*.csv"))):
+            div = os.path.splitext(os.path.basename(csv_path))[0]
+            league = DIV_TO_LEAGUE.get(div)
+            if league is None:
+                continue
+            try:
+                # football-data.co.uk uses Windows-1252 for team names with
+                # diacritics (Beşiktaş, Göztepe). Latin-1 is a close enough
+                # superset and never throws — matches decodeBuffer() in
+                # scripts/_lib/football-data-parse.mjs.
+                df = pd.read_csv(csv_path, encoding="latin-1", low_memory=False)
+            except Exception as e:  # noqa: BLE001
+                print(f"  [warn] could not read {csv_path}: {e}", file=sys.stderr)
+                continue
+            if "MaxCH" not in df.columns:
+                # Older seasons don't ship Max*C* columns — skip silently.
+                continue
+            if "Date" not in df.columns or "HomeTeam" not in df.columns:
+                continue
+            for _, r in df.iterrows():
+                iso_date = _parse_dd_mm_yyyy(str(r.get("Date", "")))
+                if not iso_date or not (date_min <= iso_date <= date_max):
+                    continue
+                home = str(r.get("HomeTeam", "")).strip()
+                away = str(r.get("AwayTeam", "")).strip()
+                if not home or not away:
+                    continue
+                h = pd.to_numeric(r.get("MaxCH"), errors="coerce")
+                d = pd.to_numeric(r.get("MaxCD"), errors="coerce")
+                a = pd.to_numeric(r.get("MaxCA"), errors="coerce")
+                if pd.isna(h) or pd.isna(d) or pd.isna(a) or h <= 1 or d <= 1 or a <= 1:
+                    continue
+                out_rows.append({
+                    "league": league,
+                    "match_date": iso_date,
+                    "home_team": home,
+                    "away_team": away,
+                    "best_close_h": float(h),
+                    "best_close_d": float(d),
+                    "best_close_a": float(a),
+                })
+    if not out_rows:
+        return pd.DataFrame(columns=[
+            "league", "match_date", "home_team", "away_team",
+            "best_close_h", "best_close_d", "best_close_a",
+        ])
+    df = pd.DataFrame(out_rows)
+    # Multiple CSV folders can contain the same match (historical snapshots);
+    # keep first occurrence deterministically.
+    return df.drop_duplicates(subset=["league", "match_date", "home_team", "away_team"], keep="first")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Merge OOT predictions + Pinnacle close into JSONL.")
     ap.add_argument("--predictions", default=DEFAULT_PRED)
@@ -76,6 +179,9 @@ def main() -> None:
                     help="Optional v1-oot-predictions.parquet (from export_v1_oot.py) — "
                          "when present, probs are merged into each row as v1_prob_*_raw.")
     ap.add_argument("--odds",        default=DEFAULT_ODDS)
+    ap.add_argument("--historie",    default=DEFAULT_HIST,
+                    help="football-data.co.uk Historie/ directory — scanned for Max*C* "
+                         "columns to populate best_close_{h,d,a} (quote-shopping proxy).")
     ap.add_argument("--out",         default=DEFAULT_OUT)
     args = ap.parse_args()
 
@@ -121,6 +227,20 @@ def main() -> None:
     else:
         merged = pred_df.assign(psch=None, pscd=None, psca=None)
 
+    # football-data.co.uk best-soft-book close (Max*C*). The window is
+    # clamped to the prediction parquet's date range so we don't drag in
+    # irrelevant seasons.
+    pred_dates = merged["match_date"]
+    date_min, date_max = pred_dates.min(), pred_dates.max()
+    best_df = load_football_data_max_close(args.historie, date_min, date_max)
+    if len(best_df) > 0:
+        merged = merged.merge(best_df, on=keys, how="left")
+        best_hit = int(merged["best_close_h"].notna().sum())
+        print(f"  best-book close: merged {best_hit}/{len(merged)} rows (football-data.co.uk Max*C*)")
+    else:
+        merged = merged.assign(best_close_h=None, best_close_d=None, best_close_a=None)
+        print(f"  best-book close: no Historie/ CSVs with Max*C* in window {date_min}..{date_max}")
+
     # Optional v1 predictions — join by the same key. Left-join so rows
     # without a v1 prediction carry nulls (the Node CLI then omits v1
     # from those rows' engine list).
@@ -159,6 +279,9 @@ def main() -> None:
                 "psch": (None if pd.isna(row.get("psch")) else float(row["psch"])),
                 "pscd": (None if pd.isna(row.get("pscd")) else float(row["pscd"])),
                 "psca": (None if pd.isna(row.get("psca")) else float(row["psca"])),
+                "best_close_h": (None if pd.isna(row.get("best_close_h")) else float(row["best_close_h"])),
+                "best_close_d": (None if pd.isna(row.get("best_close_d")) else float(row["best_close_d"])),
+                "best_close_a": (None if pd.isna(row.get("best_close_a")) else float(row["best_close_a"])),
                 "v1_prob_h_raw": (None if pd.isna(row.get("v1_prob_h_raw")) else float(row["v1_prob_h_raw"])),
                 "v1_prob_d_raw": (None if pd.isna(row.get("v1_prob_d_raw")) else float(row["v1_prob_d_raw"])),
                 "v1_prob_a_raw": (None if pd.isna(row.get("v1_prob_a_raw")) else float(row["v1_prob_a_raw"])),

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-21T17:44:43.185Z",
+  "generated_at": "2026-04-21T18:09:04.762Z",
   "n_rows": 6691,
   "n_leagues": 18,
   "engines": {
@@ -599,6 +599,7 @@
     "edge_max": 0.075,
     "conformal_gate": "off",
     "conformal_alpha": null,
+    "odds_source": "pinnacle",
     "per_engine": {
       "v1": {
         "n_bets": 1925,
@@ -645,6 +646,7 @@
     "edge_max": 0.075,
     "conformal_gate": "enforce",
     "conformal_alpha": 0.1,
+    "odds_source": "pinnacle",
     "per_engine": {
       "v1": {
         "n_bets": 299,
@@ -680,6 +682,100 @@
         "final_bankroll": 5863.38,
         "max_drawdown": -0.7578,
         "sharpe_daily_annualised": 0.142,
+        "note": null
+      }
+    }
+  },
+  "kelly_best": {
+    "profile": "M",
+    "starting_bankroll": 10000,
+    "edge_min": 0.025,
+    "edge_max": 0.075,
+    "conformal_gate": "off",
+    "conformal_alpha": null,
+    "odds_source": "best",
+    "per_engine": {
+      "v1": {
+        "n_bets": 1925,
+        "hit_rate": 0.267,
+        "roi": -0.9997,
+        "final_bankroll": 2.94,
+        "max_drawdown": -0.9998,
+        "sharpe_daily_annualised": -1.909,
+        "note": null
+      },
+      "v2_raw": {
+        "n_bets": 3040,
+        "hit_rate": 0.274,
+        "roi": -0.9997,
+        "final_bankroll": 3.34,
+        "max_drawdown": -0.9998,
+        "sharpe_daily_annualised": -0.635,
+        "note": null
+      },
+      "v2_dirichlet": {
+        "n_bets": 3114,
+        "hit_rate": 0.2714,
+        "roi": -0.9999,
+        "final_bankroll": 0.92,
+        "max_drawdown": -0.9999,
+        "sharpe_daily_annualised": -1.419,
+        "note": null
+      },
+      "v2_benter": {
+        "n_bets": 2853,
+        "hit_rate": 0.3067,
+        "roi": -0.984,
+        "final_bankroll": 159.99,
+        "max_drawdown": -0.9886,
+        "sharpe_daily_annualised": 0.396,
+        "note": null
+      }
+    }
+  },
+  "kelly_best_enforce": {
+    "profile": "M",
+    "starting_bankroll": 10000,
+    "edge_min": 0.025,
+    "edge_max": 0.075,
+    "conformal_gate": "enforce",
+    "conformal_alpha": 0.1,
+    "odds_source": "best",
+    "per_engine": {
+      "v1": {
+        "n_bets": 299,
+        "hit_rate": 0.2709,
+        "roi": -0.7509,
+        "final_bankroll": 2491.25,
+        "max_drawdown": -0.8165,
+        "sharpe_daily_annualised": -0.212,
+        "note": null
+      },
+      "v2_raw": {
+        "n_bets": 348,
+        "hit_rate": 0.2241,
+        "roi": -0.8637,
+        "final_bankroll": 1362.87,
+        "max_drawdown": -0.9393,
+        "sharpe_daily_annualised": -1.087,
+        "note": null
+      },
+      "v2_dirichlet": {
+        "n_bets": 302,
+        "hit_rate": 0.2517,
+        "roi": -0.2351,
+        "final_bankroll": 7649.39,
+        "max_drawdown": -0.8502,
+        "sharpe_daily_annualised": 0.597,
+        "note": null
+      },
+      "v2_benter": {
+        "n_bets": 372,
+        "hit_rate": 0.3468,
+        "roi": -0.0944,
+        "final_bankroll": 9056.07,
+        "max_drawdown": -0.7099,
+        "sharpe_daily_annualised": 0.723,
         "note": null
       }
     }

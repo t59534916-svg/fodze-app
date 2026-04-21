@@ -140,6 +140,9 @@ function parseArgs() {
     conformalPath: DEFAULTS.conformal,
     conformalGate: "off",
     conformalAlpha: CONFORMAL_DEFAULT_ALPHA,
+    // Where Kelly prices the bet: "pinnacle" (sharp, baseline) or "best"
+    // (Max close across soft books — football-data.co.uk Max*C*).
+    oddsSource: "pinnacle",
     // Ships a slim summary to public/ so /performance can read it.
     publish: false,
   };
@@ -167,6 +170,7 @@ function parseArgs() {
     else if (a === "--conformal-path") out.conformalPath = next();
     else if (a === "--conformal-gate") { out.conformalGate = next(); out.conformal = true; }
     else if (a === "--conformal-alpha") { out.conformalAlpha = parseFloat(next()); out.conformal = true; }
+    else if (a === "--kelly-odds-source") { out.oddsSource = next(); out.kelly = true; }
     else if (a === "--publish") {
       out.publish = true;
       out.conformal = true;
@@ -193,6 +197,7 @@ function parseArgs() {
           "  --conformal                 report coverage/set-size/singleton-rate per engine\n" +
           "  --conformal-gate off|enforce|dampen  gate Kelly on prediction-set singleton (default off)\n" +
           "  --conformal-alpha <F>       target miscoverage rate: 0.05, 0.10 (default), 0.20\n" +
+          "  --kelly-odds-source pinnacle|best  price Kelly bets at Pinnacle close (default) or Max soft-book close\n" +
           "  --publish                   also write slim summary to public/backtest-summary.json (ships to UI)\n",
       );
       process.exit(0);
@@ -217,6 +222,10 @@ function parseArgs() {
   }
   if (!CONFORMAL_ALPHAS.some((a) => Math.abs(a - out.conformalAlpha) < 1e-6)) {
     process.stderr.write(`unknown conformal-alpha: ${out.conformalAlpha} (valid: ${CONFORMAL_ALPHAS.join(", ")})\n`);
+    process.exit(2);
+  }
+  if (!["pinnacle", "best"].includes(out.oddsSource)) {
+    process.stderr.write(`unknown kelly-odds-source: ${out.oddsSource} (valid: pinnacle, best)\n`);
     process.exit(2);
   }
   return out;
@@ -790,6 +799,18 @@ function simulateKelly(rows, engineFn, opts) {
   const trajectory = [["_start", opts.bankroll]];
   let bankroll = opts.bankroll;
 
+  // Source of placement odds. Two options:
+  //   "pinnacle" → price + settle both at Pinnacle close (sharp line,
+  //                the baseline backtest — no edge is recoverable here)
+  //   "best"     → Max-close across ~7 soft books (football-data.co.uk
+  //                Max*C* columns). Quote-shopping proxy; this is what
+  //                a disciplined bettor actually reaches at kickoff.
+  // The MARKET-implied-prob for the edge + Goldilocks filter continues
+  // to come from Pinnacle (sharp → closest-to-true), regardless of
+  // where the bet is priced. That's what the live app does: Pinnacle
+  // tells us what's fair, soft books tell us where to place.
+  const oddsSource = opts.oddsSource || "pinnacle";
+
   for (const row of rows) {
     if (row.psch == null || row.pscd == null || row.psca == null) continue;
     const psch = row.psch, pscd = row.pscd, psca = row.psca;
@@ -802,9 +823,17 @@ function simulateKelly(rows, engineFn, opts) {
     const market = {
       H: 1 / psch / impSum, D: 1 / pscd / impSum, A: 1 / psca / impSum,
     };
+
+    let placeOdds = { H: psch, D: pscd, A: psca };
+    if (oddsSource === "best") {
+      if (row.best_close_h == null || row.best_close_d == null || row.best_close_a == null) continue;
+      if (row.best_close_h <= 1 || row.best_close_d <= 1 || row.best_close_a <= 1) continue;
+      placeOdds = { H: row.best_close_h, D: row.best_close_d, A: row.best_close_a };
+    }
+
     const engineRes = engineFn(row);
     const probs = { H: engineRes.H, D: engineRes.D, A: engineRes.A };
-    const odds = { H: psch, D: pscd, A: psca };
+    const odds = placeOdds;
     const actual = row.ft_result;
 
     // Conformal gate (opt-in). Two modes mirror src/lib/conformal-gate.ts:
@@ -1135,7 +1164,7 @@ function main() {
   let kellyResults = null;
   let kellyEnforceResults = null;
   const sortedRows = rows.slice().sort((a, b) => a.match_date.localeCompare(b.match_date));
-  function runKelly(gateMode) {
+  function runKelly(gateMode, oddsSource) {
     const out = {};
     for (const name of opts.engines) {
       const sim = simulateKelly(sortedRows, engineFns[name], {
@@ -1149,24 +1178,37 @@ function main() {
         conformalGateFn: gateMode !== "off" ? conformalGateFn : null,
         conformalGateMode: gateMode,
         conformalAlpha: opts.conformalAlpha,
+        oddsSource: oddsSource,
       });
       out[name] = kellyMetrics(sim);
     }
     return out;
   }
+  let kellyBestResults = null;
   if (opts.kelly) {
     // Chronological ordering matters for compounding bankroll math to
     // match the Python simulation exactly. The merged JSONL order is
     // inherited from pandas.merge, which isn't guaranteed sorted.
-    kellyResults = runKelly(opts.conformalGate);
+    kellyResults = runKelly(opts.conformalGate, opts.oddsSource);
     printKellyTable(kellyResults, opts);
   }
-  // When publishing to the UI, also run an "enforce α=0.10" pair so the
-  // tab can show the gated vs. unguarded story side-by-side without a
-  // second CLI invocation. Skipped outside --publish to keep the default
-  // run fast.
+  // When publishing to the UI, also run the two companion variants the
+  // tab needs side-by-side:
+  //   kelly_enforce — same Pinnacle pricing + α=0.10 gate ON (the
+  //                   "what does conformal do for me" comparison)
+  //   kelly_best    — unguarded but priced at Max soft-book close
+  //                   (the "what would quote-shopping actually earn"
+  //                   number — closest to real FODZE behaviour)
+  // Skipped outside --publish to keep the default run fast.
   if (opts.publish && conformalGateFn && opts.conformalGate === "off") {
-    kellyEnforceResults = runKelly("enforce");
+    kellyEnforceResults = runKelly("enforce", opts.oddsSource);
+  }
+  if (opts.publish && opts.oddsSource !== "best") {
+    kellyBestResults = runKelly("off", "best");
+  }
+  let kellyBestEnforceResults = null;
+  if (opts.publish && conformalGateFn && opts.oddsSource !== "best") {
+    kellyBestEnforceResults = runKelly("enforce", "best");
   }
 
   const outDir = dirname(opts.outPath);
@@ -1184,32 +1226,49 @@ function main() {
   if (conformalJson) {
     outputJson.conformal_artifact = relative(PROJECT_ROOT, opts.conformalPath);
   }
+  const kellyMeta = {
+    profile: opts.kellyProfile,
+    starting_bankroll: opts.bankroll,
+    edge_min: opts.edgeMin,
+    edge_max: opts.edgeMax,
+    max_overround: opts.maxOverround,
+    min_market_prob: opts.minMarketProb,
+    max_market_prob: opts.maxMarketProb,
+  };
   if (kellyResults) {
     outputJson.kelly = {
-      profile: opts.kellyProfile,
-      starting_bankroll: opts.bankroll,
-      edge_min: opts.edgeMin,
-      edge_max: opts.edgeMax,
-      max_overround: opts.maxOverround,
-      min_market_prob: opts.minMarketProb,
-      max_market_prob: opts.maxMarketProb,
+      ...kellyMeta,
       conformal_gate: opts.conformalGate,
       conformal_alpha: opts.conformalGate !== "off" ? opts.conformalAlpha : null,
+      odds_source: opts.oddsSource,
       per_engine: kellyResults,
     };
   }
   if (kellyEnforceResults) {
     outputJson.kelly_enforce = {
-      profile: opts.kellyProfile,
-      starting_bankroll: opts.bankroll,
-      edge_min: opts.edgeMin,
-      edge_max: opts.edgeMax,
-      max_overround: opts.maxOverround,
-      min_market_prob: opts.minMarketProb,
-      max_market_prob: opts.maxMarketProb,
+      ...kellyMeta,
       conformal_gate: "enforce",
       conformal_alpha: opts.conformalAlpha,
+      odds_source: opts.oddsSource,
       per_engine: kellyEnforceResults,
+    };
+  }
+  if (kellyBestResults) {
+    outputJson.kelly_best = {
+      ...kellyMeta,
+      conformal_gate: "off",
+      conformal_alpha: null,
+      odds_source: "best",
+      per_engine: kellyBestResults,
+    };
+  }
+  if (kellyBestEnforceResults) {
+    outputJson.kelly_best_enforce = {
+      ...kellyMeta,
+      conformal_gate: "enforce",
+      conformal_alpha: opts.conformalAlpha,
+      odds_source: "best",
+      per_engine: kellyBestEnforceResults,
     };
   }
   writeFileSync(opts.outPath, JSON.stringify(outputJson, null, 2));
@@ -1274,6 +1333,7 @@ function buildPublicSummary(full) {
     edge_max: k.edge_max,
     conformal_gate: k.conformal_gate,
     conformal_alpha: k.conformal_alpha,
+    odds_source: k.odds_source ?? "pinnacle",
     per_engine: Object.fromEntries(
       Object.entries(k.per_engine).map(([name, p]) => [name, {
         n_bets: p.n_bets,
@@ -1288,6 +1348,8 @@ function buildPublicSummary(full) {
   });
   if (full.kelly) slim.kelly = slimKelly(full.kelly);
   if (full.kelly_enforce) slim.kelly_enforce = slimKelly(full.kelly_enforce);
+  if (full.kelly_best) slim.kelly_best = slimKelly(full.kelly_best);
+  if (full.kelly_best_enforce) slim.kelly_best_enforce = slimKelly(full.kelly_best_enforce);
   return slim;
 }
 
