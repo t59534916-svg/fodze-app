@@ -102,6 +102,9 @@ def simulate(
     edge_min: float,
     edge_max: float,
     starting_bankroll: float,
+    max_overround: float = 0.05,
+    min_market_prob: float = 0.10,
+    max_market_prob: float = 0.65,
 ) -> SimResult:
     """
     df must carry: match_date, league, ft_result,
@@ -109,6 +112,14 @@ def simulate(
       psch, pscd, psca,
       pinn_h, pinn_d, pinn_a  (vig-removed Pinnacle probs)
     Sorted by match_date ascending.
+
+    Sane-market proxy for Goldilocks dual-source (which needs soft-book
+    odds we don't have in the backtest corpus): skip bets where
+      - Pinnacle overround > max_overround (mis-scraped / weird match)
+      - p_market for the chosen outcome is outside [min, max]
+        (longshot/chalk territory where Kelly math is unstable and the
+         wide-CI fireworks come from)
+    Set max_overround=1.0 and the prob range to [0, 1] to disable.
     """
     cap = RISK_CAPS[profile]
     result = SimResult(profile=profile, starting_bankroll=starting_bankroll, final_bankroll=starting_bankroll)
@@ -122,10 +133,23 @@ def simulate(
             ("D", row["prob_d_raw"], row["pinn_d"], row["pscd"], actual == "D"),
             ("A", row["prob_a_raw"], row["pinn_a"], row["psca"], actual == "A"),
         ]
+
+        # Overround gate applies once per match (not per outcome).
+        psch = float(row["psch"]) if math.isfinite(float(row["psch"])) else 0.0
+        pscd = float(row["pscd"]) if math.isfinite(float(row["pscd"])) else 0.0
+        psca = float(row["psca"]) if math.isfinite(float(row["psca"])) else 0.0
+        if psch <= 1 or pscd <= 1 or psca <= 1:
+            continue
+        overround = (1 / psch + 1 / pscd + 1 / psca) - 1.0
+        if overround > max_overround:
+            continue
+
         for k, p_model, p_market, odds, won in outcomes:
             if odds is None or odds <= 1.0 or not math.isfinite(odds):
                 continue
             if p_model is None or not math.isfinite(p_model) or p_model <= 0 or p_model >= 1:
+                continue
+            if p_market < min_market_prob or p_market > max_market_prob:
                 continue
 
             edge = float(p_model) - float(p_market)
@@ -306,6 +330,14 @@ def main() -> None:
     parser.add_argument("--edge-min", type=float, default=0.025, help="Minimum engine edge to bet (default 2.5 %)")
     parser.add_argument("--edge-max", type=float, default=0.075, help="Maximum engine edge to bet (default 7.5 %)")
     parser.add_argument("--bankroll", type=float, default=10000.0)
+    # Sane-market proxy for Goldilocks dual-source (no soft-book odds in OOT).
+    # Defaults filter ~20 % of bets — the noisy longshot+chalk tails.
+    parser.add_argument("--max-overround", type=float, default=0.05,
+                        help="Skip matches with Pinnacle overround above this (default 5 %)")
+    parser.add_argument("--min-market-prob", type=float, default=0.10,
+                        help="Skip outcomes with market-implied prob below this (default 10 %)")
+    parser.add_argument("--max-market-prob", type=float, default=0.65,
+                        help="Skip outcomes with market-implied prob above this (default 65 %)")
     args = parser.parse_args()
 
     if not Path(args.oot).exists():
@@ -344,7 +376,12 @@ def main() -> None:
 
     all_metrics: Dict[str, Dict] = {}
     for profile in ("K", "M", "A"):
-        sim = simulate(merged, profile, args.edge_min, args.edge_max, args.bankroll)
+        sim = simulate(
+            merged, profile, args.edge_min, args.edge_max, args.bankroll,
+            max_overround=args.max_overround,
+            min_market_prob=args.min_market_prob,
+            max_market_prob=args.max_market_prob,
+        )
         m = metrics_for(sim)
         all_metrics[profile] = m
 
