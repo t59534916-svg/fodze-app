@@ -16,10 +16,12 @@ type Phase = "greeting" | "leagues" | "budget" | "risk" | "loading" | "analysis"
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
-// Offline fallback — generates analysis text purely from computed data
+// Offline fallback — generates analysis text purely from computed data.
+// Tone-gecheckt gegen docs/BRAND-VOICE.md §5 (Anna tone = gesprächig-quantitativ)
+// + §3 (respektvoll-direkt, keine Entschuldigungen, keine dekorativen Emojis).
 function generateOfflineAnalysis(leagueData: Record<string, any>, budget: number, risk: string): string {
   const frac = ({ K: 0.25, M: 0.33, A: 0.5 } as any)[risk] || 0.33;
-  let text = "📊 **Analyse basierend auf Dixon-Coles Modell**\n\n";
+  let text = "**FODZE v2 + Dirichlet — Offline-Analyse** (kein Groq/Claude API-Key geladen, rein aus berechneten Daten)\n\n";
   let totalValueBets = 0;
   let totalStake = 0;
 
@@ -28,17 +30,20 @@ function generateOfflineAnalysis(leagueData: Record<string, any>, budget: number
     for (const m of (data as any).matches) {
       if (!m.calc?.bets) continue;
       for (const b of m.calc.bets) {
-        if (!b.isValue || b.edge <= 0) continue;
+        // Goldilocks: nur Edge ∈ [2,5%, 7,5%]. Unter 2,5% = Rauschen,
+        // über 7,5% = verdächtig. Matches die Policy aus anna-prompt.ts
+        // und die Signatur-Zone der Engine.
+        if (!b.isValue || b.edge < 0.025 || b.edge > 0.075) continue;
         valueBets.push({ ...b, home: m.home?.name, away: m.away?.name, kickoff: m.kickoff });
       }
     }
 
     if (valueBets.length === 0) {
-      text += `🏟️ **${(data as any).label}**: Keine Value-Bets gefunden.\n\n`;
+      text += `**${(data as any).label}**: keine Value-Bets in der Goldilocks-Zone (2,5–7,5%).\n\n`;
       continue;
     }
 
-    text += `🏟️ **${(data as any).label}** — ${valueBets.length} Value-Bet${valueBets.length > 1 ? "s" : ""}:\n\n`;
+    text += `**${(data as any).label}** — ${valueBets.length} Value-Bet${valueBets.length > 1 ? "s" : ""}:\n\n`;
 
     for (const bet of valueBets.sort((a, b) => b.edge - a.edge)) {
       const stake = bet.kelly * budget;
@@ -54,16 +59,19 @@ function generateOfflineAnalysis(leagueData: Record<string, any>, budget: number
   }
 
   if (totalValueBets === 0) {
-    text += "Aktuell keine Value-Bets mit positivem Edge gefunden. Warte auf bessere Quoten oder neue Spieltagsdaten.\n";
+    text += "Aktuell keine Value-Bets in der Goldilocks-Zone. Warte auf bessere Quoten oder neue Spieltagsdaten.\n\n";
   } else {
     text += `───────────────\n`;
-    text += `📋 **${totalValueBets} Value-Bets** | Gesamteinsatz: €${totalStake.toFixed(0)} / €${budget}\n`;
+    text += `**${totalValueBets} Value-Bets** | Gesamteinsatz: €${totalStake.toFixed(0)} / €${budget}\n`;
     text += `Verbleibend: €${Math.max(0, budget - totalStake).toFixed(0)}\n\n`;
 
     if (totalValueBets >= 3) {
-      text += `💡 **Tipp:** Mit ${totalValueBets} Value-Legs eignet sich ein **2aus${totalValueBets} System** — höhere Gewinnchance bei moderatem Risiko.\n`;
+      text += `Mit ${totalValueBets} Value-Legs bietet sich ein **2aus${totalValueBets} System** an — höhere Gewinnchance bei moderatem Risiko, Break-even-Schwelle senkt sich auf ~${(1 - Math.pow(0.5, totalValueBets - 1)).toFixed(2)} der Legs.\n\n`;
     }
   }
+
+  text += `───────────────\n`;
+  text += `Sportwetten = Glücksspiel. Das Modell macht Risiko messbar, nicht kleiner. Nur spielen mit Geld dessen Verlust nicht wehtut.\n`;
 
   return text;
 }
