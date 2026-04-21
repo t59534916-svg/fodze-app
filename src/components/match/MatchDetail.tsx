@@ -5,6 +5,7 @@ import XGSparkline from "@/components/XGSparkline";
 import OddsInput from "./OddsInput";
 import BettingSummary from "./BettingSummary";
 import EngineComparison from "./EngineComparison";
+import ProbabilityRing from "./ProbabilityRing";
 import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
 import { color } from "@/styles/tokens";
@@ -346,18 +347,30 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
         </div>
       )}
 
-      {/* Probability Bar Large */}
+      {/* Hero: ProbabilityRing with favorite % in the middle, flanked by
+          the existing horizontal bar as the detail readout. Ring is the
+          fancy centerpiece; bar retains the H/X/A labels for quick % scan.
+          hasValue passes a subtle gold glow on the home arc when the
+          match has at least one value bet — makes real signals stand
+          out across a matchday scroll. */}
       {calc && (
         <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+            <ProbabilityRing
+              h={calc.mk.H} d={calc.mk.D} a={calc.mk.A}
+              size={140} stroke={12}
+              hasValue={calc.hasValue}
+            />
+          </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 11 }}>
             <span style={{ color: color.value, fontWeight: 600 }}>{match.home?.name?.split(" ").pop()} {pc(calc.mk.H)}</span>
             <span style={{ color: `${color.goldMid}60` }}>X {pc(calc.mk.D)}</span>
             <span style={{ color: color.warn, fontWeight: 600 }}>{match.away?.name?.split(" ").pop()} {pc(calc.mk.A)}</span>
           </div>
-          <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", gap: 2 }}>
-            <div style={{ width: `${calc.mk.H * 100}%`, background: `linear-gradient(90deg, ${color.valueDark}, ${color.value})`, borderRadius: 5 }} />
-            <div style={{ width: `${calc.mk.D * 100}%`, background: `${color.goldMid}60`, borderRadius: 5 }} />
-            <div style={{ width: `${calc.mk.A * 100}%`, background: `linear-gradient(90deg, ${color.warn}, #a04040)`, borderRadius: 5 }} />
+          <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", gap: 2 }}>
+            <div style={{ width: `${calc.mk.H * 100}%`, background: `linear-gradient(90deg, ${color.valueDark}, ${color.value})`, borderRadius: 3 }} />
+            <div style={{ width: `${calc.mk.D * 100}%`, background: `${color.goldMid}60`, borderRadius: 3 }} />
+            <div style={{ width: `${calc.mk.A * 100}%`, background: `linear-gradient(90deg, ${color.warn}, #a04040)`, borderRadius: 3 }} />
           </div>
         </div>
       )}
