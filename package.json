@@ -23,7 +23,10 @@
     "suggest-aliases": "node scripts/suggest-tm-aliases.mjs",
     "wfr:export": "Rscript tools/export-worldfootballr.R",
     "wfr:import": "node scripts/import-wfr-csvs.mjs",
-    "wfr:all": "npm run wfr:export && npm run wfr:import"
+    "wfr:all": "npm run wfr:export && npm run wfr:import",
+    "backtest:cross": "node tools/backtest/run-cross-engine-oot.mjs",
+    "backtest:cross:per-league": "node tools/backtest/run-cross-engine-oot.mjs --per-league",
+    "backtest:cross:kelly": "node tools/backtest/run-cross-engine-oot.mjs --kelly"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.0",
