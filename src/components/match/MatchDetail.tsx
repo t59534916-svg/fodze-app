@@ -6,6 +6,7 @@ import OddsInput from "./OddsInput";
 import BettingSummary from "./BettingSummary";
 import EngineComparison from "./EngineComparison";
 import ProbabilityRing from "./ProbabilityRing";
+import XGHistoryBreakdown from "@/components/shared/XGHistoryBreakdown";
 import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
 import { color } from "@/styles/tokens";
@@ -425,6 +426,24 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
            calc.mk.A > 0.42 ? `${match.away?.name} leichter Favorit, offenes Spiel.` :
            "Ausgeglichenes Spiel, kein klarer Favorit."}
           {calc.mk.O25 > 0.6 ? ` Torreich erwartet.` : calc.mk.O25 < 0.4 ? ` Wenig Tore erwartet.` : ""}
+        </div>
+      )}
+
+      {/* xG Breakdown — same component as fuck-betting. Reveals how
+          the 8-game xG-Schnitt was composed (against which opponents,
+          konstant vs Ausreißer). Especially important in less-coverage
+          leagues where a single demolition can inflate the summary
+          without the probability bar above showing it. */}
+      {(match.home?.xg_h_history?.length || match.away?.xg_a_history?.length) && (
+        <div style={{ padding: "8px 12px", borderRadius: 8, background: `${color.goldMid}08`, border: `1px solid ${color.goldMid}10`, marginBottom: 16 }}>
+          <XGHistoryBreakdown
+            history={match.home?.xg_h_history}
+            venueLabel={`${match.home?.name?.split(" ").pop()} Heim`}
+          />
+          <XGHistoryBreakdown
+            history={match.away?.xg_a_history}
+            venueLabel={`${match.away?.name?.split(" ").pop()} Ausw.`}
+          />
         </div>
       )}
 
