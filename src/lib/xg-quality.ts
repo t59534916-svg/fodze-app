@@ -81,6 +81,19 @@ export interface SoSSignal {
 const SCHEDULE_STRONG = 0.93; // opponents' avg defenseRating (low = strong)
 const SCHEDULE_WEAK = 1.07;
 
+/**
+ * CONTRACT: Both `sosRatings` (keyed by team) and `history[i].opponent`
+ * must use the SAME namespace — in the current pipeline both are
+ * populated from team_xg_history rows where `team` and `opponent` come
+ * from the Understat/shots-model/goals-proxy scraper output. The names
+ * are written and read from the same column, so they match by
+ * construction.
+ *
+ * If schemas ever drift (e.g., one source normalizes "Bayer 04
+ * Leverkusen" → "Bayer Leverkusen" and the other doesn't), lookups
+ * fail silently and every team returns "unknown" — add a name-mapping
+ * unit test before changing how either source writes these names.
+ */
 export function sosFrom(
   history: XGHistoryEntry[] | undefined,
   sosRatings: SoSRatings | null | undefined,

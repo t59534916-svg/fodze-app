@@ -43,7 +43,7 @@ function Chip({ label, fg, title }: { label: string; fg: string; title: string }
   );
 }
 
-export default function XGQualityDots({
+export default function XGQualityChips({
   conversion,
   sos,
 }: {

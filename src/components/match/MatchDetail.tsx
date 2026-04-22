@@ -350,16 +350,24 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
       {/* Hero: ProbabilityRing with favorite % in the middle, flanked by
           the existing horizontal bar as the detail readout. Ring is the
           fancy centerpiece; bar retains the H/X/A labels for quick % scan.
-          hasValue passes a subtle gold glow on the home arc when the
-          match has at least one value bet — makes real signals stand
-          out across a matchday scroll. */}
-      {calc && (
+          hasValue + valueSide put the subtle gold glow on the ARC that
+          actually has the value bet (previously hardcoded to Home,
+          which misled whenever the value was on the Away outcome). */}
+      {calc && (() => {
+        const bestValueBet = calc.bets?.find((b: BetCalc) => b.isValue);
+        const valueSide: "h" | "d" | "a" | null =
+          bestValueBet?.label === "Heim" ? "h"
+          : bestValueBet?.label === "Unent." ? "d"
+          : bestValueBet?.label === "Ausw." ? "a"
+          : null;
+        return (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
             <ProbabilityRing
               h={calc.mk.H} d={calc.mk.D} a={calc.mk.A}
               size={140} stroke={12}
               hasValue={calc.hasValue}
+              valueSide={valueSide}
             />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 11 }}>
@@ -373,7 +381,8 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
             <div style={{ width: `${calc.mk.A * 100}%`, background: `linear-gradient(90deg, ${color.warn}, #a04040)`, borderRadius: 3 }} />
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Engine-Vergleich — side-by-side H/X/2/Ü2.5 across all 3 engines.
           Flags divergence >= 8pp so you can spot when the engines disagree. */}

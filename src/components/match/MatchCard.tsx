@@ -3,7 +3,7 @@ import Kit from "@/components/shared/Kit";
 import TeamRadar from "@/components/match/TeamRadar";
 import MatchPulse from "@/components/match/MatchPulse";
 import EdgeBadge from "@/components/shared/EdgeBadge";
-import XGQualityDots from "@/components/shared/XGQualityDots";
+import XGQualityChips from "@/components/shared/XGQualityChips";
 import { useMatchdayContext } from "@/contexts/MatchdayContext";
 import { conversionFrom, sosFrom } from "@/lib/xg-quality";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
@@ -53,13 +53,13 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
           <span style={{ fontSize: 14, fontWeight: 600, color: "#ede4d4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {shortName(match.home?.name)}
           </span>
-          <XGQualityDots conversion={homeConv} sos={homeSos} />
+          <XGQualityChips conversion={homeConv} sos={homeSos} />
           <span style={{ color: "#c4a26530", fontSize: 12, flexShrink: 0 }}>–</span>
           <Kit team={match.away?.name} size={16} />
           <span style={{ fontSize: 14, fontWeight: 600, color: "#ede4d4", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {shortName(match.away?.name)}
           </span>
-          <XGQualityDots conversion={awayConv} sos={awaySos} />
+          <XGQualityChips conversion={awayConv} sos={awaySos} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
           {match.kickoff && <span style={{ color: "#c4a26565", fontSize: 11 }}>{match.kickoff}</span>}

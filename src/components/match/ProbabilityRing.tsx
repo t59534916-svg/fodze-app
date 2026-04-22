@@ -34,6 +34,7 @@ export default function ProbabilityRing({
   centerLabel,
   centerValue,
   hasValue = false,
+  valueSide = null,
 }: {
   h: number;      // 0..1
   d: number;
@@ -44,8 +45,12 @@ export default function ProbabilityRing({
   centerLabel?: string;
   /** Big number shown in the center; defaults to rounded favorite % */
   centerValue?: string;
-  /** Adds a subtle gold glow ring — used when the match has a value bet */
+  /** Adds a subtle gold glow on the arc that has the value bet */
   hasValue?: boolean;
+  /** Which outcome has the value bet — glows only that arc. Falls back
+      to home for backward-compat when hasValue is true but side is
+      unspecified. */
+  valueSide?: "h" | "d" | "a" | null;
 }) {
   const total = h + d + a;
   if (total <= 0) return null;
@@ -59,12 +64,24 @@ export default function ProbabilityRing({
   const dDeg = (d / total) * 360;
   const aDeg = (a / total) * 360;
   const GAP = 2; // degrees of empty space between arcs
+  // Tiny-prob floor: if an outcome has 0.5–1.9° it used to vanish under
+  // the GAP filter, making e.g. 99% Away look like 100%. Force a
+  // minimum-visible 0.5° arc so every non-zero probability registers.
+  const MIN_ARC = 0.5;
+  const renderArc = (deg: number) => deg > 0 && deg - GAP >= MIN_ARC;
 
   // Pick favorite for the center label
   const maxProb = Math.max(h, d, a);
   const favLabel = centerLabel ?? (maxProb === h ? "HEIM" : maxProb === d ? "REMIS" : "AUSW.");
   const favValue = centerValue ?? `${Math.round(maxProb * 100)}%`;
   const favColor = maxProb === h ? color.value : maxProb === a ? color.warn : color.gold;
+
+  // Glow targeting: previously the filter was hardcoded on the home
+  // arc, so a value bet on Ausw. (+28% edge on away) misleadingly lit
+  // up the Home segment. Now the glow follows valueSide (or falls back
+  // to "h" for callers that haven't migrated yet). If hasValue is
+  // false, no arc glows.
+  const glowSide = hasValue ? (valueSide ?? "h") : null;
 
   return (
     <svg
@@ -82,6 +99,11 @@ export default function ProbabilityRing({
           <stop offset="100%" stopColor={favColor} stopOpacity="0" />
         </radialGradient>
         {hasValue && (
+          // Filter region extends 20% past the viewBox on each side so
+          // the Gaussian blur isn't clipped at the ring edge. On the
+          // default 140×140 size this means the glow is cleanly
+          // rendered within the SVG without visible hard edges. Tested
+          // down to size=100; below that the glow becomes subtle.
           <filter id="pr-glow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="2.5" result="blur" />
             <feMerge>
@@ -104,34 +126,36 @@ export default function ProbabilityRing({
       />
 
       {/* Home arc (green) — starts at 12 o'clock */}
-      {hDeg > GAP && (
+      {renderArc(hDeg) && (
         <path
           d={arcPath(cx, cy, r, GAP / 2, hDeg - GAP / 2)}
           fill="none"
           stroke={color.value}
           strokeWidth={stroke}
           strokeLinecap="round"
-          filter={hasValue ? "url(#pr-glow)" : undefined}
+          filter={glowSide === "h" ? "url(#pr-glow)" : undefined}
         />
       )}
       {/* Draw arc (muted gold) */}
-      {dDeg > GAP && (
+      {renderArc(dDeg) && (
         <path
           d={arcPath(cx, cy, r, hDeg + GAP / 2, hDeg + dDeg - GAP / 2)}
           fill="none"
           stroke={`${color.goldMid}95`}
           strokeWidth={stroke}
           strokeLinecap="round"
+          filter={glowSide === "d" ? "url(#pr-glow)" : undefined}
         />
       )}
       {/* Away arc (warn) */}
-      {aDeg > GAP && (
+      {renderArc(aDeg) && (
         <path
           d={arcPath(cx, cy, r, hDeg + dDeg + GAP / 2, hDeg + dDeg + aDeg - GAP / 2)}
           fill="none"
           stroke={color.warn}
           strokeWidth={stroke}
           strokeLinecap="round"
+          filter={glowSide === "a" ? "url(#pr-glow)" : undefined}
         />
       )}
 

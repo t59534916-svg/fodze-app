@@ -33,6 +33,11 @@ const ZONE_STYLES: Record<EdgeZone, { fg: string; bg: string; border: string; la
  * edge badge that looked identical whether the edge was inside the
  * 2.5–7.5% authorized band or well past the value-trap threshold.
  *
+ * @param edge - Model edge as a FRACTION (0.042 = 4.2%, NOT 4.2). The
+ *   caller's `bestBet.edge` is already in this form. Passing a percentage
+ *   here silently misclassifies every bet as "thin" or "none" because
+ *   classifyEdge() uses percentage thresholds internally.
+ *
  * Layout (compact): "+28.1% · [▓▓▓▓▓▓│░]" with "TRAP?" pill overlay.
  */
 export default function EdgeBadge({ edge, showMeter = true }: { edge: number; showMeter?: boolean }) {
@@ -44,6 +49,11 @@ export default function EdgeBadge({ edge, showMeter = true }: { edge: number; sh
   const markerPct = (clamped / DISPLAY_MAX) * 100;
   const zoneStart = (MIN / DISPLAY_MAX) * 100;
   const zoneEnd = (MAX / DISPLAY_MAX) * 100;
+
+  // Sign-in-number pattern avoids "+−0.5%" when edge is negative. We
+  // still want the leading character to be part of the number for
+  // tabular alignment, so the entire string is built once.
+  const signed = `${pct >= 0 ? "+" : "−"}${Math.abs(pct).toFixed(1)}%`;
 
   return (
     <div
@@ -64,7 +74,7 @@ export default function EdgeBadge({ edge, showMeter = true }: { edge: number; sh
       }
     >
       <span style={{ fontSize: 10, fontWeight: 700, color: s.fg, fontVariantNumeric: "tabular-nums" }}>
-        {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+        {signed}
       </span>
       {showMeter && (
         <div

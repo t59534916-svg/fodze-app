@@ -489,7 +489,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       .join(",");
     // Include playerXgIndex size so post-load hydration invalidates the
     // memo cache and absences get re-enriched without a manual refresh.
-    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosRatings ? "y" : "n"}|pxg${playerXgIndex.size}|${matchIds}`;
+    // sosKey uses team-count — when SoS re-computes (e.g., league
+    // switch) the team set changes and the cache invalidates. The
+    // prior "y" / "n" flag only caught null → present, not content
+    // changes within the rating table.
+    const sosKey = sosRatings ? `sos${Object.keys(sosRatings).length}` : "sos0";
+    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosKey}|pxg${playerXgIndex.size}|${matchIds}`;
   }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data, playerXgIndex]);
 
   const allEngineCalcs = useMemo(() => {
