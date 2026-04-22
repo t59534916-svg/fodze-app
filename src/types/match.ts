@@ -15,6 +15,12 @@ export interface XGHistoryEntry {
   deep_allowed?: number;  // Deep completions conceded (v2.1)
   goals_for?: number;     // Actual goals scored — lets UI surface xG-vs-goals conversion gap
   goals_against?: number; // Actual goals conceded
+  corners_for?: number;
+  corners_against?: number;
+  shots_for?: number;
+  shots_against?: number;
+  shots_on_target_for?: number;
+  shots_on_target_against?: number;
   date?: string;
   result?: string;
   opponent?: string;

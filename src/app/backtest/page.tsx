@@ -10,7 +10,7 @@ import {
   type MatchOutcome,
 } from "@/lib/supabase";
 import { scoreMatch, aggregate, type MatchScore } from "@/lib/backtest";
-import { replayLeague, analyzeRefinement, type ReplayRow } from "@/lib/historical-replay";
+import { replayLeague, analyzeRefinement, aggregatePhysicalMarkets, type ReplayRow } from "@/lib/historical-replay";
 import { LEAGUES } from "@/lib/dixon-coles";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { page as pageStyle, text } from "@/styles/components";
@@ -375,6 +375,53 @@ function HistoricalReplayTab({
             {rows.length} Matches replayed · Liga {LEAGUES[leagueKey]?.name}
           </div>
 
+          {/* Physical-markets: Shots + Corners expected vs actual */}
+          {(() => {
+            const pm = aggregatePhysicalMarkets(rows);
+            if (!pm.shots && !pm.corners) return null;
+            return (
+              <div style={{
+                padding: space[4], borderRadius: radius.md, marginBottom: space[5],
+                background: `${color.gold}08`, border: `1px solid ${color.gold}25`,
+              }}>
+                <div style={{ ...text.label, color: color.gold, marginBottom: space[3], fontSize: fontSize.sm }}>
+                  Physische Märkte · erwartet vs. tatsächlich
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: space[3] }}>
+                  {pm.shots && (
+                    <PhysicalCard
+                      label="Schüsse pro Team"
+                      n={pm.shots.n} mae={pm.shots.mae} bias={pm.shots.bias}
+                      unit="Schüsse"
+                      note="Erwartet = Ensemble-λ / 0.105 (Liga-Ø xG-per-shot)"
+                    />
+                  )}
+                  {pm.corners && (
+                    <PhysicalCard
+                      label="Ecken pro Team"
+                      n={pm.corners.n} mae={pm.corners.mae} bias={pm.corners.bias}
+                      unit="Ecken"
+                      note="Erwartet = Compound-Poisson (corners-engine)"
+                    />
+                  )}
+                  {!pm.shots && (
+                    <div style={{ padding: space[3], color: color.textMuted, fontSize: fontSize.xs }}>
+                      <strong style={{ color: color.warn }}>Keine Shot-Daten.</strong><br />
+                      Nach scripts/migration-team-xg-shots.sql + node scripts/backfill-shots-xg.mjs --all
+                      werden HS/AS-Werte aus football-data.co.uk in team_xg_history geschrieben
+                      und hier sichtbar.
+                    </div>
+                  )}
+                  {!pm.corners && (
+                    <div style={{ padding: space[3], color: color.textMuted, fontSize: fontSize.xs }}>
+                      Keine Corner-Daten für diese Liga. Nach backfill-shots-xg.mjs befüllt.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Per-engine bias + suggestions */}
           {refinement.map(r => {
             const scoresByEngine = (r.engine === "ensemble" ? rows.map(x => x.score_ensemble)
@@ -461,6 +508,38 @@ function Metric({ label, v, highlight }: { label: string; v: string; highlight?:
         color: highlight ? color.value : color.text,
         fontWeight: highlight ? fontWeight.bold : fontWeight.semibold,
       }}>{v}</div>
+    </div>
+  );
+}
+
+function PhysicalCard({
+  label, n, mae, bias, unit, note,
+}: {
+  label: string; n: number; mae: number; bias: number; unit: string; note: string;
+}) {
+  const biasTint = Math.abs(bias) > 2 ? color.warn : Math.abs(bias) > 1 ? color.gold : color.textMuted;
+  return (
+    <div style={{
+      padding: space[3], borderRadius: radius.sm,
+      background: `${color.goldMid}08`, border: `1px solid ${color.goldMid}20`,
+    }}>
+      <div style={{ ...text.label, marginBottom: space[2], fontSize: 10, color: color.gold }}>{label}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: `${space[1]}px ${space[3]}px`, fontSize: fontSize.xs }}>
+        <span style={{ color: color.textMuted }}>Sample:</span>
+        <span style={{ color: color.text, fontVariantNumeric: "tabular-nums" }}>{n} Team-Matches</span>
+        <span style={{ color: color.textMuted }}>MAE:</span>
+        <span style={{ color: color.text, fontWeight: fontWeight.semibold, fontVariantNumeric: "tabular-nums" }}>
+          {mae.toFixed(2)} {unit}
+        </span>
+        <span style={{ color: color.textMuted }}>Bias:</span>
+        <span style={{ color: biasTint, fontWeight: fontWeight.semibold, fontVariantNumeric: "tabular-nums" }}>
+          {bias >= 0 ? "+" : "−"}{Math.abs(bias).toFixed(2)} {unit}
+          <span style={{ fontSize: 9, color: color.textFaint, marginLeft: 4 }}>
+            ({bias > 0 ? "überschätzt" : "unterschätzt"})
+          </span>
+        </span>
+      </div>
+      <div style={{ marginTop: space[2], fontSize: 9, color: color.textFaint, lineHeight: 1.4 }}>{note}</div>
     </div>
   );
 }

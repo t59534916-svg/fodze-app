@@ -148,12 +148,15 @@ for (const league of leagues) {
     const hc = hcRaw !== undefined && hcRaw !== "" && !Number.isNaN(+hcRaw) ? +hcRaw : null;
     const ac = acRaw !== undefined && acRaw !== "" && !Number.isNaN(+acRaw) ? +acRaw : null;
 
-    // Home perspective
+    // Home perspective — also persist shots so backtests can score
+    // expected-vs-actual (migration-team-xg-shots.sql added the cols).
     supaRows.push({
       team: ht, league, opponent: at, venue: "home",
       match_date: dateISO, xg: +homeXG.toFixed(4), xga: +awayXG.toFixed(4),
       goals_for: hg, goals_against: ag,
       corners_for: hc, corners_against: ac,
+      shots_for: hs, shots_against: as_,
+      shots_on_target_for: hst, shots_on_target_against: ast,
       source: "shots-model",
     });
 
@@ -163,6 +166,8 @@ for (const league of leagues) {
       match_date: dateISO, xg: +awayXG.toFixed(4), xga: +homeXG.toFixed(4),
       goals_for: ag, goals_against: hg,
       corners_for: ac, corners_against: hc,
+      shots_for: as_, shots_against: hs,
+      shots_on_target_for: ast, shots_on_target_against: hst,
       source: "shots-model",
     });
   }

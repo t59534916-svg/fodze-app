@@ -146,6 +146,18 @@ export interface TeamXGMatch {
   xg_setpiece?: number | null;
   xga_openplay?: number | null;
   xga_setpiece?: number | null;
+  // Corners (from football-data.co.uk CSV via backfill-shots-xg.mjs since
+  // migration-corners.sql). Null on Understat-only rows + pre-backfill
+  // legacy rows.
+  corners_for?: number | null;
+  corners_against?: number | null;
+  // Shots (from football-data.co.uk HS/AS columns). Added by
+  // migration-team-xg-shots.sql — backfill-shots-xg.mjs writes them
+  // on next run. Null means "data not yet ingested for this row".
+  shots_for?: number | null;
+  shots_against?: number | null;
+  shots_on_target_for?: number | null;
+  shots_on_target_against?: number | null;
 }
 
 /**
@@ -495,6 +507,9 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
   ppda_att?: number; ppda_def?: number;
   deep?: number; deep_allowed?: number;
   goals_for?: number; goals_against?: number;
+  corners_for?: number; corners_against?: number;
+  shots_for?: number; shots_against?: number;
+  shots_on_target_for?: number; shots_on_target_against?: number;
   date: string; opponent?: string;
 }> {
   const entries = matches.map((m) => ({
@@ -508,6 +523,12 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
     deep_allowed: m.deep_allowed ?? undefined,
     goals_for: m.goals_for ?? undefined,
     goals_against: m.goals_against ?? undefined,
+    corners_for: m.corners_for ?? undefined,
+    corners_against: m.corners_against ?? undefined,
+    shots_for: m.shots_for ?? undefined,
+    shots_against: m.shots_against ?? undefined,
+    shots_on_target_for: m.shots_on_target_for ?? undefined,
+    shots_on_target_against: m.shots_on_target_against ?? undefined,
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));

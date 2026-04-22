@@ -23,7 +23,15 @@ import type { XGHistoryEntry } from "@/types/match";
 import { calcMatchEnhanced, type EnhancedResult, LEAGUES } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
+import { calcCornersModel } from "@/lib/corners-engine";
 import { scoreMatch, type MatchScore } from "@/lib/backtest";
+
+// League-average xG-per-shot. A single global constant is a rough but
+// well-documented proxy — real number varies ~0.09–0.12 across leagues;
+// deriving league-specific values from shots/xG ratio in the replay set
+// itself would be cleaner but requires more shot data than we currently
+// have ingested. 0.105 matches the FBref/Understat top-5 long-run mean.
+const XG_PER_SHOT = 0.105;
 
 export interface ReplayInput {
   /** All team_xg_history rows for the league, both venues. */
@@ -59,6 +67,18 @@ export interface ReplayRow {
   score_ensemble: MatchScore | null;
   score_v1: MatchScore | null;
   score_v2: MatchScore | null;
+  // ── Physical-market predictions (from engines' lambdas, not a
+  //    separate model) vs actuals. Nullable when pre-match history
+  //    doesn't carry the required stats (Understat-only rows have
+  //    no shots/corners for example).
+  expected_shots_h: number | null;
+  expected_shots_a: number | null;
+  actual_shots_h: number | null;
+  actual_shots_a: number | null;
+  expected_corners_h: number | null;
+  expected_corners_a: number | null;
+  actual_corners_h: number | null;
+  actual_corners_a: number | null;
 }
 
 // ─── Per-team chronological index ────────────────────────────────
@@ -151,6 +171,8 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
     // ── Engines ──
     // Ensemble: calcMatchEnhanced delivers λ + mk.H/D/A/O25 + BTTS.
     let ensemble: ReplayRow["ensemble"] = null;
+    let ensembleLambdaH: number | null = null;
+    let ensembleLambdaA: number | null = null;
     try {
       const enh: EnhancedResult = calcMatchEnhanced(
         homeXG8, homeXGA8, homeHist.length, undefined,
@@ -166,6 +188,8 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
           prob_o25: enh.mk.O25,
           prob_btts: (enh.mk as any).BTTS ?? null,
         };
+        ensembleLambdaH = enh.lambdaH ?? null;
+        ensembleLambdaA = enh.lambdaA ?? null;
       }
     } catch (e) {
       // Engine failures are part of the test — noted as null, score skipped
@@ -218,6 +242,40 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
         outShape,
       ) : null;
 
+    // ── Expected shots ──
+    // Engines don't produce a shot count directly. Proxy via the
+    // ensemble's lambda (expected goals) divided by league-average xG-per-
+    // shot — equivalent to "goal generation rate / shot quality". Cheap,
+    // honest, and on the same scale as football-data.co.uk HS/AS actuals.
+    const expected_shots_h = ensembleLambdaH != null ? ensembleLambdaH / XG_PER_SHOT : null;
+    const expected_shots_a = ensembleLambdaA != null ? ensembleLambdaA / XG_PER_SHOT : null;
+
+    // ── Expected corners ──
+    // Dedicated corners-engine — compound Poisson with geometric batches
+    // (src/lib/corners-engine.ts). Needs per-team historical corner
+    // rates. If the pre-match history has ≥3 entries with corners
+    // populated, use empirical rates; otherwise skip (null).
+    const homeCornersFor = homeHist.map(r => r.corners_for).filter((v): v is number => v != null);
+    const homeCornersAgainst = homeHist.map(r => r.corners_against).filter((v): v is number => v != null);
+    const awayCornersFor = awayHist.map(r => r.corners_for).filter((v): v is number => v != null);
+    const awayCornersAgainst = awayHist.map(r => r.corners_against).filter((v): v is number => v != null);
+
+    let expected_corners_h: number | null = null;
+    let expected_corners_a: number | null = null;
+    if (homeCornersFor.length >= 3 && awayCornersFor.length >= 3) {
+      const avg = (xs: number[]) => xs.reduce((s, v) => s + v, 0) / xs.length;
+      try {
+        const res = calcCornersModel({
+          teamFor: avg(homeCornersFor),
+          teamAgainst: avg(homeCornersAgainst),
+          oppFor: avg(awayCornersFor),
+          oppAgainst: avg(awayCornersAgainst),
+        });
+        expected_corners_h = res.lambda_h;
+        expected_corners_a = res.lambda_a;
+      } catch { /* corners engine failed — leave null */ }
+    }
+
     results.push({
       match_date: m.match_date,
       home_team: m.team, away_team: m.opponent,
@@ -229,10 +287,56 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
       score_ensemble: score(ensemble),
       score_v1: score(v1),
       score_v2: score(v2),
+      expected_shots_h, expected_shots_a,
+      actual_shots_h: m.shots_for ?? null,
+      actual_shots_a: m.shots_against ?? null,
+      expected_corners_h, expected_corners_a,
+      actual_corners_h: m.corners_for ?? null,
+      actual_corners_a: m.corners_against ?? null,
     });
   }
 
   return results;
+}
+
+// ─── Physical-market MAE aggregator ──────────────────────────────
+//
+// Mean absolute error between expected and actual values across all
+// replay rows with both sides populated. Null entries skipped. Lets
+// the UI say "engine predicts 12.3 shots/team, actual 14.1 — bias −1.8".
+
+export interface PhysicalMarketReport {
+  shots: { n: number; mae: number; bias: number } | null;
+  corners: { n: number; mae: number; bias: number } | null;
+}
+
+export function aggregatePhysicalMarkets(rows: ReplayRow[]): PhysicalMarketReport {
+  const shotPairs: Array<{ expected: number; actual: number }> = [];
+  const cornerPairs: Array<{ expected: number; actual: number }> = [];
+  for (const r of rows) {
+    if (r.expected_shots_h != null && r.actual_shots_h != null) {
+      shotPairs.push({ expected: r.expected_shots_h, actual: r.actual_shots_h });
+    }
+    if (r.expected_shots_a != null && r.actual_shots_a != null) {
+      shotPairs.push({ expected: r.expected_shots_a, actual: r.actual_shots_a });
+    }
+    if (r.expected_corners_h != null && r.actual_corners_h != null) {
+      cornerPairs.push({ expected: r.expected_corners_h, actual: r.actual_corners_h });
+    }
+    if (r.expected_corners_a != null && r.actual_corners_a != null) {
+      cornerPairs.push({ expected: r.expected_corners_a, actual: r.actual_corners_a });
+    }
+  }
+
+  const summarize = (pairs: typeof shotPairs) => {
+    if (pairs.length === 0) return null;
+    const n = pairs.length;
+    const mae = pairs.reduce((s, p) => s + Math.abs(p.expected - p.actual), 0) / n;
+    const bias = pairs.reduce((s, p) => s + (p.expected - p.actual), 0) / n;
+    return { n, mae, bias };
+  };
+
+  return { shots: summarize(shotPairs), corners: summarize(cornerPairs) };
 }
 
 // ─── Refinement Analysis ─────────────────────────────────────────
