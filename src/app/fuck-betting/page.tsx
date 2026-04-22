@@ -25,6 +25,7 @@ import { generateAnalysis, parseForm, type MatchReport } from "@/lib/analysis-na
 import ProbabilityRing from "@/components/match/ProbabilityRing";
 import EdgeBadge from "@/components/shared/EdgeBadge";
 import XGQualityChips from "@/components/shared/XGQualityChips";
+import XGHistoryBreakdown from "@/components/shared/XGHistoryBreakdown";
 import { conversionFrom, sosFrom } from "@/lib/xg-quality";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
@@ -274,6 +275,24 @@ function MatchReportCard({ report, sos }: { report: MatchReport; sos?: SoSRating
               <div style={{ height: 1, background: "#c4a26510", margin: "8px 0" }} />
             </>);
           })()}
+
+          {/* ── xG Breakdown (per-Spiel) ── */}
+          {/* Shows WHICH opponents composed the xG average for each
+              team and flags outliers via z-score against the window's
+              own mean. Answers "konstant oder Ausreißer?" — in
+              less-coverage leagues (goals-proxy / shots-model) a single
+              4.1-xG demolition can inflate the 8-game summary without
+              the summary bars above revealing it. */}
+          <div style={{ background: "#c4a26508", borderRadius: 8, padding: 10, marginBottom: 10, border: "1px solid #c4a26510" }}>
+            <XGHistoryBreakdown
+              history={r.rawMatch.home?.xg_h_history}
+              venueLabel={`${r.home.split(" ").pop()} Heim`}
+            />
+            <XGHistoryBreakdown
+              history={r.rawMatch.away?.xg_a_history}
+              venueLabel={`${r.away.split(" ").pop()} Ausw.`}
+            />
+          </div>
 
           {/* ── Form Visual ── */}
           {(r.formH || r.formA) && (<>
