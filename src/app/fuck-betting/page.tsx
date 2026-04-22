@@ -22,6 +22,10 @@ import { parseAbsences } from "@/lib/absence-parser";
 import type { StandingsRow, LiveOdds } from "@/lib/supabase";
 import type { MatchdayData, RawMatch } from "@/types/match";
 import { generateAnalysis, parseForm, type MatchReport } from "@/lib/analysis-narrative";
+import ProbabilityRing from "@/components/match/ProbabilityRing";
+import EdgeBadge from "@/components/shared/EdgeBadge";
+import XGQualityChips from "@/components/shared/XGQualityChips";
+import { conversionFrom, sosFrom } from "@/lib/xg-quality";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const toOdds = (p: number) => p > 0.01 ? (1 / p).toFixed(2) : "—";
@@ -119,9 +123,33 @@ function PRow({ label, p, highlight }: { label: string; p: number; highlight?: b
 
 // ─── Match Report Card ─────────────────────────────────────────────
 
-function MatchReportCard({ report }: { report: MatchReport }) {
+function MatchReportCard({ report, sos }: { report: MatchReport; sos?: SoSRatings }) {
   const [expanded, setExpanded] = useState(false);
   const r = report;
+
+  // xG-Quality signals (conversion + SoS) — same contract as MatchCard.
+  // Shows short chips next to team names when deviation is actionable.
+  // Especially important in less-coverage leagues (shots-model / goals-
+  // proxy) where raw xG can mislead without this context.
+  const homeConv = conversionFrom(r.rawMatch.home?.xg_h_history);
+  const awayConv = conversionFrom(r.rawMatch.away?.xg_a_history);
+  const homeSos = sosFrom(r.rawMatch.home?.xg_h_history, sos);
+  const awaySos = sosFrom(r.rawMatch.away?.xg_a_history, sos);
+
+  // Best-edge for the EdgeBadge — compute model_prob - implied_prob per
+  // 1X2 outcome using bestOdds (user's available line), take the max.
+  // Mirrors what MatchdayContext's calculateBetsEnhanced does, but
+  // fuck-betting doesn't carry a pre-computed bets array on the report.
+  const bestEdge = (() => {
+    if (!r.bestOdds?.h || !r.bestOdds?.d || !r.bestOdds?.a) return null;
+    const candidates: { side: "h" | "d" | "a"; edge: number }[] = [
+      { side: "h", edge: r.ft1X2.H - 1 / r.bestOdds.h },
+      { side: "d", edge: r.ft1X2.D - 1 / r.bestOdds.d },
+      { side: "a", edge: r.ft1X2.A - 1 / r.bestOdds.a },
+    ];
+    return candidates.reduce((best, c) => c.edge > best.edge ? c : best);
+  })();
+  const hasValue = bestEdge !== null && bestEdge.edge > 0.025; // Goldilocks floor
 
   return (
     <div style={{ ...S.card, padding: 0, overflow: "hidden" }}>
@@ -135,10 +163,12 @@ function MatchReportCard({ report }: { report: MatchReport }) {
             <Kit team={r.home} size={16} />
             {r.homePos && <span style={{ fontSize: 9, fontWeight: 700, color: posColor(r.homePos), background: posColor(r.homePos) + "15", padding: "1px 4px", borderRadius: 3, minWidth: 16, textAlign: "center" }}>{r.homePos}.</span>}
             <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.home}</span>
+            <XGQualityChips conversion={homeConv} sos={homeSos} />
             <span style={{ fontSize: 10, color: "#c4a26540" }}>vs</span>
             {r.awayPos && <span style={{ fontSize: 9, fontWeight: 700, color: posColor(r.awayPos), background: posColor(r.awayPos) + "15", padding: "1px 4px", borderRadius: 3, minWidth: 16, textAlign: "center" }}>{r.awayPos}.</span>}
             <span style={{ fontSize: 13, fontWeight: 600, color: "#ede4d4" }}>{r.away}</span>
             <Kit team={r.away} size={16} />
+            <XGQualityChips conversion={awayConv} sos={awaySos} />
           </div>
           <span style={{ color: "#c4a26535", fontSize: 14 }}>{expanded ? "▾" : "▸"}</span>
         </div>
@@ -153,6 +183,13 @@ function MatchReportCard({ report }: { report: MatchReport }) {
           <span style={S.tag(r.confidence >= 75 ? "#6aad55" : r.confidence >= 50 ? "#d4b86a" : "#e07070")}>
             {r.confidence}% Konfidenz
           </span>
+          {/* EdgeBadge with Goldilocks-zone meter — tells the reader at a
+              glance whether the best 1X2 edge is a real value signal (green
+              2.5–7.5%), too thin (amber), or a suspected value-trap
+              (warn >7.5%). Same contract as MatchCard. */}
+          {bestEdge && (
+            <EdgeBadge edge={bestEdge.edge} />
+          )}
           {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{formatKickoff(r.kickoff)}</span>}
           <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>
             {r.lambdaH.toFixed(2)} : {r.lambdaA.toFixed(2)} xG
@@ -162,6 +199,17 @@ function MatchReportCard({ report }: { report: MatchReport }) {
 
       {expanded && (
         <div style={{ padding: "0 14px 14px" }}>
+          {/* Hero: ProbabilityRing with favorite in the middle. Same
+              visual contract as MatchDetail so the user recognizes the
+              signal across screens. Glow follows the value-bet arc. */}
+          <div style={{ display: "flex", justifyContent: "center", margin: "10px 0 14px" }}>
+            <ProbabilityRing
+              h={r.ft1X2.H} d={r.ft1X2.D} a={r.ft1X2.A}
+              size={130} stroke={11}
+              hasValue={hasValue}
+              valueSide={bestEdge?.side ?? null}
+            />
+          </div>
           {/* Data quality warning */}
           {r.dataQuality === "LOW" && (
             <div style={{
@@ -1214,7 +1262,7 @@ export default function FuckBettingPage() {
                       {formatDateLabel(date)}
                     </div>
                     {dateMatches.map((r, i) => (
-                      <MatchReportCard key={`${r.home}-${r.away}-${i}`} report={r} />
+                      <MatchReportCard key={`${r.home}-${r.away}-${i}`} report={r} sos={sosMap.get(r.league)} />
                     ))}
                   </div>
                 ))}
