@@ -8,9 +8,13 @@ import { MatchdayProvider } from "@/contexts/MatchdayContext";
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
 
+  // createClient() MUST run in useEffect (client-only). Next 16
+  // prerenders /_not-found — if we call createBrowserClient() in the
+  // component body, it runs during SSR prerender without the
+  // NEXT_PUBLIC_SUPABASE_* env vars available and crashes the build.
   useEffect(() => {
+    const supabase = createClient();
     const timeout = setTimeout(() => setLoading(false), 5000);
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
