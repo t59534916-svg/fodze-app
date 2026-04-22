@@ -1,7 +1,5 @@
 "use client";
 import Kit from "@/components/shared/Kit";
-import TeamRadar from "@/components/match/TeamRadar";
-import MatchPulse from "@/components/match/MatchPulse";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
@@ -50,7 +48,7 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
         </div>
       </div>
 
-      {/* Row 2: Probability Bar + Signal */}
+      {/* Row 2: Probability Bar + best-bet edge pill */}
       {calc && (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {/* Probability Bar */}
@@ -64,10 +62,6 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
             <span style={{ fontSize: 9, color: "#c47070", fontWeight: 600, minWidth: 24, textAlign: "right" }}>{pc(calc.mk.A)}</span>
           </div>
 
-          {/* Signal: plain edge badge — EdgeBadge with Goldilocks meter
-              was removed per user request ("neuen viz bei den cards im
-              analysis tap raus"). Keep on fuck-betting where it still
-              provides value per earlier discussion. */}
           <div style={{ flexShrink: 0 }}>
             {bestBet ? (
               <div style={{
@@ -84,31 +78,6 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
               </span>
             ) : null}
           </div>
-        </div>
-      )}
-
-      {/* Row 2b: MatchPulse — Favorit-Pfeil + Spannung-Dots +
-          Mismatch-Glow auf einem 180×24 Strip. Ergänzt die Probability-
-          Bar um die drei Meta-Signale (wer, wie eng, wo Edge). */}
-      {calc && (
-        <div style={{ display: "flex", justifyContent: "center", marginTop: 6 }}>
-          <MatchPulse calc={calc} width={180} height={22} />
-        </div>
-      )}
-
-      {/* Row 3: Team-Radar-Paar — 5-Achsen-Profil pro Team
-          (Angriff · Defensive · Form · Kader · Δ xG). Nur wenn
-          mindestens eines der Teams xG-Historie hat — sonst bleibt
-          die Card kompakt wie vorher. Radar selbst hover-öffnet
-          den Tooltip mit Werten; keine extra Labels auf der Card. */}
-      {calc && (match.home?.xg_h8 != null || match.away?.xg_a8 != null) && (
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "center",
-          gap: 10, marginTop: 8, paddingTop: 4, borderTop: "1px dashed #c4a26510",
-        }}>
-          <TeamRadar team={match.home} venue="home" size={52} />
-          <span style={{ fontSize: 9, color: "#c4a26540", fontWeight: 500, letterSpacing: "0.08em" }}>vs</span>
-          <TeamRadar team={match.away} venue="away" size={52} />
         </div>
       )}
     </button>
