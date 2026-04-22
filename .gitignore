@@ -8,7 +8,8 @@ node_modules/
 .DS_Store
 Historie/
 tools/
-backtest/
+/backtest/
+!/src/app/backtest/
 *.csv
 *.pyc
 __pycache__/

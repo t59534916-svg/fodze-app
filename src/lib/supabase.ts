@@ -613,3 +613,123 @@ export async function loadLiveOdds(supabase: SupabaseClient, league: string): Pr
   if (error) { console.error("loadLiveOdds error:", error); return []; }
   return data || [];
 }
+
+// ─── Post-Match Backtest: Predictions + Outcomes ─────────────────
+
+export interface MatchPrediction {
+  id?: string;
+  match_key: string;
+  league: string;
+  home_team: string;
+  away_team: string;
+  kickoff?: string | null;
+  engine: "ensemble-v1" | "poisson-ml" | "poisson-ml-v2";
+  prob_h: number;
+  prob_d: number;
+  prob_a: number;
+  prob_o25?: number | null;
+  prob_btts?: number | null;
+  lambda_h?: number | null;
+  lambda_a?: number | null;
+  expected_corners?: number | null;
+  expected_yellow_cards?: number | null;
+  sharp_h?: number | null;
+  sharp_d?: number | null;
+  sharp_a?: number | null;
+  captured_at?: string;
+  captured_by?: string;
+}
+
+export interface MatchOutcome {
+  id?: string;
+  match_key: string;
+  league: string;
+  home_team: string;
+  away_team: string;
+  match_date: string;
+  goals_h: number;
+  goals_a: number;
+  xg_h?: number | null;
+  xg_a?: number | null;
+  npxg_h?: number | null;
+  npxg_a?: number | null;
+  shots_h?: number | null;
+  shots_a?: number | null;
+  shots_on_target_h?: number | null;
+  shots_on_target_a?: number | null;
+  corners_h?: number | null;
+  corners_a?: number | null;
+  yellow_cards_h?: number | null;
+  yellow_cards_a?: number | null;
+  red_cards_h?: number | null;
+  red_cards_a?: number | null;
+  // Generated columns (read-only)
+  total_goals?: number;
+  over25?: boolean;
+  btts?: boolean;
+  outcome_1x2?: "H" | "D" | "A";
+  source?: string;
+}
+
+/**
+ * Idempotent prediction capture. Uses ON CONFLICT to avoid duplicate
+ * inserts when the same match is viewed multiple times. Only updates
+ * probability fields so a later capture refines the snapshot if odds
+ * changed meaningfully.
+ */
+export async function savePrediction(
+  supabase: SupabaseClient,
+  pred: MatchPrediction,
+) {
+  const { error } = await supabase
+    .from("match_predictions")
+    .upsert(pred, { onConflict: "match_key,engine" });
+  if (error) console.warn("[FODZE] savePrediction failed:", error.message);
+}
+
+export async function savePredictionsBulk(
+  supabase: SupabaseClient,
+  preds: MatchPrediction[],
+) {
+  if (preds.length === 0) return;
+  const { error } = await supabase
+    .from("match_predictions")
+    .upsert(preds, { onConflict: "match_key,engine" });
+  if (error) console.warn("[FODZE] savePredictionsBulk failed:", error.message);
+}
+
+export async function loadPredictions(
+  supabase: SupabaseClient,
+  filters?: { league?: string; engine?: string; limit?: number },
+): Promise<MatchPrediction[]> {
+  let q = supabase.from("match_predictions").select("*").order("captured_at", { ascending: false });
+  if (filters?.league) q = q.eq("league", filters.league);
+  if (filters?.engine) q = q.eq("engine", filters.engine);
+  q = q.limit(filters?.limit ?? 500);
+  const { data, error } = await q;
+  if (error) { console.error("loadPredictions error:", error); return []; }
+  return data || [];
+}
+
+export async function saveOutcome(
+  supabase: SupabaseClient,
+  outcome: Omit<MatchOutcome, "total_goals" | "over25" | "btts" | "outcome_1x2">,
+) {
+  const { error } = await supabase
+    .from("match_outcomes")
+    .upsert(outcome, { onConflict: "match_key" });
+  if (error) console.error("saveOutcome error:", error);
+}
+
+export async function loadOutcomes(
+  supabase: SupabaseClient,
+  filters?: { league?: string; since?: string; limit?: number },
+): Promise<MatchOutcome[]> {
+  let q = supabase.from("match_outcomes").select("*").order("match_date", { ascending: false });
+  if (filters?.league) q = q.eq("league", filters.league);
+  if (filters?.since) q = q.gte("match_date", filters.since);
+  q = q.limit(filters?.limit ?? 500);
+  const { data, error } = await q;
+  if (error) { console.error("loadOutcomes error:", error); return []; }
+  return data || [];
+}

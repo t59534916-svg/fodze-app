@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, loadPlayerXGForLeague, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, type TeamXGMatch, type PlayerXgHistoryRow } from "@/lib/supabase";
+import { saveMatchday, loadLatestMatchday, loadLiveOdds, loadOddsHistory, loadAllTeamXGHistory, loadPlayerXGForLeague, toXGHistoryEntries, saveOddsSnapshot, deleteOddsHistory, savePredictionsBulk, type TeamXGMatch, type PlayerXgHistoryRow, type MatchPrediction } from "@/lib/supabase";
 import { matchKey } from "@/lib/format";
 import { parseAbsences } from "@/lib/absence-parser";
 import { buildPlayerXgIndex, hydrateAbsencesWithXG, type PlayerXgRow } from "@/lib/player-impact";
@@ -599,6 +599,65 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     }).catch((e) => {
       console.warn("[FODZE] shadow-log post failed:", (e as Error).message);
     });
+
+    // ── User-facing backtest snapshots ──
+    // Parallel write to the match_predictions table that powers /backtest.
+    // Same source data, richer fields (lambdas, sharp odds, BTTS, kickoff).
+    // Session-dedupe via sessionStorage so re-navigating within the same
+    // session doesn't re-upsert. DB UNIQUE(match_key, engine) would also
+    // prevent duplicate rows, but the extra network round-trip is wasteful.
+    const backtestDedupKey = `backtest:${league}:${todayUTC}`;
+    let shouldCapture = true;
+    try { shouldCapture = !sessionStorage.getItem(backtestDedupKey); } catch { /* private mode */ }
+    if (shouldCapture) {
+      const preds: MatchPrediction[] = [];
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        const calcs = allEngineCalcs[i];
+        if (!calcs || !m.home?.name || !m.away?.name) continue;
+        const mKey = matchKey(league, m.home.name, m.away.name);
+
+        let kickoffIso: string | null = null;
+        if (m.kickoff && /^\d{4}-\d{2}-\d{2}T/.test(m.kickoff)) {
+          kickoffIso = m.kickoff;
+        } else if (baseDate && m.kickoff && /^\d{1,2}:\d{2}$/.test(m.kickoff)) {
+          const [hh, mm] = m.kickoff.split(":");
+          kickoffIso = `${baseDate}T${hh.padStart(2, "0")}:${mm}:00.000Z`;
+        }
+        const sharp = oddsData[i]?._sharp as { h?: number; d?: number; a?: number } | undefined;
+
+        const variants: { engine: MatchPrediction["engine"]; c: MatchCalc | null | undefined }[] = [
+          { engine: "ensemble-v1", c: calcs.ensembleCalc },
+          { engine: "poisson-ml", c: calcs.v1Calc },
+          { engine: "poisson-ml-v2", c: calcs.v2Calc },
+        ];
+        for (const { engine, c } of variants) {
+          if (!c?.mk) continue;
+          const { H, D, A, O25, BTTS } = c.mk as any;
+          if (!(Number.isFinite(H) && Number.isFinite(D) && Number.isFinite(A))) continue;
+          if (Math.abs(H + D + A - 1) >= 0.05) continue;
+          preds.push({
+            match_key: mKey, league,
+            home_team: m.home.name, away_team: m.away.name,
+            kickoff: kickoffIso, engine,
+            prob_h: H, prob_d: D, prob_a: A,
+            prob_o25: Number.isFinite(O25) ? O25 : null,
+            prob_btts: Number.isFinite(BTTS) ? BTTS : null,
+            lambda_h: c.lambdaH ?? null,
+            lambda_a: c.lambdaA ?? null,
+            sharp_h: sharp?.h ?? null,
+            sharp_d: sharp?.d ?? null,
+            sharp_a: sharp?.a ?? null,
+            captured_by: user.id,
+          });
+        }
+      }
+      if (preds.length > 0) {
+        savePredictionsBulk(supabase, preds)
+          .then(() => { try { sessionStorage.setItem(backtestDedupKey, "1"); } catch {} })
+          .catch(() => { /* noop — already logged in the helper */ });
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allEngineCalcs, matches, league, user?.id, data?.date]);
 

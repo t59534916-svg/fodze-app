@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import BetHistoryShare from "@/components/performance/BetHistoryShare";
@@ -319,6 +320,34 @@ export default function PerformancePage() {
       {/* ═══ OVERVIEW TAB ═══ */}
       {tab === "overview" && (
         <>
+          {/* Live post-match Backtest — links to /backtest which
+              scores every captured prediction × outcome pair in real
+              time (Brier/Log-Loss/Favorit-Hitrate per Engine). Distinct
+              from the static backtest figures in the "Cross-Engine"
+              tab below which come from the 2017-2025 historical run. */}
+          <Link href="/backtest" style={{ textDecoration: "none" }}>
+            <div style={{
+              ...S.card,
+              padding: "12px 14px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: `linear-gradient(135deg, ${color.value}15, ${color.goldMid}08)`,
+              border: `1px solid ${color.value}35`,
+              cursor: "pointer",
+            }}>
+              <div>
+                <div style={{ color: color.gold, fontSize: 13, fontWeight: 700, letterSpacing: 0.5 }}>
+                  Post-Match Backtest →
+                </div>
+                <div style={{ ...S.small, marginTop: 2, fontSize: 10 }}>
+                  Live-Scoring jedes Matches: Vorhersage × tatsächlicher Ausgang · Brier / Log-Loss pro Engine
+                </div>
+              </div>
+              <div style={{ color: color.value, fontSize: 20 }}>→</div>
+            </div>
+          </Link>
+
           {/* Live Performance from actual bets */}
           <LivePerformance />
 
