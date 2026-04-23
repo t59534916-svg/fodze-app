@@ -53,7 +53,12 @@ Zero errors in `src/` expected. Two pre-existing errors in `tests/dixon-coles.te
 | `scripts/fetch-results.mjs` | Auto-Settlement + CLV-Recompute beim Settlement | Täglich 02:17 + 08:17 UTC |
 | `scripts/backfill-liga3-openligadb.mjs` | Liga 3 xG via OpenLigaDB (ersetzt alten goals-proxy) | Täglich in settle-bets cron |
 | `scripts/backfill-footystats.mjs` | Echte xG von FootyStats (Skeleton, no-op ohne API-Key) | Im settle-bets-Cron |
-| `scripts/backfill-shots-xg.mjs` | CSV-Shots → per-Match xG (football-data.co.uk) | On demand |
+| `scripts/backfill-shots-xg.mjs` | CSV-Shots → per-Match xG (football-data.co.uk), liga-spezifisch seit Per-Liga-Retraining | On demand |
+| `scripts/fetch-api-sports-stats.mjs --league X --season 2024` | Echtes xG + Stats via api-sports für Saisons 2022–2024 (Free-Tier hat KEIN current season). Priorisiert Nebenligen. Idempotent via source='api-sports'. Budget-aware 100 calls/Tag. | Historical Backfill, Liga für Liga |
+| `scripts/fetch-api-sports-injuries.mjs --all --days 3` | Current-season injuries via api-sports `?league=X&date=Y` (Free-Tier erlaubt date im Range [heute-2, heute+2]). Ersetzt Transfermarkt-Scrape + Groq für neue Injuries (~350K Groq-Tokens/Tag gespart). Schreibt in `player_injuries` mit stabiler player_id. | Daily cron |
+| `scripts/sync-thesportsdb-metadata.mjs --all` | TheSportsDB Team-Metadata-Sync (logos, colors, stadium, IDs). 1 call/Liga. 10-Teams-Limit. | Season-Wechsel / initial |
+| `scripts/fill-thesportsdb-missing.mjs --all` | Fill-Skript mit alias-retry für Teams jenseits des 10-Team-Limits (searchteams + Fallback-Queries). | Nach sync-thesportsdb / neue Teams |
+| `scripts/backfill-missing-opponents.mjs [--league X]` | Paart existierende team_xg_history rows mit leerem opponent via (league, date, venue-flip) | Einmalig / nach backfill-xg-Runs |
 | `scripts/backfill-enrich-matchdays.mjs` | Retroaktiv Form + Tags + Standings + H2H in bestehende Matchdays | Nach backfill-Runs |
 | `scripts/generate-matchday.mjs --league X --seed [--injuries]` | Matchday bauen mit xG + Form + Tags + H2H + Standings + Injuries | Pro Liga, orchestriert via refresh-all |
 | `scripts/seed-matchday.mjs` | JSON → Supabase `matchdays` | Manuell mit eigenem JSON |
@@ -77,14 +82,28 @@ Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo app
 | `transfermarkt-ids.mjs` | GENERIERTE 362-Team-ID-Map + 5-Tier fuzzy resolver |
 | `transfermarkt-aliases.mjs` | 146 manual aliases (Odds-API name → TM name). DE↔EN↔Local Varianten |
 | `transfermarkt-scrape.mjs` | fetchTeamInjuries mit rate-limit + Groq HTML→JSON normalisation + quota detection |
+| `api-sports.mjs` | api-sports v3 Client mit daily+per-minute Rate-Limit-Guards; League-ID-Map; parseFixtureStatistics Helper |
+| `thesportsdb.mjs` | TheSportsDB v1 Client + Liga-ID/Name-Map (19 Ligen) + parseTeamRecord Helper (liefert `api_sports_id` als Cross-Source-Bridge) |
 
 ### Python Tools (nur für Model-Retraining)
 ```bash
 source tools/venv/bin/activate
 DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v2.py --use-full-csv --n-trials 50
+DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v3.py --dry-run  # skeleton — needs ≥1500 api-sports rows
 python3 tools/matchday-predict.py --all-leagues --json
 python3 tools/train-shots-xg.py
+
+# StatsBomb Open Data (Event-Level, für Training-Rohstoff)
+python3 tools/statsbomb/download.py                  # alle 12 Priority-Comps (~1800 matches, ~600 MB)
+python3 tools/statsbomb/download.py --only wc_2022   # einzelne Comp (64 matches, ~200 MB)
+python3 tools/statsbomb/parse.py                     # events → aggregates.csv (34 Features pro team-match)
+python3 tools/statsbomb/parse.py --only-competition "1. Bundesliga"
 ```
+
+`tools/statsbomb/aggregates.csv` liefert für Model-Training Event-level aggregates:
+shots (total/SoT/in-box/out-box/under-pressure/head/foot), xG (StatsBomb's kalibriertes Model), goals,
+avg_shot_x/y, xg_per_shot, pct_shots_in_box, passes (total/completed/%), carries, pressures, fouls, offsides.
+Use-Case: Richer shots-to-xG regression (>R²=0.57 Baseline) + validation-corpus für v3.
 
 ---
 
@@ -135,7 +154,8 @@ Next.js 14 App Router (alle pages "use client")
          Transfermarkt       ← Injuries + Sperren + Yellow-Risk (scraped, per-team)
          Groq Llama 3.1 8b   ← HTML-Table → JSON Normalisation (500K tokens/day free)
          Understat           ← echte xG für Top-5 Ligen (browser-script manually)
-         football-data.co.uk ← CSV historical shots → shots-model xG
+         football-data.co.uk ← CSV historical shots → shots-model xG (liga-spezifisch)
+         api-sports v3       ← echtes xG + Stats für Nebenligen, Saisons 2022–2024 (free 100/Tag, KEIN current)
 ```
 
 ### Engine-Hierarchy im Main-Path (MatchdayContext.calcMatch)
@@ -192,7 +212,8 @@ Strip rendert nur wenn `stripHasContent` (mindestens ein Signal vorhanden) — k
 | Layer | Ligen | Status |
 |---|---|---|
 | Understat (echte xG, 2017–25) | 6 Top-Ligen | ~28.718 Einträge |
-| Shots-Modell (CSV, R²=0.57) | 12 Nebenligen + Top-5 2025/26 | ~8.000 Einträge |
+| Shots-Modell (CSV, per-Liga-Koeffizienten) | 12 Nebenligen + Top-5 2025/26 | ~8.000 Einträge · `source=shots-model-<liga>` oder `shots-model-pooled` |
+| **api-sports v3** (echtes xG + Stats) | Current Season, alle 19 Ligen (soweit verfügbar) | `source=api-sports` · via `scripts/fetch-api-sports-stats.mjs` |
 | OpenLigaDB goals-proxy | Liga 3 (2024/25 + 2025/26) | 1.418 Rows, idempotent upserts täglich |
 | FootyStats (echte xG) | 3. Liga | Skeleton — aktiviert sich bei `FOOTYSTATS_API_KEY` |
 | Liga-Avg Fallback | Teams ohne Historie | Runtime in MatchdayContext |
@@ -374,10 +395,19 @@ bets               — id, match_key, home_team, away_team, market, odds_placed,
 profiles           — Bankroll, risk_profile (K/M/A), display_name, prediction_engine
 live_odds          — Auto-Import (sharp_h/d/a, best_*, commence_time) — ersetzt bei jedem Fetch
 team_xg_history    — Per-Match xG (team, opponent, league, venue, match_date, xg, xga,
-                     goals_for, goals_against, source)
-                     Sources: "understat" | "shots-model" | "goals-proxy" | "footystats"
+                     goals_for, goals_against, shots_for/against, corners_for/against, source)
+                     Sources: "understat" | "shots-model-<liga>" | "shots-model-pooled" |
+                              "goals-proxy" | "footystats" | "api-sports"
                      UNIQUE constraint: (team, league, match_date, venue)
 upcoming_fixtures  — Fixture-Spielplan (aus fetch-odds.mjs piggybacked)
+team_metadata      — TheSportsDB-sourced: logos, colors, stadium, founded_year,
+                     PLUS cross-source IDs (thesportsdb_id, api_sports_id).
+                     Unique: (fodze_league, team_name). Mehrere Aliase pro
+                     thesportsdb_id sind erlaubt (z.B. "RB Leipzig" + "RasenBallsport Leipzig").
+player_injuries    — api-sports-sourced current-season injuries.
+                     (player_id_apisports, fixture_id_apisports) unique. Fields:
+                     injury_type ("Missing Fixture"|"Suspended"|"Questionable"),
+                     reason, player_photo_url, fixture_date, team_id_apisports.
 ```
 
 Standings werden client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`) ODER pipeline-side in `matchday-enrich.mjs::computeStandingsFromXG`. RLS aktiv — User lesen alles, schreiben nur eigene Rows (`bets`, `profiles`). `migration-rls-tighten.sql` hat das 2024 gepatched.

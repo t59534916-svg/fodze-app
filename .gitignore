@@ -23,3 +23,13 @@ backups/
 !public/*.png
 !public/*.jpg
 .vercel
+
+# StatsBomb Open Data cache (downloaded by tools/statsbomb/download.py)
+tools/statsbomb/data/
+tools/statsbomb/aggregates.csv
+
+# FootyStats CSVs (user-downloaded, non-redistributable per ToS)
+tools/footystats/csv/
+
+# Stray scraper log
+missing-tm-aliases.log

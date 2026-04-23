@@ -2,22 +2,41 @@
 """
 FODZE Shots-to-xG Model — Train regression from CSV shot data + Understat real xG
 
-Uses the 6 Understat leagues (BL, EPL, La Liga, Serie A, Ligue 1, Eredivisie)
-where we have BOTH real xG (Understat) and shot data (football-data.co.uk CSVs)
-to learn: xG ≈ β₀ + β₁ × ShotsOnTarget + β₂ × ShotsOffTarget
+Fits a SEPARATE linear regression per Understat league (BL, EPL, La Liga,
+Serie A, Ligue 1, Eredivisie) plus a POOLED fallback across all of them.
 
-Then applies to 12 non-Understat leagues for estimated per-match xG.
+Runtime (scripts/backfill-shots-xg.mjs) picks per-league coefficients
+first and falls back to the pooled model for leagues where we have shot
+CSVs but no real-xG training data (Championship, Liga 2, Serie B, etc.).
+
+Model shape: xG ≈ β₀ + β₁ × ShotsOnTarget + β₂ × ShotsOffTarget
+
+Why per league matters: Nebenliga shots are on average lower quality
+(longer range, more blocks, more pressure) than Top-5 shots. A pooled
+model trained on Top-5 overestimates xG in Championship/Liga 2 by
+0.1–0.2 per match — small per match, large cumulative across 8-game
+windows the engines consume.
 
 Output: public/shots-xg-model.json
+  {
+    "pooled": { intercept, coef_*, r2, mae, rmse, n_train, ... },
+    "leagues": {
+      "bundesliga": { intercept, coef_*, r2, mae, rmse, n_train },
+      "epl":        { ... },
+      ...
+    },
+    "train_season": "2024/25",
+    "_formula": "xG = intercept + coef_on_target*HST + coef_off_target*(HS-HST)"
+  }
 """
 
-import json, os, csv, re
+import json, os, csv
 import numpy as np
 from datetime import datetime
 
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 UNDERSTAT_CSV = os.path.join(PROJECT_ROOT, "tools", "understat_full_matches.csv")
-HISTORIE_DIR = os.path.join(PROJECT_ROOT, "Historie", "data")  # 2024/25 CSVs (same season as Understat)
+HISTORIE_DIR = os.path.join(PROJECT_ROOT, "Historie", "data")
 OUTPUT = os.path.join(PROJECT_ROOT, "public", "shots-xg-model.json")
 
 # Map Understat league names → football-data.co.uk CSV codes
@@ -25,6 +44,12 @@ LEAGUE_MAP = {
     "bundesliga": "D1", "epl": "E0", "la_liga": "SP1",
     "serie_a": "I1", "ligue_1": "F1", "eredivisie": "N1",
 }
+
+# Minimum sample size before we trust a per-league fit. Below this we
+# fall back to the pooled model (and log a warning). 300 team-matches
+# = ~150 matches = half a Top-5 season — enough for a 3-param linear
+# regression to stabilize within ~5% of the asymptotic coefficients.
+MIN_SAMPLES_PER_LEAGUE = 300
 
 # Map Understat team names → CSV team names (subset for matching)
 TEAM_MAP = {
@@ -57,11 +82,18 @@ TEAM_MAP = {
     "AZ": "AZ Alkmaar", "Twente": "Twente", "Utrecht": "Utrecht",
 }
 
-print("═══ FODZE Shots-to-xG Model Training ═══\n")
+print("═══ FODZE Shots-to-xG Model Training (per-league + pooled) ═══\n")
 
 # ── 1. Load Understat per-match data (2024/25 season) ──
 print("Loading Understat data (2024/25)...")
-understat = {}  # key: (csv_team, date, venue) → xG
+understat = {}  # key: (csv_team, date, venue) → {xg, xga, league}
+
+# Reverse lookup: Understat league slugs inside CSV → our league key
+UNDERSTAT_SLUG = {
+    "Bundesliga": "bundesliga", "EPL": "epl", "La_liga": "la_liga",
+    "Serie_A": "serie_a", "Ligue_1": "ligue_1", "Eredivisie": "eredivisie",
+}
+
 with open(UNDERSTAT_CSV, "r") as f:
     for row in csv.DictReader(f):
         if row["season"] != "2024/25":
@@ -69,38 +101,40 @@ with open(UNDERSTAT_CSV, "r") as f:
         team = row["team"]
         csv_name = TEAM_MAP.get(team, team)
         date = row["date"][:10]
-        venue = row["h_a"]  # "h" or "a"
+        venue = row["h_a"]
         xg = float(row["xg"])
         xga = float(row["xga"])
-        understat[(csv_name, date, venue)] = {"xg": xg, "xga": xga}
+        # league may or may not be in the CSV — best-effort attach it here
+        league_raw = row.get("league", "")
+        understat[(csv_name, date, venue)] = {
+            "xg": xg, "xga": xga,
+            "league_raw": league_raw,
+        }
 
-print(f"  {len(understat)} Understat per-match entries loaded")
+print(f"  {len(understat)} Understat per-match entries loaded\n")
 
-# ── 2. Load CSV shot data (2024/25 season) and join with Understat ──
-print("Loading CSV shot data and joining...")
-X_train = []  # [shots_on_target, shots_off_target]
-y_train = []  # real xG
-
-matches_joined = 0
+# ── 2. Per-league training sets ──
+print("Joining CSV shot data per league...")
+per_league = {lg: {"X": [], "y": []} for lg in LEAGUE_MAP}
 matches_missed = 0
 
 for league, csv_code in LEAGUE_MAP.items():
     csv_path = os.path.join(HISTORIE_DIR, f"{csv_code}.csv")
     if not os.path.exists(csv_path):
+        print(f"  {league}: CSV missing ({csv_code}.csv)")
         continue
 
     with open(csv_path, "r", encoding="latin-1") as f:
         reader = csv.DictReader(f)
         for row in reader:
             date_str = row.get("Date", "").strip()
-            # Parse date (DD/MM/YYYY or DD/MM/YY)
             try:
                 if len(date_str.split("/")[-1]) == 4:
                     dt = datetime.strptime(date_str, "%d/%m/%Y")
                 else:
                     dt = datetime.strptime(date_str, "%d/%m/%y")
                 date_iso = dt.strftime("%Y-%m-%d")
-            except:
+            except Exception:
                 continue
 
             ht = row.get("HomeTeam", "").strip()
@@ -114,83 +148,120 @@ for league, csv_code in LEAGUE_MAP.items():
             except (ValueError, TypeError):
                 continue
 
-            # Join home team with Understat
             key_h = (ht, date_iso, "h")
             if key_h in understat:
-                X_train.append([hst, hs - hst])  # [on_target, off_target]
-                y_train.append(understat[key_h]["xg"])
-                matches_joined += 1
+                per_league[league]["X"].append([hst, hs - hst])
+                per_league[league]["y"].append(understat[key_h]["xg"])
             else:
                 matches_missed += 1
 
-            # Join away team
             key_a = (at, date_iso, "a")
             if key_a in understat:
-                X_train.append([ast, as_ - ast])
-                y_train.append(understat[key_a]["xg"])
-                matches_joined += 1
+                per_league[league]["X"].append([ast, as_ - ast])
+                per_league[league]["y"].append(understat[key_a]["xg"])
             else:
                 matches_missed += 1
 
-print(f"  Joined: {matches_joined} team-matches")
-print(f"  Missed: {matches_missed} (name/date mismatch)")
+total_joined = sum(len(d["X"]) for d in per_league.values())
+print(f"  Joined {total_joined} team-matches across {len(LEAGUE_MAP)} leagues")
+print(f"  Missed {matches_missed} (name/date mismatch — common for newly promoted teams)\n")
 
-if matches_joined < 100:
-    print("⚠️  Too few matches joined! Check team name mappings.")
-    # Try fuzzy matching as fallback
-    print("  Attempting fuzzy match...")
+# ── 3. Fit one OLS model per league ──
+def fit_ols(X_list, y_list):
+    """Fit xG = β₀ + β₁·SOT + β₂·SOFF; return coefs + metrics."""
+    if len(X_list) == 0:
+        return None
+    X = np.array(X_list, dtype=float)
+    y = np.array(y_list, dtype=float)
+    X1 = np.column_stack([np.ones(len(X)), X])
+    beta, *_ = np.linalg.lstsq(X1, y, rcond=None)
+    y_pred = X1 @ beta
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    mae = float(np.mean(np.abs(y - y_pred)))
+    rmse = float(np.sqrt(np.mean((y - y_pred) ** 2)))
+    return {
+        "intercept": round(float(beta[0]), 6),
+        "coef_shots_on_target": round(float(beta[1]), 6),
+        "coef_shots_off_target": round(float(beta[2]), 6),
+        "r2": round(r2, 4),
+        "mae": round(mae, 4),
+        "rmse": round(rmse, 4),
+        "n_train": len(X),
+        "mean_xg_actual": round(float(np.mean(y)), 4),
+        "mean_xg_predicted": round(float(np.mean(y_pred)), 4),
+    }
 
-X = np.array(X_train)
-y = np.array(y_train)
+print("═══ PER-LEAGUE FITS ═══")
+leagues_out = {}
+low_sample_warnings = []
 
-# ── 3. Train Linear Regression ──
-print(f"\nTraining on {len(X)} samples...")
+for league in LEAGUE_MAP:
+    data = per_league[league]
+    n = len(data["X"])
+    if n < MIN_SAMPLES_PER_LEAGUE:
+        low_sample_warnings.append((league, n))
+        print(f"  {league:14s} SKIP (only {n} samples, min {MIN_SAMPLES_PER_LEAGUE}) — will use pooled")
+        continue
+    fit = fit_ols(data["X"], data["y"])
+    if fit is None:
+        continue
+    leagues_out[league] = fit
+    print(f"  {league:14s} n={fit['n_train']:4d}  R²={fit['r2']:.3f}  "
+          f"xG = {fit['intercept']:+.3f} + {fit['coef_shots_on_target']:.3f}·SOT "
+          f"+ {fit['coef_shots_off_target']:.3f}·SOFF   "
+          f"Ø actual={fit['mean_xg_actual']} pred={fit['mean_xg_predicted']}")
 
-# Add intercept
-X_with_intercept = np.column_stack([np.ones(len(X)), X])
+print()
 
-# Closed-form solution: β = (X'X)^(-1) X'y
-beta = np.linalg.lstsq(X_with_intercept, y, rcond=None)[0]
-b0, b1, b2 = beta
+# ── 4. Pooled fallback (all leagues combined) ──
+print("═══ POOLED FALLBACK ═══")
+X_all, y_all = [], []
+for data in per_league.values():
+    X_all.extend(data["X"])
+    y_all.extend(data["y"])
+pooled = fit_ols(X_all, y_all)
+print(f"  pooled         n={pooled['n_train']:4d}  R²={pooled['r2']:.3f}  "
+      f"xG = {pooled['intercept']:+.3f} + {pooled['coef_shots_on_target']:.3f}·SOT "
+      f"+ {pooled['coef_shots_off_target']:.3f}·SOFF   "
+      f"Ø actual={pooled['mean_xg_actual']} pred={pooled['mean_xg_predicted']}\n")
 
-# Predictions
-y_pred = X_with_intercept @ beta
-
-# Metrics
-ss_res = np.sum((y - y_pred) ** 2)
-ss_tot = np.sum((y - np.mean(y)) ** 2)
-r2 = 1 - ss_res / ss_tot
-mae = np.mean(np.abs(y - y_pred))
-rmse = np.sqrt(np.mean((y - y_pred) ** 2))
-
-print(f"\n═══ MODEL RESULTS ══��")
-print(f"  xG = {b0:.4f} + {b1:.4f} × ShotsOnTarget + {b2:.4f} × ShotsOffTarget")
-print(f"  R²  = {r2:.4f}")
-print(f"  MAE = {mae:.4f}")
-print(f"  RMSE = {rmse:.4f}")
-print(f"  Mean xG: {np.mean(y):.4f} (actual), {np.mean(y_pred):.4f} (predicted)")
-
-# Sanity checks
-print(f"\n  Example predictions:")
+# Sanity checks on sample predictions against both pooled and a per-league fit
+sample_leagues = [l for l in ("bundesliga", "epl") if l in leagues_out]
+print("Sample predictions (pooled vs per-league):")
 for sot, soff in [(3, 5), (5, 8), (8, 10), (1, 3)]:
-    pred = b0 + b1 * sot + b2 * soff
-    print(f"    {sot} on target + {soff} off target → xG = {pred:.2f}")
+    pool_pred = pooled["intercept"] + pooled["coef_shots_on_target"] * sot + pooled["coef_shots_off_target"] * soff
+    line = f"  {sot} SOT + {soff} SOFF → pooled={pool_pred:.2f}"
+    for lg in sample_leagues:
+        m = leagues_out[lg]
+        lg_pred = m["intercept"] + m["coef_shots_on_target"] * sot + m["coef_shots_off_target"] * soff
+        line += f"  {lg}={lg_pred:.2f}"
+    print(line)
 
-# ── 4. Export model ──
-model = {
-    "intercept": round(float(b0), 6),
-    "coef_shots_on_target": round(float(b1), 6),
-    "coef_shots_off_target": round(float(b2), 6),
-    "r2": round(float(r2), 4),
-    "mae": round(float(mae), 4),
-    "rmse": round(float(rmse), 4),
-    "n_train": len(X),
-    "train_leagues": list(LEAGUE_MAP.keys()),
+# ── 5. Export model ──
+output = {
+    "pooled": pooled,
+    "leagues": leagues_out,
     "train_season": "2024/25",
-    "_formula": "xG = intercept + coef_shots_on_target * HST + coef_shots_off_target * (HS - HST)",
+    "min_samples_per_league": MIN_SAMPLES_PER_LEAGUE,
+    "_formula": "xG = intercept + coef_shots_on_target * SOT + coef_shots_off_target * (Shots - SOT)",
+    "_notes": (
+        "Per-league models are applied when the target league key is in `leagues`. "
+        "Otherwise the runtime falls back to `pooled`. The pooled fit is trained on "
+        "Top-5 + Eredivisie, which overestimates xG in lower-quality leagues "
+        "(Championship, Liga 2, Serie B) by ~0.1–0.2 per match — use pooled "
+        "results for these leagues with that caveat in mind."
+    ),
 }
+if low_sample_warnings:
+    output["_low_sample_skipped"] = [{"league": lg, "n": n} for lg, n in low_sample_warnings]
 
 with open(OUTPUT, "w") as f:
-    json.dump(model, f, indent=2)
+    json.dump(output, f, indent=2)
 
 print(f"\n✅ Model saved to {OUTPUT}")
+print(f"   Per-league fits: {len(leagues_out)}")
+print(f"   Pooled fallback: n={pooled['n_train']}")
+if low_sample_warnings:
+    print(f"   Low-sample skipped: {', '.join(f'{lg} ({n})' for lg, n in low_sample_warnings)}")

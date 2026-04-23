@@ -75,15 +75,35 @@ const UNDERSTAT_LEAGUES = {
 
 function generateBrowserScript(leagueSlug) {
   return `// ═══ FODZE xG Backfill — ${leagueSlug} ═══
-// Dieses Script extrahiert ALLE per-Match xG-Daten für die Supabase team_xg_history Tabelle
+// Extrahiert per-Match xG-Daten + opponent-Namen für team_xg_history.
+// Die opponent-Paarung kommt aus Understat's globalem datesData, weil
+// teamsData[t].history[] selbst keinen opponent-Feld liefert.
+const oppByDateTeam = {};
+if (typeof datesData !== "undefined" && datesData) {
+  Object.entries(datesData).forEach(([d, list]) => {
+    (list || []).forEach(m => {
+      const date = (d || m.datetime || "").split(" ")[0];
+      const h = (m.h && m.h.title) || null;
+      const a = (m.a && m.a.title) || null;
+      if (date && h && a) {
+        oppByDateTeam[date + "|" + h] = a;
+        oppByDateTeam[date + "|" + a] = h;
+      }
+    });
+  });
+}
 const result = [];
+let unpaired = 0;
 Object.values(teamsData).forEach(t => {
   t.history.forEach(g => {
+    const date = (g.date || g.datetime || "").split(" ")[0];
+    const opp = oppByDateTeam[date + "|" + t.title] || "";
+    if (!opp) unpaired++;
     result.push({
       team: t.title,
-      opponent: "", // wird beim Seed ergänzt
+      opponent: opp,
       venue: g.h_a === "h" ? "home" : "away",
-      match_date: (g.date||g.datetime || "").split(" ")[0],
+      match_date: date,
       xg: +parseFloat(g.xG).toFixed(2),
       xga: +parseFloat(g.xGA).toFixed(2),
       goals_for: parseInt(g.scored) || 0,
@@ -94,7 +114,8 @@ Object.values(teamsData).forEach(t => {
 });
 copy(JSON.stringify(result));
 console.log("✅ " + result.length + " Einträge in Clipboard!");
-console.log("Teams:", [...new Set(result.map(r => r.team))].length);`;
+console.log("Teams:", [...new Set(result.map(r => r.team))].length);
+if (unpaired > 0) console.warn("⚠ " + unpaired + " Einträge ohne opponent (datesData-Paarung fehlgeschlagen)");`;
 }
 
 // ─── Seed to Supabase ────────────────────────────────────────────────
@@ -104,6 +125,10 @@ async function seedRows(league, rows) {
   const valid = rows.filter(r => r.match_date && r.match_date.match(/^\d{4}-\d{2}-\d{2}$/));
   if (valid.length < rows.length) {
     warn(`${rows.length - valid.length} Einträge ohne gültiges Datum übersprungen`);
+  }
+  const missingOpp = valid.filter(r => !r.opponent).length;
+  if (missingOpp > 0) {
+    warn(`${missingOpp} Einträge ohne opponent — SoS-Adjustment kann Gegnerstärke nicht berücksichtigen. Browser-Script Output neu nehmen oder später via scripts/backfill-missing-opponents.mjs paaren.`);
   }
 
   let inserted = 0;

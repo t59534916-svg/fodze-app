@@ -61,18 +61,45 @@ const FORCE = args.includes("--force");
 const ALL = args.includes("--all");
 const singleLeague = args.find((a, i) => args[i - 1] === "--league");
 
-// ─── Load model ──────────────────────────────────────────────────
+// ─── Load model (per-league + pooled fallback) ───────────────────
 const model = JSON.parse(readFileSync(MODEL_PATH, "utf-8"));
-const { intercept, coef_shots_on_target, coef_shots_off_target } = model;
 
-function estimateXG(shotsOnTarget, shotsTotal) {
+// Support BOTH shapes:
+//   New: { pooled: {intercept, coef_*, ...}, leagues: { bundesliga: {...}, ... } }
+//   Old: { intercept, coef_shots_on_target, coef_shots_off_target, ... } (backward-compat)
+const pooledCoefs = model.pooled
+  ? model.pooled
+  : {
+      intercept: model.intercept,
+      coef_shots_on_target: model.coef_shots_on_target,
+      coef_shots_off_target: model.coef_shots_off_target,
+      r2: model.r2, mae: model.mae, n_train: model.n_train,
+    };
+const leagueCoefs = model.leagues || {};
+
+function getCoefsForLeague(league) {
+  const c = leagueCoefs[league];
+  if (c) return { coefs: c, source: "league" };
+  return { coefs: pooledCoefs, source: "pooled" };
+}
+
+function estimateXG(shotsOnTarget, shotsTotal, coefs) {
   const shotsOff = Math.max(0, shotsTotal - shotsOnTarget);
-  return Math.max(0.05, intercept + coef_shots_on_target * shotsOnTarget + coef_shots_off_target * shotsOff);
+  return Math.max(
+    0.05,
+    coefs.intercept
+      + coefs.coef_shots_on_target * shotsOnTarget
+      + coefs.coef_shots_off_target * shotsOff,
+  );
 }
 
 console.log("═══ FODZE Shots-to-xG Backfill ═══");
-console.log(`Model: xG = ${intercept.toFixed(4)} + ${coef_shots_on_target.toFixed(4)}×SOT + ${coef_shots_off_target.toFixed(4)}×SOFF`);
-console.log(`R² = ${model.r2}, MAE = ${model.mae}`);
+console.log(`Pooled fallback: xG = ${pooledCoefs.intercept.toFixed(4)} + ${pooledCoefs.coef_shots_on_target.toFixed(4)}×SOT + ${pooledCoefs.coef_shots_off_target.toFixed(4)}×SOFF (R²=${pooledCoefs.r2}, n=${pooledCoefs.n_train})`);
+if (Object.keys(leagueCoefs).length > 0) {
+  console.log(`Per-league fits loaded: ${Object.keys(leagueCoefs).join(", ")}`);
+} else {
+  console.log(`⚠ No per-league fits in model — every league will use the pooled fallback. Run tools/train-shots-xg.py with updated training data.`);
+}
 console.log(`Mode: ${DRY ? "DRY RUN" : "LIVE"}\n`);
 
 // ─── Determine leagues to process ────────────────────────────────
@@ -96,6 +123,11 @@ for (const league of leagues) {
 
   const csvPath = resolve(CSV_DIR, `${csvCode}.csv`);
   if (!existsSync(csvPath)) { console.log(`❌ CSV not found: ${csvPath}`); continue; }
+
+  // Resolve per-league coefficients (or pooled fallback)
+  const { coefs, source } = getCoefsForLeague(league);
+  const modelTag = source === "league" ? `shots-model-${league}` : "shots-model-pooled";
+  console.log(`${league}: using ${source === "league" ? `per-league fit (R²=${coefs.r2}, n=${coefs.n_train})` : "POOLED FALLBACK — xG may be biased 0.1–0.2 high for this league"}`);
 
   const csvContent = readFileSync(csvPath, "utf-8");
   // Simple CSV parsing (handle BOM)
@@ -137,8 +169,8 @@ for (const league of leagues) {
 
     if (hs === 0 && as_ === 0) continue; // No shot data
 
-    const homeXG = estimateXG(hst, hs);
-    const awayXG = estimateXG(ast, as_);
+    const homeXG = estimateXG(hst, hs, coefs);
+    const awayXG = estimateXG(ast, as_, coefs);
 
     // Phase 3.1: also persist corner counts when football-data.co.uk's
     // HC/AC columns are present (they are on all Main-CSV seasons since
@@ -157,7 +189,7 @@ for (const league of leagues) {
       corners_for: hc, corners_against: ac,
       shots_for: hs, shots_against: as_,
       shots_on_target_for: hst, shots_on_target_against: ast,
-      source: "shots-model",
+      source: modelTag,
     });
 
     // Away perspective
@@ -168,7 +200,7 @@ for (const league of leagues) {
       corners_for: ac, corners_against: hc,
       shots_for: as_, shots_against: hs,
       shots_on_target_for: ast, shots_on_target_against: hst,
-      source: "shots-model",
+      source: modelTag,
     });
   }
 
