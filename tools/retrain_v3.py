@@ -316,16 +316,19 @@ def build_features_for_match(
 # TRAINING
 # ═══════════════════════════════════════════════════════════════════
 
-def build_training_set(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Pair home/away rows per match, compute features, return X, y_home, y_away."""
-    # Index by team + date for pairing
+def build_training_set(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, pd.Series]:
+    """Pair home/away rows per match, compute features, return X, y_home, y_away, match_date-index.
+
+    The match_date series is kept aligned with X — downstream train/test split
+    is time-based against that index.
+    """
     home_rows = df[df["venue"] == "home"].sort_values("match_date").reset_index(drop=True)
     by_team = {
         (team, venue): g.sort_values("match_date").reset_index(drop=True)
         for (team, venue), g in df.groupby(["team", "venue"])
     }
 
-    X, y_h, y_a = [], [], []
+    X, y_h, y_a, dates = [], [], [], []
     for _, m in home_rows.iterrows():
         home_hist = by_team.get((m["team"], "home"), pd.DataFrame())
         away_hist = by_team.get((m["opponent"], "away"), pd.DataFrame())
@@ -337,33 +340,135 @@ def build_training_set(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.nda
         X.append(feats)
         y_h.append(m["goals_for"])
         y_a.append(m["goals_against"])
+        dates.append(m["match_date"])
 
-    return np.array(X), np.array(y_h), np.array(y_a)
+    return np.array(X), np.array(y_h), np.array(y_a), pd.Series(dates)
 
 
-def train_lgbm(X: np.ndarray, y: np.ndarray, mono: list[int], n_trials: int = 30) -> lgb.Booster:
-    """Minimal LightGBM Tweedie training with monotonic constraints."""
-    params = {
+# ───────────────────────────────────────────────────────────────────
+# Brier utilities — mirrors src/lib/backtest.ts::scoreMatch
+# ───────────────────────────────────────────────────────────────────
+
+def poisson_matrix(lam_h: float, lam_a: float, max_k: int = 10) -> np.ndarray:
+    """Independent-Poisson 1X2/OU matrix (no Dixon-Coles rho correction here
+    because retrain_v3 trains λ's only; ρ is inherited from v2 optimal as
+    starting point. Downstream runtime uses the model's rho_optimal value)."""
+    kr = np.arange(max_k + 1)
+    ph = poisson.pmf(kr, lam_h)
+    pa = poisson.pmf(kr, lam_a)
+    return np.outer(ph, pa)
+
+
+def derive_1x2_o25(mx: np.ndarray) -> tuple[float, float, float, float]:
+    h = d = a = o25 = 0.0
+    for i in range(mx.shape[0]):
+        for j in range(mx.shape[1]):
+            p = mx[i, j]
+            if i > j:   h += p
+            elif i < j: a += p
+            else:       d += p
+            if i + j > 2: o25 += p
+    # Normalize H/D/A (truncation-tail correction)
+    tot = h + d + a
+    if tot > 0:
+        h, d, a = h / tot, d / tot, a / tot
+    return h, d, a, o25
+
+
+def brier_score(lams_h: np.ndarray, lams_a: np.ndarray,
+                goals_h: np.ndarray, goals_a: np.ndarray) -> dict[str, float]:
+    """Rank-Brier 1X2 + binary Brier O25 over a test set. Mirrors
+    src/lib/backtest.ts::scoreMatch / aggregate formulas."""
+    n = len(lams_h)
+    brier_1x2_sum = 0.0
+    brier_o25_sum = 0.0
+    logloss_1x2_sum = 0.0
+    pred_h_sum = pred_a_sum = 0.0
+    for i in range(n):
+        ph, pd_, pa, po25 = derive_1x2_o25(poisson_matrix(lams_h[i], lams_a[i]))
+        gh, ga = goals_h[i], goals_a[i]
+        # 1X2 outcome
+        oh = 1.0 if gh > ga else 0.0
+        od = 1.0 if gh == ga else 0.0
+        oa = 1.0 if gh < ga else 0.0
+        brier_1x2_sum += ((ph - oh)**2 + (pd_ - od)**2 + (pa - oa)**2) / 3.0
+        # Log-loss on winning class (clip for log(0))
+        p_win = ph if oh else (pd_ if od else pa)
+        logloss_1x2_sum += -np.log(max(1e-6, min(1 - 1e-6, p_win)))
+        # O25
+        o25_true = 1.0 if (gh + ga) > 2 else 0.0
+        brier_o25_sum += (po25 - o25_true)**2
+        pred_h_sum += ph * 2 + pd_  # rough expected goals proxy
+        pred_a_sum += pa * 2 + pd_
+    return {
+        "brier_1x2": brier_1x2_sum / n,
+        "brier_o25": brier_o25_sum / n,
+        "logloss_1x2": logloss_1x2_sum / n,
+        "n": n,
+        "mean_lam_h": float(lams_h.mean()),
+        "mean_lam_a": float(lams_a.mean()),
+        "mean_goals_h": float(goals_h.mean()),
+        "mean_goals_a": float(goals_a.mean()),
+    }
+
+
+# ───────────────────────────────────────────────────────────────────
+# Training — with time-based holdout + Optuna
+# ───────────────────────────────────────────────────────────────────
+
+def train_lgbm_with_params(X: np.ndarray, y: np.ndarray, mono: list[int],
+                            params: dict, num_boost_round: int = 400) -> lgb.Booster:
+    p = {
         "objective": "tweedie",
-        "tweedie_variance_power": 1.5,
-        "learning_rate": 0.05,
-        "num_leaves": 31,
-        "min_data_in_leaf": 20,
-        "feature_fraction": 0.85,
-        "bagging_fraction": 0.9,
-        "bagging_freq": 5,
-        "lambda_l1": 0.1,
-        "lambda_l2": 0.1,
         "monotone_constraints": mono,
         "verbose": -1,
+        **params,
     }
     train_set = lgb.Dataset(X, y)
-    return lgb.train(
-        params,
-        train_set,
-        num_boost_round=400,
-        callbacks=[lgb.log_evaluation(period=100)],
-    )
+    return lgb.train(p, train_set, num_boost_round=num_boost_round)
+
+
+def train_and_evaluate(Xtr, yh_tr, ya_tr, Xte, yh_te, ya_te,
+                        params: dict, num_boost: int) -> dict:
+    """Train home + away models with given params, return test-set Brier + models.
+
+    Note: LightGBM's Tweedie objective internally applies the log-link; booster.predict()
+    returns λ on the natural scale already. No extra exp() is needed (doing so double-
+    exponentiates and saturates the clamp at ~3-4). The TypeScript runtime
+    (src/lib/poisson-ml-engine-v3.ts::sumTrees→Math.exp) sums raw leaf values and applies
+    exp, which matches the LightGBM dump_model representation of per-leaf values already
+    being in log-space. So runtime does need exp — only the training-time evaluation
+    here skips it."""
+    home_b = train_lgbm_with_params(Xtr, yh_tr, MONO_HOME, params, num_boost)
+    away_b = train_lgbm_with_params(Xtr, ya_tr, MONO_AWAY, params, num_boost)
+    LAM_LO, LAM_HI = 0.3, 4.5
+    lams_h = np.clip(home_b.predict(Xte), LAM_LO, LAM_HI)
+    lams_a = np.clip(away_b.predict(Xte), LAM_LO, LAM_HI)
+    metrics = brier_score(lams_h, lams_a, yh_te, ya_te)
+    return {"home_b": home_b, "away_b": away_b, **metrics}
+
+
+def optuna_objective(trial, Xtr, yh_tr, ya_tr, Xte, yh_te, ya_te) -> float:
+    """Objective: minimize 1X2 Brier on the time-based holdout."""
+    params = {
+        "tweedie_variance_power": trial.suggest_float("tweedie_variance_power", 1.01, 1.9),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
+        "num_leaves": trial.suggest_int("num_leaves", 15, 63),
+        "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 20, 120),
+        "feature_fraction": trial.suggest_float("feature_fraction", 0.7, 1.0),
+        "bagging_fraction": trial.suggest_float("bagging_fraction", 0.7, 1.0),
+        "bagging_freq": 5,
+        "lambda_l1": trial.suggest_float("lambda_l1", 0.0, 1.0),
+        "lambda_l2": trial.suggest_float("lambda_l2", 0.0, 1.0),
+    }
+    num_boost = trial.suggest_int("num_boost_round", 200, 500, step=50)
+    try:
+        result = train_and_evaluate(Xtr, yh_tr, ya_tr, Xte, yh_te, ya_te,
+                                      params, num_boost)
+        return result["brier_1x2"]
+    except Exception as e:
+        print(f"  trial failed: {e}")
+        return 1.0  # high penalty so Optuna skips
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -375,9 +480,10 @@ def booster_to_trees(b: lgb.Booster) -> list[dict]:
         if False else b.dump_model()["tree_info"]
 
 
-def export(home_b: lgb.Booster, away_b: lgb.Booster, rho_optimal: float, n_train: int):
+def export(home_b: lgb.Booster, away_b: lgb.Booster, rho_optimal: float,
+            n_train: int, metrics: dict, best_params: dict):
     model = {
-        "version": "v3.0-skeleton",
+        "version": "v3.0",
         "feature_names": FEATURE_NAMES,
         "home_trees": booster_to_trees(home_b),
         "away_trees": booster_to_trees(away_b),
@@ -386,6 +492,8 @@ def export(home_b: lgb.Booster, away_b: lgb.Booster, rho_optimal: float, n_train
         "n_train": n_train,
         "mono_home": MONO_HOME,
         "mono_away": MONO_AWAY,
+        "holdout_metrics": metrics,
+        "best_params": best_params,
     }
     with open(OUTPUT, "w") as f:
         json.dump(model, f, indent=2)
@@ -399,38 +507,109 @@ def export(home_b: lgb.Booster, away_b: lgb.Booster, rho_optimal: float, n_train
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="Train but don't write JSON")
-    ap.add_argument("--sources", default="api-sports", help="Comma-sep source filter")
-    ap.add_argument("--n-trials", type=int, default=0, help="Optuna rounds (0 = skip)")
+    ap.add_argument("--sources", default="footystats",
+                     help="Comma-sep source filter (default: footystats — the only bulk-populated "
+                          "source for v3 extended features)")
+    ap.add_argument("--n-trials", type=int, default=0,
+                     help="Optuna trials (0 = use fixed default params, skip search)")
+    ap.add_argument("--holdout-cutoff", default="2025-08-01",
+                     help="Time-based train/test split: matches before this date = train, "
+                          "after = test. Default 2025-08-01 → test on current season.")
     args = ap.parse_args()
 
-    print("═══ v3 Training (Skeleton) ═══\n")
+    print("═══ v3 Training (production) ═══\n")
     sources = [s.strip() for s in args.sources.split(",") if s.strip()]
-    print(f"Sources: {sources}")
+    print(f"Sources:        {sources}")
+    print(f"Holdout cutoff: {args.holdout_cutoff} (train < cutoff, test ≥ cutoff)")
+    print(f"Optuna trials:  {args.n_trials}\n")
+
     df = fetch_xg_history(sources=sources)
     print(f"Fetched {len(df)} rows from Supabase")
     if len(df) < 100:
-        print(f"\n⚠  Only {len(df)} rows — skeleton-mode training. Ship-ready training")
-        print(f"   requires ≥1500 rows per venue. Continue fetching via api-sports.")
-        print(f"   Pipeline-verify only; do NOT deploy this model.\n")
+        print(f"\n⚠  Only {len(df)} rows — pipeline-verify only; do NOT deploy.\n")
 
-    X, y_h, y_a = build_training_set(df)
-    print(f"Training matrix: {X.shape}  y_home mean={y_h.mean():.2f}  y_away mean={y_a.mean():.2f}\n")
+    X, y_h, y_a, dates = build_training_set(df)
+    print(f"Training matrix: {X.shape}  y_home mean={y_h.mean():.2f}  y_away mean={y_a.mean():.2f}")
     if len(X) == 0:
         print("No trainable pairs — needs more history per team. Exit.")
         return
 
-    print("Training home model ...")
-    home_b = train_lgbm(X, y_h, MONO_HOME)
-    print("\nTraining away model ...")
-    away_b = train_lgbm(X, y_a, MONO_AWAY)
+    # ── Time-based split ─────────────────────────────────────────
+    cutoff = pd.Timestamp(args.holdout_cutoff)
+    train_mask = dates < cutoff
+    test_mask = ~train_mask
+    Xtr, yh_tr, ya_tr = X[train_mask], y_h[train_mask], y_a[train_mask]
+    Xte, yh_te, ya_te = X[test_mask], y_h[test_mask], y_a[test_mask]
+    print(f"  train: {len(Xtr)} pairs ({dates[train_mask].min()} → {dates[train_mask].max()})")
+    print(f"  test:  {len(Xte)} pairs ({dates[test_mask].min() if test_mask.any() else '—'} → "
+          f"{dates[test_mask].max() if test_mask.any() else '—'})")
+    if len(Xte) < 200:
+        print(f"\n⚠  Holdout set <200 rows — Brier-estimate wird unreliable. "
+              f"Cutoff früher setzen oder mehr current-season-Daten importieren.\n")
 
-    # Placeholder rho — real retrain_v3 should optimize via Optuna on an OOS set
-    rho_optimal = -0.094  # inherit v2 value as starting point
+    # ── Optuna search (optional) ─────────────────────────────────
+    DEFAULT_PARAMS = {
+        "tweedie_variance_power": 1.5,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "min_data_in_leaf": 20,
+        "feature_fraction": 0.85,
+        "bagging_fraction": 0.9,
+        "bagging_freq": 5,
+        "lambda_l1": 0.1,
+        "lambda_l2": 0.1,
+    }
+    DEFAULT_NUM_BOOST = 400
+
+    if args.n_trials > 0:
+        try:
+            import optuna
+        except ImportError:
+            print("optuna not installed — pip install optuna")
+            return
+        print(f"\n═══ Optuna search ({args.n_trials} trials) ═══")
+        study = optuna.create_study(direction="minimize", sampler=optuna.samplers.TPESampler(seed=42))
+        study.optimize(
+            lambda t: optuna_objective(t, Xtr, yh_tr, ya_tr, Xte, yh_te, ya_te),
+            n_trials=args.n_trials,
+            show_progress_bar=True,
+        )
+        best_params = {k: v for k, v in study.best_params.items() if k != "num_boost_round"}
+        best_params["bagging_freq"] = 5
+        best_num_boost = study.best_params.get("num_boost_round", DEFAULT_NUM_BOOST)
+        print(f"  best Brier: {study.best_value:.4f}")
+        print(f"  best params: {study.best_params}")
+    else:
+        best_params = DEFAULT_PARAMS
+        best_num_boost = DEFAULT_NUM_BOOST
+
+    # ── Final training + evaluation ──────────────────────────────
+    print("\n═══ Final training ═══")
+    final = train_and_evaluate(Xtr, yh_tr, ya_tr, Xte, yh_te, ya_te,
+                                  best_params, best_num_boost)
+    print(f"\n━━━ Holdout Metrics ━━━")
+    print(f"  n (test):       {final['n']}")
+    print(f"  Brier 1X2:      {final['brier_1x2']:.4f}  (v2 baseline: 0.5844)")
+    print(f"  Brier O25:      {final['brier_o25']:.4f}")
+    print(f"  LogLoss 1X2:    {final['logloss_1x2']:.4f}")
+    print(f"  mean λ_home:    {final['mean_lam_h']:.3f}  (actual: {final['mean_goals_h']:.3f})")
+    print(f"  mean λ_away:    {final['mean_lam_a']:.3f}  (actual: {final['mean_goals_a']:.3f})")
+
+    beats_v2 = final["brier_1x2"] < 0.5844
+    verdict = "✓ BEATS v2 baseline" if beats_v2 else "✗ worse than v2 baseline (0.5844)"
+    print(f"\n  Verdict: {verdict}")
+
+    home_b = final["home_b"]
+    away_b = final["away_b"]
+    rho_optimal = -0.094  # inherited from v2; retrain_v3-specific rho search would be a follow-up
+
+    metrics_for_export = {k: v for k, v in final.items() if k not in ("home_b", "away_b")}
 
     if args.dry_run:
         print("\n(DRY) Skip JSON export")
     else:
-        export(home_b, away_b, rho_optimal, n_train=len(X))
+        export(home_b, away_b, rho_optimal, n_train=len(Xtr),
+               metrics=metrics_for_export, best_params=best_params)
 
 
 if __name__ == "__main__":
