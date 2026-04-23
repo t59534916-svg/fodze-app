@@ -14,6 +14,7 @@ import {
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
+import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
@@ -320,6 +321,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     ensembleCalc: MatchCalc;
     v1Calc: MatchCalc | null;
     v2Calc: MatchCalc | null;
+    v3Calc: MatchCalc | null;
     bayesCalc: MatchCalc | null;
   } | null {
     const h = match.home, a = match.away;
@@ -370,11 +372,18 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // insufficient-data cases; try/catch covers runtime failures on top.
     let v2Calc: MatchCalc | null = null;
     let v1Calc: MatchCalc | null = null;
+    let v3Calc: MatchCalc | null = null;
     let bayesCalc: MatchCalc | null = null;
     try { v2Calc = calcMatchPoissonMLv2(mlInputs); }
     catch (e) { console.warn("[FODZE] poisson-ml-v2 failed:", (e as Error).message); }
     try { v1Calc = calcMatchPoissonML(mlInputs); }
     catch (e) { console.warn("[FODZE] poisson-ml-v1 failed:", (e as Error).message); }
+    // v3: returns null bis lgbm-model-v3.json gebaut + geladen ist —
+    // MatchdayContext-Selektor fällt dann auf ensemble zurück.
+    if (isV3ModelLoaded()) {
+      try { v3Calc = calcMatchPoissonMLv3(mlInputs); }
+      catch (e) { console.warn("[FODZE] poisson-ml-v3 failed:", (e as Error).message); }
+    }
     // footBayes (Phase 2.2) — returns null until posteriors are ingested
     // from services/footbayes/. Handled below after enh is built so we can
     // swap its λ-pair into the standard matrix pipeline.
@@ -465,7 +474,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       } as MatchCalc;
     }
 
-    return { ensembleCalc, v1Calc, v2Calc, bayesCalc };
+    return { ensembleCalc, v1Calc, v2Calc, v3Calc, bayesCalc };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -479,7 +488,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -675,6 +684,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const all = allEngineCalcs[i];
       if (!all) return { ...m, idx: i, calc: null };
       const chosen =
+        engine === "poisson-ml-v3" && all.v3Calc ? all.v3Calc :
         engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
         engine === "poisson-ml" && all.v1Calc ? all.v1Calc :
         engine === "footbayes-hierarchical" && all.bayesCalc ? all.bayesCalc :
@@ -685,6 +695,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           "ensemble-v1": all.ensembleCalc.mk,
           "poisson-ml": all.v1Calc?.mk || null,
           "poisson-ml-v2": all.v2Calc?.mk || null,
+          "poisson-ml-v3": all.v3Calc?.mk || null,
           "footbayes-hierarchical": all.bayesCalc?.mk || null,
         },
       };

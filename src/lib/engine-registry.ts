@@ -5,12 +5,21 @@
 // Each engine produces the same MatchCalc output interface.
 // ═══════════════════════════════════════════════════════════════════════
 
-export type PredictionEngine = "ensemble-v1" | "poisson-ml" | "poisson-ml-v2" | "footbayes-hierarchical";
+export type PredictionEngine =
+  | "ensemble-v1"
+  | "poisson-ml"
+  | "poisson-ml-v2"
+  | "poisson-ml-v3"
+  | "footbayes-hierarchical";
 
 export interface EngineInfo {
   id: PredictionEngine;
   name: string;
   description: string;
+  /** Wenn true: Engine existiert als code, aber braucht Model/Daten die
+   *  noch nicht gereift sind. UI zeigt einen "nicht trainiert" Badge
+   *  und fällt bei Auswahl auf den fallback zurück. */
+  preview?: boolean;
 }
 
 export const ENGINES: EngineInfo[] = [
@@ -28,6 +37,12 @@ export const ENGINES: EngineInfo[] = [
     id: "poisson-ml-v2",
     name: "@annafrick13 v2",
     description: "LightGBM Tweedie → Monotone Constraints → Dixon-Coles Matrix",
+  },
+  {
+    id: "poisson-ml-v3",
+    name: "@annafrick13 v3",
+    description: "v2 + api-sports match-stats (shots/corners/possession/passes)",
+    preview: true,
   },
   {
     id: "footbayes-hierarchical",
