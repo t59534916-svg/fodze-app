@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App für 19 Ligen. Drei Prediction Engines (Standard Ensemble, @annafrick13 v1 Poisson-ML, @annafrick13 v2 LightGBM Tweedie), Value-Bet-Detection mit Goldilocks-Guard (Edge 2.5–7.5%, dual-source Markt + Engine), Kelly-Staking mit K/M/A Risk-Profilen, automatisches Bet-Settlement + CLV-Tracking, live Injuries via Transfermarkt-Scrape + Groq HTML-Parser.
+Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vier Prediction-Engines: Standard Ensemble, @annafrick13 v1 (Poisson-ML), v2 (LightGBM Tweedie, production), v3 (LightGBM Tweedie, 29-Feature preview — skeleton bis Model trainiert). Value-Bet-Detection mit Goldilocks-Guard + 3-tier Trap-Zone (2.5-7.5% Goldilocks / 7.5-10% silent skip / >10% hard Trap). Kelly-Staking mit K/M/A Risk-Profilen, automatisches Bet-Settlement + CLV-Tracking.
+
+**Daten-Bestand**: ~80.000 team-match rows in `team_xg_history`, davon ~71.000 mit echtem xG aus 4 Quellen (Understat Top-5, FootyStats Nebenligen, api-sports historical, Transfermarkt injuries). Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~350 Teams), MatchCard-Accent-Gradients (home→away team color), per-match referee + discipline features.
 
 ---
 
@@ -14,7 +16,7 @@ Quantitative Fußball-Wettanalyse App für 19 Ligen. Drei Prediction Engines (St
 ```bash
 npm install
 npm run dev         # http://localhost:3000
-npm run test        # 186 Tests (vitest)
+npm run test        # 498 Tests (vitest)
 npm run test:watch
 npm run build       # Production Build (läuft auch in CI)
 npm run lint        # Next lint (warnings nur, non-blocking)
@@ -160,7 +162,7 @@ Next.js 14 App Router (alle pages "use client")
 
 ### Engine-Hierarchy im Main-Path (MatchdayContext.calcMatch)
 
-1. Alle 3 Engines laufen immer parallel in `allEngineCalcs` (memo ohne `engine` in deps)
+1. Alle 4 Engines laufen parallel in `allEngineCalcs` (memo ohne `engine` in deps); v3 ist `preview: true` und returnt null bis `public/lgbm-model-v3.json` existiert
 2. `processed` wählt primary basierend auf `engine` + hängt `allEnginesMk` an (cheap)
 3. Fallback bei missing xG: engine returns null → primary = ensembleCalc
 4. Fallback bei missing xG-Historie: MatchdayContext.loadCached füllt `xg_h8` aus `team_xg_history` Summen oder Liga-Avg (× 0.55 home / 0.45 away)
@@ -342,7 +344,7 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ---
 
-## Tests (186 total, 12 files)
+## Tests (498 total, 32 files)
 
 ```bash
 npm run test              # alle Tests
@@ -351,9 +353,11 @@ npx vitest run tests/bet-metrics.test.ts  # einzelne Datei
 ```
 
 Coverage-Hotspots:
-- `dixon-coles.test.ts` — λ-Berechnung, Vig-Removal, Kelly, Home-Factor
+- `dixon-coles.test.ts` — λ-Berechnung, Vig-Removal, Kelly, Home-Factor, 24 Ligen-Count
 - `kelly.test.ts` — K/M/A Risk-Profile mit caps (2.5% / 4% / 6%)
 - `bet-metrics.test.ts` — betProfit, computeBetStats, computeCalibration, computeClvStats (8 CLV cases)
+- `backtest.test.ts` — Brier/Log-Loss (scoreMatch), aggregate, aggregateWithCI bootstrap (seed-reproducible)
+- `shots-calibration.test.ts` — per-liga xG-per-shot mit MIN_SAMPLE + clamp [0.07, 0.15]
 - `format.test.ts` — fmtEuro, safeDate (garbage-Input-Schutz), percent, matchKey
 - `market-labels.test.ts` — canonicalMarket (DE + EN + legacy Aliase)
 - `absence-parser.test.ts` — Position-Hints, returning-Player-Skip, Klammern-Nesting
