@@ -158,6 +158,19 @@ export interface TeamXGMatch {
   shots_against?: number | null;
   shots_on_target_for?: number | null;
   shots_on_target_against?: number | null;
+  // Match-level stats from api-sports /fixtures/statistics
+  // (nullable auf allen Rows die nicht von fetch-api-sports-stats.mjs
+  // stammen, also Understat/shots-model/goals-proxy Row-Sources).
+  possession_pct?: number | null;       // Team's possession percentage (0-100)
+  passes_total?: number | null;
+  passes_accurate?: number | null;
+  pass_pct?: number | null;             // passes_accurate / passes_total × 100
+  fouls?: number | null;
+  offsides?: number | null;
+  gk_saves?: number | null;
+  shots_blocked?: number | null;
+  shots_inside_box?: number | null;
+  shots_outside_box?: number | null;
 }
 
 /**
@@ -510,6 +523,9 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
   corners_for?: number; corners_against?: number;
   shots_for?: number; shots_against?: number;
   shots_on_target_for?: number; shots_on_target_against?: number;
+  possession_pct?: number; passes_total?: number; passes_accurate?: number;
+  pass_pct?: number; fouls?: number; offsides?: number; gk_saves?: number;
+  shots_blocked?: number; shots_inside_box?: number; shots_outside_box?: number;
   date: string; opponent?: string;
 }> {
   const entries = matches.map((m) => ({
@@ -529,6 +545,16 @@ export function toXGHistoryEntries(matches: TeamXGMatch[], context?: string): Ar
     shots_against: m.shots_against ?? undefined,
     shots_on_target_for: m.shots_on_target_for ?? undefined,
     shots_on_target_against: m.shots_on_target_against ?? undefined,
+    possession_pct: m.possession_pct ?? undefined,
+    passes_total: m.passes_total ?? undefined,
+    passes_accurate: m.passes_accurate ?? undefined,
+    pass_pct: m.pass_pct ?? undefined,
+    fouls: m.fouls ?? undefined,
+    offsides: m.offsides ?? undefined,
+    gk_saves: m.gk_saves ?? undefined,
+    shots_blocked: m.shots_blocked ?? undefined,
+    shots_inside_box: m.shots_inside_box ?? undefined,
+    shots_outside_box: m.shots_outside_box ?? undefined,
     date: m.match_date,
     opponent: m.opponent || undefined,
   }));

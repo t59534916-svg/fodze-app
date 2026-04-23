@@ -21,6 +21,17 @@ export interface XGHistoryEntry {
   shots_against?: number;
   shots_on_target_for?: number;
   shots_on_target_against?: number;
+  // api-sports fixture-statistics fields (v3-engine inputs)
+  possession_pct?: number;
+  passes_total?: number;
+  passes_accurate?: number;
+  pass_pct?: number;
+  fouls?: number;
+  offsides?: number;
+  gk_saves?: number;
+  shots_blocked?: number;
+  shots_inside_box?: number;
+  shots_outside_box?: number;
   date?: string;
   result?: string;
   opponent?: string;
@@ -247,6 +258,7 @@ export interface MatchCalc extends LambdaEstimates {
     "ensemble-v1": MarketProbs;
     "poisson-ml": MarketProbs | null;
     "poisson-ml-v2": MarketProbs | null;
+    "poisson-ml-v3": MarketProbs | null;
     "footbayes-hierarchical": MarketProbs | null;
   };
 }
