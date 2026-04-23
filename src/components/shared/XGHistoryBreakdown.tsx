@@ -49,8 +49,11 @@ function markGlyph(m: Mark): string {
 
 // Short opponent tag — take the first word's first 3 chars, uppercase.
 // "Bayer 04 Leverkusen" → "BAY", "1. FC Nürnberg" → "NÜR" (skip 1.)
-function shortOpponent(opponent?: string): string {
-  if (!opponent) return "???";
+// Falls opponent leer ist (kommt vor wenn team_xg_history rows ohne
+// opponent-Spalte kamen), fällt das Label auf das Datum zurück —
+// besser eine valide Info als "???" überall.
+function shortOpponent(opponent: string | undefined, dateShort: string): string {
+  if (!opponent) return dateShort || "—";
   const tokens = opponent.split(/\s+/).filter(t => !/^(\d+\.?|FC|SC|SV|VfL|VfB|TSG|RB)$/.test(t));
   const head = tokens[0] || opponent;
   return head.slice(0, 3).toUpperCase();
@@ -106,14 +109,17 @@ export default function XGHistoryBreakdown({
         {entries.map((e, i) => {
           const c = markColor(e.mark);
           const glyph = markGlyph(e.mark);
-          const opp = shortOpponent(e.entry.opponent);
           const date = formatDate(e.entry.date);
+          const opp = shortOpponent(e.entry.opponent, date);
           const goalsLine =
             e.entry.goals_for != null && e.entry.goals_against != null
               ? ` · Tore ${e.entry.goals_for}:${e.entry.goals_against}`
               : "";
+          const titleHead = e.entry.opponent
+            ? `${date} vs ${e.entry.opponent}`
+            : date || "Spiel";
           const title =
-            `${date} vs ${e.entry.opponent || "?"}\n` +
+            `${titleHead}\n` +
             `xG ${e.entry.xg.toFixed(2)} · xGA ${e.entry.xga.toFixed(2)}${goalsLine}\n` +
             `z-Score ${e.z.toFixed(2)} · ${e.mark === "normal" ? "im Rahmen" : "Ausreißer"}`;
           return (
