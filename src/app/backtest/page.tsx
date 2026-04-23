@@ -11,6 +11,7 @@ import {
 } from "@/lib/supabase";
 import { scoreMatch, aggregate, type MatchScore } from "@/lib/backtest";
 import { replayLeague, analyzeRefinement, aggregatePhysicalMarkets, type ReplayRow } from "@/lib/historical-replay";
+import type { XGPerShotCalibration } from "@/lib/shots-calibration";
 import { LEAGUES } from "@/lib/dixon-coles";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { page as pageStyle, text } from "@/styles/components";
@@ -63,19 +64,22 @@ export default function BacktestPage() {
   // Historical-replay state
   const [replayLeagueKey, setReplayLeagueKey] = useState<string>(league || "bundesliga");
   const [replayRows, setReplayRows] = useState<ReplayRow[] | null>(null);
+  const [replayCalibration, setReplayCalibration] = useState<XGPerShotCalibration | null>(null);
   const [replayRunning, setReplayRunning] = useState(false);
   const [replayProgress, setReplayProgress] = useState<string>("");
 
   const runHistoricalReplay = async () => {
     setReplayRunning(true);
     setReplayRows(null);
+    setReplayCalibration(null);
     setReplayProgress("Lade team_xg_history...");
     const allRows = await loadAllTeamXGHistory(supabase, replayLeagueKey);
     setReplayProgress(`Rekonstruiere ${allRows.length} Matches point-in-time...`);
     // Defer to next tick so the progress message can paint
     await new Promise(r => setTimeout(r, 50));
-    const rows = replayLeague({ allRows, league: replayLeagueKey, minPriorGames: 6 });
+    const { rows, shotsCalibration } = replayLeague({ allRows, league: replayLeagueKey, minPriorGames: 6 });
     setReplayRows(rows);
+    setReplayCalibration(shotsCalibration);
     setReplayProgress("");
     setReplayRunning(false);
   };
@@ -146,6 +150,7 @@ export default function BacktestPage() {
         {tab === "historisch" && (
           <HistoricalReplayTab
             rows={replayRows}
+            calibration={replayCalibration}
             running={replayRunning}
             progress={replayProgress}
             leagueKey={replayLeagueKey}
@@ -300,9 +305,10 @@ export default function BacktestPage() {
 // ─── Historical Replay Tab ───────────────────────────────────────
 
 function HistoricalReplayTab({
-  rows, running, progress, leagueKey, setLeagueKey, run,
+  rows, calibration, running, progress, leagueKey, setLeagueKey, run,
 }: {
   rows: ReplayRow[] | null;
+  calibration: XGPerShotCalibration | null;
   running: boolean;
   progress: string;
   leagueKey: string;
@@ -393,7 +399,16 @@ function HistoricalReplayTab({
                       label="Schüsse pro Team"
                       n={pm.shots.n} mae={pm.shots.mae} bias={pm.shots.bias}
                       unit="Schüsse"
-                      note="Erwartet = Ensemble-λ / 0.105 (Liga-Ø xG-per-shot)"
+                      note={
+                        calibration
+                          ? `Erwartet = Ensemble-λ / ${calibration.ratio.toFixed(3)} · ` +
+                            (calibration.source === "calibrated"
+                              ? `liga-kalibriert (n=${calibration.n})`
+                              : calibration.source === "out-of-range"
+                                ? `geclampt (raw=${calibration.raw?.toFixed(3)}, n=${calibration.n})`
+                                : `Fallback — nur ${calibration.n} Shot-Samples`)
+                          : "Erwartet = Ensemble-λ / xG-per-shot"
+                      }
                     />
                   )}
                   {pm.corners && (

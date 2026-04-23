@@ -34,10 +34,21 @@ import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 
 
 // ─── Value Cap Guardrail ─────────────────────────────────────────────
-// Pre-match edges > 8% against vig-free Pinnacle odds don't exist on
-// top leagues. They indicate missing information (injuries, red cards,
-// manager changes) that the market already priced in → Value Trap.
-const VALUE_CAP_EDGE = 0.08;
+// Pre-match edges against vig-free Pinnacle odds are graded in tiers:
+//
+//   ≤ 0.075  — normal (Goldilocks-konform)
+//   0.075 – 0.10 — Goldilocks-Obergrenze überschritten. Kein Bet, aber
+//                 kein Alarm — innerhalb 2 SD bei guter History.
+//   > 0.10  — Value Trap. Markt weiß etwas das wir nicht wissen
+//            (Verletzung, Sperre, Trainerwechsel). Bet hard-blockiert
+//            + rote Warnung im UI.
+//
+// Früher war der Trap-Threshold bei 0.08. Das feuerte bei fast jedem
+// Match mit guter Prediction, weil post-calibration Edges von 8–10% in
+// Nicht-Top-5-Ligen normal sind. Die Zweistufigkeit zeigt Traps nur
+// noch bei echten Anomalien, Goldilocks bleibt aber streng 2.5–7.5%.
+const VALUE_CAP_EDGE_HARD = 0.10;
+const VALUE_CAP_EDGE_SOFT = 0.075;
 
 /**
  * Compute days since last competitive match from xG history dates.
@@ -102,11 +113,17 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
   // LLM-provided xg_h8 sums are NEVER trusted — they can be hallucinated.
   // If no per-match history is available, we refuse to predict rather than
   // feed garbage into a precision engine.
-  const hHasHistory = hHistory && hHistory.length > 0;
-  const aHasHistory = aHistory && aHistory.length > 0;
+  const hasValidEntries = (h?: XGHistoryEntry[]): boolean => {
+    if (!h || h.length === 0) return false;
+    for (const e of h) {
+      if (!Number.isFinite(e.xg) || !Number.isFinite(e.xga)) return false;
+      if (e.xg < 0 || e.xga < 0) return false;
+    }
+    return true;
+  };
 
-  if (!hHasHistory || !aHasHistory) {
-    // No structured xG data → refuse to predict (no GIGO)
+  if (!hasValidEntries(hHistory) || !hasValidEntries(aHistory)) {
+    // No structured xG data (or NaN/negative values in history) → refuse to predict (no GIGO)
     return null;
   }
 
@@ -252,7 +269,13 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
   const bootH: number[] = [], bootD: number[] = [], bootA: number[] = [], bootO25: number[] = [];
 
   if (hHistory && aHistory && hHistory.length >= 4 && aHistory.length >= 4) {
-    for (let b = 0; b < N_BOOT; b++) {
+    // Main predict() succeeded on line 185 with identical feature shape,
+    // so bML must succeed here too. If it doesn't, skip — never mix
+    // ML and formula-fallback in the same bootstrap distribution.
+    const MAX_ATTEMPTS = N_BOOT * 2;
+    let attempts = 0;
+    while (bootH.length < N_BOOT && attempts < MAX_ATTEMPTS) {
+      attempts++;
       const hSample = Array.from({ length: hHistory.length }, () =>
         hHistory[Math.floor(Math.random() * hHistory.length)]);
       const aSample = Array.from({ length: aHistory.length }, () =>
@@ -270,11 +293,10 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
         restDaysDiff, sosStrength, isDerby,
       ];
       const bML = poissonLambdaPredict(bFeatures);
-      const bLamH = bML ? bML.lambdaH : Math.max(0.3, leagueAvg * (bHxg / leagueAvg) * (bAxga / leagueAvg) * homeFactor);
-      const bLamA = bML ? bML.lambdaA : Math.max(0.3, leagueAvg * (bAxg / leagueAvg) * (bHxga / leagueAvg));
+      if (!bML) continue;
 
       // Build real matrix — no sigmoid shortcuts
-      const bMatrix = buildMatrix(bLamH, bLamA, effectiveRho, alphaUsed);
+      const bMatrix = buildMatrix(bML.lambdaH, bML.lambdaA, effectiveRho, alphaUsed);
       const bMk = deriveAllMarkets(bMatrix);
 
       bootH.push(bMk.H);
@@ -354,11 +376,18 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
                   : null;
       if (pinnP !== null) {
         const edgeVsPinnacle = bet.pModel - pinnP;
-        if (edgeVsPinnacle > VALUE_CAP_EDGE) {
+        if (edgeVsPinnacle > VALUE_CAP_EDGE_HARD) {
+          // Harter Trap: ≥10% ist epistemic failure
           bet.valueTrap = true;
           bet.valueTrapEdge = edgeVsPinnacle;
           bet.valueTrapReason = `Edge ${(edgeVsPinnacle * 100).toFixed(1)}% vs Pinnacle — wahrscheinlich fehlende Info (Verletzung/Sperre/Trainerwechsel)`;
           bet.confidence = "NONE";
+          bet.isValue = false;
+          bet.kelly = 0;
+        } else if (edgeVsPinnacle > VALUE_CAP_EDGE_SOFT) {
+          // Goldilocks-Obergrenze überschritten. Kein Bet, aber keine
+          // Trap-Warnung — innerhalb der Toleranz für gut kalibrierte
+          // Modelle in Nebenligen.
           bet.isValue = false;
           bet.kelly = 0;
         }

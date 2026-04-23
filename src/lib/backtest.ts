@@ -124,6 +124,131 @@ export function aggregate(scores: MatchScore[]): AggregateScore | null {
   };
 }
 
+// ─── Bootstrap Confidence Intervals ──────────────────────────────
+//
+// Non-parametric 95% CIs via resampling with replacement. Required at
+// small-n to tell noise from signal: a Brier of 0.21 vs 0.20 looks like
+// improvement, but with n=30 the 95% CI around each spans ±0.04 and
+// they're statistically indistinguishable. CI width scales with 1/√n,
+// so the same engine that's "ambiguous at n=30" gets "clearly better
+// at n=200" — the widget screams the difference at a glance.
+//
+// Method: basic percentile bootstrap (Efron 1979). 1000 resamples of
+// the per-match scores, percentile cuts at 2.5% / 97.5%. Deterministic
+// via seedable RNG for reproducible reports.
+
+export interface MetricWithCI {
+  mean: number;
+  lo95: number;
+  hi95: number;
+}
+
+export interface AggregateScoreCI {
+  n: number;
+  brier_1x2: MetricWithCI;
+  brier_o25: MetricWithCI | null;
+  brier_btts: MetricWithCI | null;
+  logloss_1x2: MetricWithCI;
+  logloss_o25: MetricWithCI | null;
+  logloss_btts: MetricWithCI | null;
+  favorite_accuracy: MetricWithCI;
+}
+
+// Mulberry32 — small, fast, good-enough PRNG. Seedable so the CI is
+// reproducible across dev/CI/prod runs.
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6D2B79F5) >>> 0;
+    let r = t;
+    r = Math.imul(r ^ (r >>> 15), r | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return NaN;
+  if (sorted.length === 1) return sorted[0];
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+
+function bootstrapMean(
+  values: readonly number[],
+  iterations: number,
+  rand: () => number,
+): MetricWithCI {
+  const n = values.length;
+  const sum = values.reduce((a, b) => a + b, 0);
+  const pointEstimate = sum / n;
+  // n == 1 → CI degenerate; return zero-width CI around the point.
+  if (n === 1) return { mean: pointEstimate, lo95: pointEstimate, hi95: pointEstimate };
+
+  const boots = new Array<number>(iterations);
+  for (let b = 0; b < iterations; b++) {
+    let s = 0;
+    for (let i = 0; i < n; i++) {
+      s += values[Math.floor(rand() * n)];
+    }
+    boots[b] = s / n;
+  }
+  boots.sort((a, b) => a - b);
+  return {
+    mean: pointEstimate,
+    lo95: percentile(boots, 0.025),
+    hi95: percentile(boots, 0.975),
+  };
+}
+
+export interface AggregateCIOptions {
+  /** Bootstrap iterations. 1000 is standard; 2000 tightens CIs marginally. */
+  iterations?: number;
+  /** RNG seed — pass a constant for reproducible outputs. */
+  seed?: number;
+}
+
+/**
+ * Aggregate + 95% bootstrap confidence intervals per metric. Drop-in
+ * replacement for `aggregate()` when you want to know how much of the
+ * reported number is signal vs sample noise.
+ *
+ * Null values per metric are skipped consistent with aggregate(). A
+ * metric is returned as null only if NO match had it populated.
+ */
+export function aggregateWithCI(
+  scores: MatchScore[],
+  opts: AggregateCIOptions = {},
+): AggregateScoreCI | null {
+  if (scores.length === 0) return null;
+  const iterations = opts.iterations ?? 1000;
+  const rand = mulberry32(opts.seed ?? 0xF0D2E);
+
+  const collect = (fn: (s: MatchScore) => number | null): number[] => {
+    const out: number[] = [];
+    for (const s of scores) { const v = fn(s); if (v != null) out.push(v); }
+    return out;
+  };
+  const orNull = (values: number[]): MetricWithCI | null =>
+    values.length === 0 ? null : bootstrapMean(values, iterations, rand);
+
+  const favorites = scores.map(s => (s.correct_favorite ? 1 : 0));
+
+  return {
+    n: scores.length,
+    brier_1x2: bootstrapMean(collect(s => s.brier_1x2), iterations, rand),
+    brier_o25: orNull(collect(s => s.brier_o25)),
+    brier_btts: orNull(collect(s => s.brier_btts)),
+    logloss_1x2: bootstrapMean(collect(s => s.logloss_1x2), iterations, rand),
+    logloss_o25: orNull(collect(s => s.logloss_o25)),
+    logloss_btts: orNull(collect(s => s.logloss_btts)),
+    favorite_accuracy: bootstrapMean(favorites, iterations, rand),
+  };
+}
+
 // ─── Calibration bins ────────────────────────────────────────────
 //
 // For each decile of predicted probability, what fraction of the

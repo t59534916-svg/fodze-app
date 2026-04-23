@@ -25,13 +25,7 @@ import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
 import { calcCornersModel } from "@/lib/corners-engine";
 import { scoreMatch, type MatchScore } from "@/lib/backtest";
-
-// League-average xG-per-shot. A single global constant is a rough but
-// well-documented proxy — real number varies ~0.09–0.12 across leagues;
-// deriving league-specific values from shots/xG ratio in the replay set
-// itself would be cleaner but requires more shot data than we currently
-// have ingested. 0.105 matches the FBref/Understat top-5 long-run mean.
-const XG_PER_SHOT = 0.105;
+import { calibrateXGPerShot, type XGPerShotCalibration } from "@/lib/shots-calibration";
 
 export interface ReplayInput {
   /** All team_xg_history rows for the league, both venues. */
@@ -120,7 +114,19 @@ function toHistoryEntries(rows: TeamXGMatch[]): XGHistoryEntry[] {
 
 // ─── Replay ──────────────────────────────────────────────────────
 
-export function replayLeague(input: ReplayInput): ReplayRow[] {
+export interface ReplayResult {
+  rows: ReplayRow[];
+  /** xG-per-shot ratio used for this replay. Calibrated from the league's
+   *  full sample — technically a mild form of hindsight (we know the
+   *  league-wide rate across the full period before scoring any match),
+   *  but second-order vs using actual goals/shots. A stricter variant
+   *  would re-calibrate per-match from rows before m.match_date; for the
+   *  current sample sizes that recalibration is noisier than the league
+   *  leak it removes. */
+  shotsCalibration: XGPerShotCalibration;
+}
+
+export function replayLeague(input: ReplayInput): ReplayResult {
   const { allRows, league, minPriorGames = 6, afterDate, limit = 2000 } = input;
   const leagueCfg = LEAGUES[league];
   if (!leagueCfg) {
@@ -128,6 +134,12 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
   }
   const leagueAvg = leagueCfg?.avg ?? 1.38;
   const homeFactor = leagueCfg?.hf ?? 1.25;
+
+  // Liga-spezifisches xG-per-shot statt single 0.105-Konstante. Falls
+  // der Shot-Sample unter MIN_SAMPLE liegt oder out-of-range ist, fällt
+  // calibrateXGPerShot auf 0.105 zurück — status-quo-äquivalent.
+  const shotsCalibration = calibrateXGPerShot(allRows);
+  const xgPerShot = shotsCalibration.ratio;
 
   const idx = buildTeamIndex(allRows);
   const homeMatches = allRows
@@ -247,8 +259,8 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
     // ensemble's lambda (expected goals) divided by league-average xG-per-
     // shot — equivalent to "goal generation rate / shot quality". Cheap,
     // honest, and on the same scale as football-data.co.uk HS/AS actuals.
-    const expected_shots_h = ensembleLambdaH != null ? ensembleLambdaH / XG_PER_SHOT : null;
-    const expected_shots_a = ensembleLambdaA != null ? ensembleLambdaA / XG_PER_SHOT : null;
+    const expected_shots_h = ensembleLambdaH != null ? ensembleLambdaH / xgPerShot : null;
+    const expected_shots_a = ensembleLambdaA != null ? ensembleLambdaA / xgPerShot : null;
 
     // ── Expected corners ──
     // Dedicated corners-engine — compound Poisson with geometric batches
@@ -296,7 +308,7 @@ export function replayLeague(input: ReplayInput): ReplayRow[] {
     });
   }
 
-  return results;
+  return { rows: results, shotsCalibration };
 }
 
 // ─── Physical-market MAE aggregator ──────────────────────────────

@@ -32,12 +32,20 @@ import { dualTrackCalibrate } from "./calibration";
 import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 
 // ─── Goldilocks Edge Guard ──────────────────────────────────────────
-// Only authorize bets where the isotonic-calibrated edge vs Pinnacle
-// is strictly between 2.5% and 7.5%.
-// < 2.5% = insufficient edge (variance, not signal)
-// > 7.5% = epistemic failure (bookie knows about injury/red card)
+// Bet-Authorisation ist strikt auf 2.5%–7.5% Goldilocks. Aber:
+//   < 2.5%       — insufficient edge (Variance, kein Signal) → silent skip
+//   2.5% – 7.5%  — Goldilocks: Bet authorisiert
+//   7.5% – 10%   — oberhalb Goldilocks, aber nicht absurd. Kein Bet,
+//                  aber auch kein Trap-Banner (post-calibrierte Edges
+//                  zwischen 8–10% sind in Nicht-Top-5-Ligen normal).
+//   > 10%        — Value Trap. Markt weiß etwas was wir nicht wissen.
+//                  Bet hard-blockiert + rote Warnung im UI.
+//
+// Früher löste jede Edge > 7.5% sofort den Trap-Banner aus; in der Praxis
+// feuerte das bei fast jedem gut kalibrierten Match → Vertrauen kaputt.
 const EDGE_MIN = 0.025;
 const EDGE_MAX = 0.075;
+const EDGE_TRAP_HARD = 0.10;
 
 /**
  * Compute days since last match from xG history dates.
@@ -452,15 +460,21 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
         const edgeVsPinnacle = trackBP - pinnP;
 
         if (edgeVsPinnacle < EDGE_MIN) {
-          // Below minimum: insufficient edge
+          // Unter Goldilocks: kein Signal
           bet.isValue = false;
           bet.kelly = 0;
-        } else if (edgeVsPinnacle > EDGE_MAX) {
-          // Above maximum: value trap (missing info)
+        } else if (edgeVsPinnacle > EDGE_TRAP_HARD) {
+          // Harter Trap: ≥10% ist epistemic failure
           bet.valueTrap = true;
           bet.valueTrapEdge = edgeVsPinnacle;
           bet.valueTrapReason = `Edge ${(edgeVsPinnacle * 100).toFixed(1)}% vs Pinnacle — wahrscheinlich fehlende Info`;
           bet.confidence = "NONE";
+          bet.isValue = false;
+          bet.kelly = 0;
+        } else if (edgeVsPinnacle > EDGE_MAX) {
+          // Goldilocks-Obergrenze überschritten. Kein Bet, aber keine
+          // Trap-Warnung — innerhalb der Toleranz für gut kalibrierte
+          // Modelle in Nebenligen.
           bet.isValue = false;
           bet.kelly = 0;
         }
