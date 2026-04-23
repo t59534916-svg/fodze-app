@@ -9,8 +9,10 @@ import {
 } from "@/lib/dixon-coles";
 
 describe("LEAGUES", () => {
-  it("has 21 leagues defined", () => {
-    expect(Object.keys(LEAGUES).length).toBe(21);
+  it("has 24 leagues defined", () => {
+    // 19 FODZE original + 2 European cups (cl/el) + 3 neu (austria_bl,
+    // swiss_sl, eerste_divisie) = 24
+    expect(Object.keys(LEAGUES).length).toBe(24);
   });
 
   it("each league has name, hf, avg", () => {

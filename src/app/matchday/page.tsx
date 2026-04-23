@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApp } from "@/contexts/AppContext";
 import { ENGINES } from "@/lib/engine-registry";
+import { LEAGUES } from "@/lib/dixon-coles";
 import { fuzzyTeamMatch } from "@/lib/team-resolver";
 import { useMatchday } from "@/hooks/useMatchday";
 import { useBets } from "@/hooks/useBets";
@@ -139,7 +140,7 @@ export default function MatchdayPage() {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600, ...S.goldText }}>{data?.league} — {data?.matchday}</div>
+          <div style={{ fontSize: 15, fontWeight: 600, ...S.goldText }}>{(data?.league && LEAGUES[data.league]?.name) || data?.league} — {data?.matchday}</div>
           <div style={{ fontSize: 10, color: "#c4a26560" }}>
             {matches.length} Spiele{data?.data_confidence ? ` · ${data.data_confidence}` : ""}
             {(data as any)?.last_updated ? ` · Update: ${(data as any).last_updated}` : ""}
@@ -161,12 +162,15 @@ export default function MatchdayPage() {
       <div style={{ display: "flex", gap: 0, marginBottom: 12, background: "#c4a2650a", borderRadius: 8, border: "1px solid #c4a26515", overflow: "hidden" }}>
         {ENGINES.map(eng => {
           const active = engine === eng.id;
+          const isPreview = eng.preview === true;
           return (
             <button key={eng.id} onClick={() => setEngine(eng.id)}
+              title={isPreview ? `${eng.description} — noch nicht trainiert, fällt auf Standard zurück` : eng.description}
               style={{
                 flex: 1, padding: "10px 10px", border: "none", cursor: "pointer", minHeight: 44,
+                position: "relative",
                 background: active ? "#d4b86a18" : "transparent",
-                color: active ? "#d4b86a" : "#a89070",
+                color: active ? "#d4b86a" : isPreview ? "#a8907050" : "#a89070",
                 fontSize: 11, fontWeight: active ? 700 : 400,
                 letterSpacing: active ? "0.3px" : "0",
                 transition: "all 0.2s",
@@ -174,6 +178,12 @@ export default function MatchdayPage() {
               }}
             >
               {eng.name}
+              {isPreview && (
+                <span aria-label="Preview — noch nicht trainiert" style={{
+                  position: "absolute", top: 2, right: 4, fontSize: 7,
+                  color: "#c4a26590", fontWeight: 600, letterSpacing: "0.5px",
+                }}>PREVIEW</span>
+              )}
             </button>
           );
         })}

@@ -8,6 +8,7 @@ const FLAG: Record<string, string> = {
   bundesliga: "🇩🇪", bundesliga2: "🇩🇪", liga3: "🇩🇪", epl: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   la_liga: "🇪🇸", serie_a: "🇮🇹", ligue_1: "🇫🇷", championship: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   eredivisie: "🇳🇱", cl: "🏆", el: "🏆",
+  austria_bl: "🇦🇹", swiss_sl: "🇨🇭", eerste_divisie: "🇳🇱",
 };
 
 // Format ISO date to short German: "2026-04-04" → "Fr. 4.4."

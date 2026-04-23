@@ -46,6 +46,11 @@ const LEAGUE_MAP = {
   greek_sl:      "soccer_greece_super_league",
   league_one:    "soccer_england_league1",
   league_two:    "soccer_england_league2",
+  // Tier 2 — Central-Euro Top-Divisionen (The-Odds-API keys verified
+  // gegen /v4/sports/?all=true Endpoint)
+  austria_bl:       "soccer_austria_bundesliga",
+  swiss_sl:         "soccer_switzerland_superleague",
+  eerste_divisie:   "soccer_netherlands_eerste_divisie",
 };
 
 // Sharp bookmakers (closest to true probability)
@@ -292,6 +297,7 @@ const PRIORITY_ORDER = [
   "primeira_liga", "jupiler_pro", "super_lig",
   "la_liga2", "serie_b", "ligue_2",
   "scottish_prem", "greek_sl", "league_one", "league_two",
+  "austria_bl", "swiss_sl", "eerste_divisie",
   "cl", "el",
 ];
 

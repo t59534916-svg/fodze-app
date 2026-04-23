@@ -38,6 +38,12 @@ export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> 
   greek_sl:      { name: "Super League Greece",  hf: 1.11, avg: 1.22 },
   league_one:    { name: "League One",        hf: 1.19, avg: 1.29 },
   league_two:    { name: "League Two",        hf: 1.22, avg: 1.25 },
+  // Tier 2 — Central-Euro Top-Divisionen. avg/HF aus tatsächlichen
+  // FootyStats 2022-2026 Daten berechnet (N=austria 1554, swiss 1728,
+  // eerste 3040 rows). HF = home_goals / away_goals mean-ratio.
+  austria_bl:    { name: "Austria Bundesliga", hf: 1.14, avg: 1.33 },
+  swiss_sl:      { name: "Swiss Super League", hf: 1.29, avg: 1.45 },
+  eerste_divisie:{ name: "Eerste Divisie",     hf: 1.27, avg: 1.53 },
 };
 
 // ─── Team-spezifische Heimfaktoren (3. Liga) ──────────────────────
