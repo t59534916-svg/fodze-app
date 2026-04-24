@@ -13,6 +13,7 @@ import { xgbPredict, buildFeatureVector, applyResidualCorrections, tagsToResidua
 import { anchorToPinnacle, hasPinnacleData, pinnacleImpliedProbs, type PinnacleOdds, type AnchorConfig } from "./pinnacle-anchor";
 import { benterBlend } from "./benter-blend";
 import { conformalKellyFactor } from "./conformal-gate";
+import { normalizedCIWidth } from "./backtest";
 
 export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> = {
   bundesliga:    { name: "Bundesliga",        hf: 1.28, avg: 1.38 },
@@ -630,11 +631,17 @@ export function vigAdjustPower(quotes:number[]):{probs:number[];overround:number
  * which meant conservative and aggressive users converged on the same
  * 5% stake on any non-trivial edge — silently defeating the risk profile.
  */
-export function kellyFraction(pEigen:number, quote:number, fraction=0.33):number {
+export function kellyFraction(
+  pEigen:number,
+  quote:number,
+  fraction=0.33,
+  varianceHaircut=1,
+):number {
   if (quote<=1) return 0;
   const k = (pEigen*quote-1)/(quote-1);
   const cap = fraction <= 0.28 ? 0.025 : fraction <= 0.40 ? 0.04 : 0.06;
-  return Math.max(0, Math.min(k*fraction, cap));
+  const h = Math.max(0.5, Math.min(1, varianceHaircut));
+  return Math.max(0, Math.min(k*fraction*h, cap));
 }
 
 const PRIOR_K = 6;
@@ -1008,12 +1015,16 @@ export function calculateBetsEnhanced(
     const conformalFactor = (m.key === "H" || m.key === "D" || m.key === "A")
       ? conformalKellyFactor({ H: cal.H, D: cal.D, A: cal.A }, league)
       : 1.0;
-    const k=kellyFraction(pModel,q,fraction)*kellyDamp*conformalFactor;
     let pLow:number,pHigh:number;
     if(m.key==="H"){pLow=calLow.H;pHigh=calHigh.H;}
     else if(m.key==="D"){pLow=Math.min(calLow.D,calHigh.D);pHigh=Math.max(calLow.D,calHigh.D);}
     else if(m.key==="A"){pLow=calHigh.A;pHigh=calLow.A;}
     else{pLow=Math.min(mk_low[m.key] as number,mk_high[m.key] as number);pHigh=Math.max(mk_low[m.key] as number,mk_high[m.key] as number);}
+    // C-Kelly: shrink stake by half the normalized CI width (clamped to
+    // [0.5, 1.0]). Wide CIs = high model uncertainty = smaller bet.
+    const ciWidth = normalizedCIWidth(pLow, pHigh, pModel);
+    const varianceHaircut = Math.max(0.5, Math.min(1, 1 - 0.5 * ciWidth));
+    const k=kellyFraction(pModel,q,fraction,varianceHaircut)*kellyDamp*conformalFactor;
     const eLow=pLow-pMarket, eHigh=pHigh-pMarket, sig=eLow>0;
     let conf:"HIGH"|"MEDIUM"|"LOW"|"NONE";
     if(sig&&edge>0.05)conf="HIGH";else if(sig)conf="MEDIUM";else if(edge>0)conf="LOW";else conf="NONE";

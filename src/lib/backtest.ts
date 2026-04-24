@@ -249,6 +249,32 @@ export function aggregateWithCI(
   };
 }
 
+// ─── Normalized CI Width (for Variance-Adjusted Kelly) ───────────
+//
+// Maps a probability CI bound pair (ciLow, ciHigh) and a point estimate
+// (pModel) to a width-ratio in [0, ~2] that C-Kelly uses to dampen stake.
+//
+// Formula: (ciHigh - ciLow) / max(pModel, 0.05)
+//
+// The denominator is the MODEL's base probability, not the Edge. Using the
+// edge would explode near zero (e.g. edge = 0.001 → ratio → ∞). The 0.05
+// epsilon floor keeps the ratio numerically stable when the predicted
+// probability itself is very small (e.g. long-shot Away win).
+//
+// Returns 0 for empty/degenerate CIs. Callers should clamp the result
+// before turning it into a Kelly haircut.
+export function normalizedCIWidth(
+  ciLow: number,
+  ciHigh: number,
+  pModel: number,
+): number {
+  const width = ciHigh - ciLow;
+  if (!isFinite(width) || width <= 0) return 0;
+  const denom = Math.max(pModel, 0.05);
+  const ratio = width / denom;
+  return isFinite(ratio) && ratio > 0 ? ratio : 0;
+}
+
 // ─── Calibration bins ────────────────────────────────────────────
 //
 // For each decile of predicted probability, what fraction of the
