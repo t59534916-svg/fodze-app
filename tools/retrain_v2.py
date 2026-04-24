@@ -41,13 +41,16 @@ v2.2 EXTENSION ROADMAP (Phase 1.2 + 2.4, not yet wired below):
 ═══════════════════════════════════════════════════════════════════
 """
 
-import json, os, glob, argparse
+import json, os, glob, argparse, sys
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from scipy.stats import poisson
 from scipy.optimize import minimize_scalar
 from collections import defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lib.supabase_loader import fetch_xg_history
 
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 HISTORIE_DIR = os.path.join(PROJECT_ROOT, "Historie")
@@ -181,6 +184,51 @@ def load_csv_data():
 
     csv_all["league"] = csv_all["Div"].map(DIV_TO_LEAGUE)
     return csv_all
+
+
+def load_supabase_data():
+    """Load match-level data from Supabase team_xg_history.
+
+    Each match in Supabase is stored as 2 rows (home + away). We merge them
+    back into match-level rows that match load_csv_data()'s schema so all
+    downstream code (compute_elo, feature engineering) works unchanged.
+
+    Returns DataFrame with columns: HomeTeam, AwayTeam, FTHG, FTAG, Date,
+    date_parsed, league — same as load_csv_data().
+    """
+    df = fetch_xg_history(verbose=True)
+    if df.empty:
+        print("  ⚠️  Supabase returned 0 rows — falling back to empty DataFrame")
+        return pd.DataFrame()
+
+    # Ensure match_date is datetime
+    df["match_date"] = pd.to_datetime(df["match_date"], utc=True, errors="coerce")
+    # Drop tz so it aligns with OOT_CUTOFF (tz-naive pd.Timestamp)
+    df["match_date"] = df["match_date"].dt.tz_localize(None)
+
+    # Reconstruct match-level rows: merge home + away by (league, date, teams)
+    home = df[df["venue"] == "home"].copy()
+    away = df[df["venue"] == "away"].copy()
+    matches = home.merge(
+        away[["league", "match_date", "team", "opponent", "goals_for"]],
+        left_on=["league", "match_date", "team", "opponent"],
+        right_on=["league", "match_date", "opponent", "team"],
+        suffixes=("_h", "_a"),
+        how="inner",
+    )
+    # After merge: team_h = home team, team_a = away team, goals_for_h = home goals, goals_for_a = away goals
+    out = pd.DataFrame({
+        "HomeTeam": matches["team_h"].astype(str),
+        "AwayTeam": matches["team_a"].astype(str),
+        "FTHG": pd.to_numeric(matches["goals_for_h"], errors="coerce"),
+        "FTAG": pd.to_numeric(matches["goals_for_a"], errors="coerce"),
+        "Date": matches["match_date"].dt.strftime("%Y-%m-%d"),
+        "date_parsed": matches["match_date"],
+        "league": matches["league"].astype(str),
+    })
+    out = out.dropna(subset=["FTHG", "FTAG", "HomeTeam", "AwayTeam"]).sort_values("date_parsed").reset_index(drop=True)
+    print(f"  Supabase: reconstructed {len(out)} match-level rows from {len(df)} team-match rows")
+    return out
 
 
 def load_npxg_data(npxg_csv_path):
@@ -802,6 +850,10 @@ def main():
     parser.add_argument("--use-roster", action="store_true", help="Use roster CSV (rotation rate)")
     parser.add_argument("--use-shots", action="store_true", help="Use shots CSV (shot quality + dominance)")
     parser.add_argument("--n-trials", type=int, default=30, help="Optuna trials")
+    parser.add_argument("--use-supabase", action="store_true",
+                        help="Load match-level data from Supabase team_xg_history "
+                             "(104k+ rows, 22 leagues) instead of Historie/*.csv "
+                             "(football-data.co.uk, ~9 leagues)")
     args = parser.parse_args()
 
     print("═" * 60)
@@ -810,9 +862,20 @@ def main():
 
     # ─── 1. Load Data ───
     print("\n═══ 1. LOADING DATA ═══")
-    csv_all = load_csv_data()
-    train_df = csv_all[csv_all["date_parsed"] < OOT_CUTOFF]
-    test_df = csv_all[csv_all["date_parsed"] >= OOT_CUTOFF]
+    # Supabase mode: data corpus is skewed toward 2021+ (FootyStats backfill).
+    # Keeping OOT_CUTOFF=2023-08 would invert train/test (40% train / 60%
+    # test). Bump to 2025-08 so the split stays 80/20-ish with the newer corpus.
+    if args.use_supabase:
+        print("  Source: Supabase team_xg_history (--use-supabase)")
+        csv_all = load_supabase_data()
+        cutoff = pd.Timestamp("2025-08-01")
+    else:
+        print("  Source: Historie/*.csv (football-data.co.uk)")
+        csv_all = load_csv_data()
+        cutoff = OOT_CUTOFF
+    train_df = csv_all[csv_all["date_parsed"] < cutoff]
+    test_df = csv_all[csv_all["date_parsed"] >= cutoff]
+    print(f"  Cutoff: {cutoff.strftime('%Y-%m-%d')}")
     print(f"  Total: {len(csv_all)}, Train: {len(train_df)}, Test: {len(test_df)}")
 
     npxg_lookup = {}
@@ -855,8 +918,8 @@ def main():
     all_features = compute_features(csv_all, elo, npxg_lookup, full_lookup=full_lookup, use_npxg=use_npxg,
                                     tactics_data=tactics_data, players_data=players_data, roster_data=roster_data,
                                     shots_data=shots_data)
-    train_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] < OOT_CUTOFF]
-    test_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] >= OOT_CUTOFF]
+    train_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] < cutoff]
+    test_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] >= cutoff]
     print(f"  Train: {len(train_features)}, Test: {len(test_features)}")
     print(f"  Features: {FEATURE_NAMES}")
 
@@ -1066,7 +1129,7 @@ def main():
         "feature_names": FEATURE_NAMES,
         "feature_version": f"v2.0-{len(FEATURE_NAMES)}f",
         "rho_used": float(rho_opt),
-        "oot_cutoff": str(OOT_CUTOFF.date()),
+        "oot_cutoff": str(cutoff.date()),
         "n_rows": int(len(oot_df)),
         "brier_oos": float(brier_score),
         "mae_home": float(mae_h),
@@ -1129,7 +1192,7 @@ def main():
             "n_estimators": best.get("n_estimators", 500),
             "learning_rate": best.get("learning_rate", 0.05),
             "min_data_in_leaf": best.get("min_data_in_leaf", 50),
-            "oot_cutoff": str(OOT_CUTOFF.date()),
+            "oot_cutoff": str(cutoff.date()),
             "npxg_used": args.use_npxg_csv or args.use_full_csv,
             "full_understat_data": args.use_full_csv,
             "tactics_used": args.use_tactics,

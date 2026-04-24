@@ -151,63 +151,12 @@ EWMA_ALPHA = 0.85
 # DATA LOADING — Supabase REST
 # ═══════════════════════════════════════════════════════════════════
 
-def load_env():
-    if not os.path.exists(ENV_PATH):
-        return
-    with open(ENV_PATH) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            os.environ.setdefault(k.strip(), v.strip())
-
-
-def fetch_xg_history(sources=None) -> pd.DataFrame:
-    """Pull team_xg_history rows from Supabase via REST API."""
-    import urllib.request, urllib.parse
-    load_env()
-    supa_url = os.environ.get("NEXT_PUBLIC_SUPABASE_URL") or os.environ.get("SUPABASE_URL")
-    supa_key = os.environ.get("SUPABASE_SERVICE_KEY")
-    if not supa_url or not supa_key:
-        raise RuntimeError("Missing SUPABASE env — add to .env.local")
-
-    # Fetch in pages (1000 default limit)
-    all_rows = []
-    offset = 0
-    PAGE = 1000
-    while True:
-        params = {
-            "select": "*",
-            "order": "match_date.asc",
-        }
-        if sources:
-            params["source"] = f"in.({','.join(sources)})"
-        url = f"{supa_url}/rest/v1/team_xg_history?{urllib.parse.urlencode(params)}"
-        req = urllib.request.Request(
-            url,
-            headers={
-                "apikey": supa_key,
-                "Authorization": f"Bearer {supa_key}",
-                "Range": f"{offset}-{offset + PAGE - 1}",
-                "Prefer": "count=exact",
-            },
-        )
-        with urllib.request.urlopen(req) as resp:
-            rows = json.loads(resp.read())
-        if not rows:
-            break
-        all_rows.extend(rows)
-        if len(rows) < PAGE:
-            break
-        offset += PAGE
-
-    if not all_rows:
-        return pd.DataFrame()
-
-    df = pd.DataFrame(all_rows)
-    df["match_date"] = pd.to_datetime(df["match_date"])
-    return df
+# load_env + fetch_xg_history have moved to tools/lib/supabase_loader.py.
+# Imported at the top so both v2 and v3 share the same pagination + sorting
+# + sanity-assert code path.
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lib.supabase_loader import fetch_xg_history, load_env  # noqa: E402,F401
 
 
 # ═══════════════════════════════════════════════════════════════════
