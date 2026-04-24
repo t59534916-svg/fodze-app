@@ -513,14 +513,25 @@ async function main() {
   // stay empty strings (same as before this commit).
   let injuriesByTeam = new Map();
   if (INJURIES) {
+    // Delta-cache: only teams with a fixture within the next 72h need fresh
+    // injury data. Distant-future fixtures get fetched when their own 72h
+    // window opens, avoiding redundant scrapes (and Groq tokens) every run.
+    const DELTA_WINDOW_MS = 72 * 60 * 60 * 1000;
+    const cutoff = Date.now() + DELTA_WINDOW_MS;
     const uniqueTeams = new Set();
+    let skippedFixtures = 0;
     for (const f of fixtures) {
+      const koMs = new Date(f.commence_time).getTime();
+      if (!Number.isFinite(koMs) || koMs > cutoff) { skippedFixtures++; continue; }
       const h = resolveName(f.home_team);
       const a = resolveName(f.away_team);
       if (h) uniqueTeams.add(h);
       if (a) uniqueTeams.add(a);
     }
     const teamList = Array.from(uniqueTeams);
+    if (skippedFixtures > 0) {
+      console.log(`   ⏩ Delta-cache: skipping ${skippedFixtures} fixtures outside 72h window`);
+    }
     console.log(`   🏥 Injuries: fetching ${teamList.length} teams from Transfermarkt…`);
     injuriesByTeam = await fetchMultipleTeamInjuries(
       teamList,
