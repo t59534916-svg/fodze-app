@@ -32,6 +32,11 @@ export interface XGHistoryEntry {
   shots_blocked?: number;
   shots_inside_box?: number;
   shots_outside_box?: number;
+  // Discipline (v3-Lean discipline-features inputs)
+  yellow_cards_for?: number;
+  yellow_cards_against?: number;
+  red_cards_for?: number;
+  red_cards_against?: number;
   date?: string;
   result?: string;
   opponent?: string;

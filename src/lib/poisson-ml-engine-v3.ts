@@ -61,33 +61,27 @@ function sumTrees(trees: LGBMTree[], features: number[]): number {
   return s;
 }
 
-// Feature-Reihenfolge MUSS exakt retrain_v3.py::FEATURE_NAMES entsprechen.
-// Mismatch → garbage predictions. Runtime verifiziert via feature_names check.
+// v3 Lean — Feature-Reihenfolge MUSS exakt retrain_v3.py::FEATURE_NAMES
+// entsprechen. Mismatch → garbage predictions. Runtime verifiziert order via
+// feature_names check beim load. 20 dense features, no dead weight.
 export const V3_FEATURE_NAMES = [
-  // v2's 21 features (unverändert)
-  "npxg_diff_ewma", "npxga_diff_ewma", "elo_diff", "total_npxg",
-  "home_factor", "league_avg", "rest_days_diff", "sos_strength",
-  "is_derby", "npxg_momentum", "npxg_volatility", "h2h_npxg_diff",
-  "ppda_ratio_diff", "deep_completions_diff",
-  "setpiece_xg_share_diff", "late_game_xg_share_diff",
-  "losing_state_xg_diff", "top3_xgchain_share_diff",
-  "squad_rotation_rate_diff", "shot_quality_diff",
-  "high_value_shot_share_diff",
-  // v3 NEW (8)
-  "shots_total_diff_ewma",
-  "shots_on_target_diff_ewma",
-  "shot_accuracy_ewma",
-  "corners_diff_ewma",
-  "possession_diff_ewma",
-  "pass_accuracy_diff_ewma",
-  "shots_inside_box_share_diff",
-  "gk_saves_diff_ewma",
+  // Core xG (5) — proxied from single 'xg' column (openplay/setpiece both 0%)
+  "xg_diff_ewma", "xga_diff_ewma", "xg_momentum", "xg_volatility", "total_xg",
+  // Elo + Context (5) — ported from v2
+  "elo_diff", "sos_strength", "is_derby", "h2h_xg_diff", "rest_days_diff",
+  // League constants (2)
+  "home_factor", "league_avg",
+  // Physis (5) — newly active via 78k FootyStats upsert
+  "shots_total_diff_ewma", "shots_on_target_diff_ewma", "shot_accuracy_ewma",
+  "corners_diff_ewma", "possession_diff_ewma",
+  // Discipline (3) — NEW from 75%-populated cols
+  "fouls_diff_ewma", "yellow_cards_diff_ewma", "red_cards_diff_ewma",
 ] as const;
 
-export const V3_N_FEATURES = V3_FEATURE_NAMES.length; // 29
+export const V3_N_FEATURES = V3_FEATURE_NAMES.length; // 20
 
-const LAMBDA_CLAMP_MIN = 0.3;
-const LAMBDA_CLAMP_MAX = 4.5;
+const LAMBDA_CLAMP_MIN = 0.05;
+const LAMBDA_CLAMP_MAX = 6.0;
 
 // ─── Model-Speicher ────────────────────────────────────────────────
 
@@ -156,10 +150,11 @@ export function getV3Rho(): number {
 interface V3Input {
   leagueAvg: number;
   homeFactor: number;
-  eloDiff: number;            // (Elo_H - Elo_A) / 400, 0 if unknown
+  eloDiff: number;             // (Elo_H + HOME_ADV) - Elo_A; 0 if unknown
+  sosStrength: number;         // (avg_opponent_elo - 1500) / 400; 0 if unknown
   restDaysDiff: number;        // (rest_H - rest_A) / 7
   isDerby: boolean;
-  h2hNpxgDiff: number;         // last-5 H2H npxG diff, 0 if unknown
+  h2hXgDiff: number;           // mean of last 5 H2H xg_diffs, 0 if unknown
   homeHistory: XGHistoryEntry[];
   awayHistory: XGHistoryEntry[];
 }
@@ -181,24 +176,47 @@ function diffEwma(home: (number | undefined)[], away: (number | undefined)[]): n
   return h - a;
 }
 
+function rollingMean(values: (number | undefined)[], window: number): number | null {
+  const vs = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v)).slice(-window);
+  if (vs.length === 0) return null;
+  return vs.reduce((s, v) => s + v, 0) / vs.length;
+}
+
+function rollingStd(values: (number | undefined)[], window: number): number | null {
+  const vs = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v)).slice(-window);
+  if (vs.length < 2) return 0;
+  const mean = vs.reduce((s, v) => s + v, 0) / vs.length;
+  const variance = vs.reduce((s, v) => s + (v - mean) ** 2, 0) / vs.length;
+  return Math.sqrt(variance);
+}
+
 function buildFeatures(input: V3Input): number[] {
-  const { homeHistory: hh, awayHistory: ah, leagueAvg, homeFactor, eloDiff, restDaysDiff, isDerby, h2hNpxgDiff } = input;
+  const {
+    homeHistory: hh, awayHistory: ah,
+    leagueAvg, homeFactor, eloDiff, sosStrength, restDaysDiff, isDerby, h2hXgDiff,
+  } = input;
 
-  // v2-Features (reused pattern)
-  const npxgDiff = diffEwma(hh.map(e => e.npxg ?? e.xg), ah.map(e => e.npxg ?? e.xg));
-  const npxgaDiff = diffEwma(hh.map(e => e.npxga ?? e.xga), ah.map(e => e.npxga ?? e.xga));
-  const totalNpxg = (ewmaLast8(hh.map(e => e.npxg ?? e.xg)) ?? leagueAvg)
-                  + (ewmaLast8(ah.map(e => e.npxg ?? e.xg)) ?? leagueAvg);
-  const ppdaDiff = diffEwma(
-    hh.map(e => (e.ppda_att && e.ppda_def) ? e.ppda_att / Math.max(1, e.ppda_def) : undefined),
-    ah.map(e => (e.ppda_att && e.ppda_def) ? e.ppda_att / Math.max(1, e.ppda_def) : undefined),
-  );
-  const deepDiff = diffEwma(
-    hh.map(e => (e.deep != null && e.deep_allowed != null) ? e.deep - e.deep_allowed : undefined),
-    ah.map(e => (e.deep != null && e.deep_allowed != null) ? e.deep - e.deep_allowed : undefined),
-  );
+  // ── Core xG (5) — uses .xg directly (no openplay/setpiece in Supabase) ──
+  const xgDiff = diffEwma(hh.map(e => e.xg), ah.map(e => e.xg));
+  const xgaDiff = diffEwma(hh.map(e => e.xga), ah.map(e => e.xga));
 
-  // v3 NEW features
+  // Momentum: last-3 avg minus full-history avg, home-minus-away
+  const xgMomentumH =
+    (rollingMean(hh.map(e => e.xg), 3) ?? leagueAvg) -
+    (rollingMean(hh.map(e => e.xg), 999) ?? leagueAvg);
+  const xgMomentumA =
+    (rollingMean(ah.map(e => e.xg), 3) ?? leagueAvg) -
+    (rollingMean(ah.map(e => e.xg), 999) ?? leagueAvg);
+  const xgMomentum = xgMomentumH - xgMomentumA;
+
+  const xgVolatility =
+    (rollingStd(hh.map(e => e.xg), 8) ?? 0) -
+    (rollingStd(ah.map(e => e.xg), 8) ?? 0);
+
+  const totalXg = (ewmaLast8(hh.map(e => e.xg)) ?? leagueAvg)
+                + (ewmaLast8(ah.map(e => e.xg)) ?? leagueAvg);
+
+  // ── Physis (5) ──────────────────────────────────────────────────────
   const shotsDiff = diffEwma(hh.map(e => e.shots_for), ah.map(e => e.shots_for));
   const sotDiff = diffEwma(hh.map(e => e.shots_on_target_for), ah.map(e => e.shots_on_target_for));
   const accDiff = diffEwma(
@@ -207,32 +225,38 @@ function buildFeatures(input: V3Input): number[] {
   );
   const cornerDiff = diffEwma(hh.map(e => e.corners_for), ah.map(e => e.corners_for));
   const possDiff = diffEwma(hh.map(e => e.possession_pct), ah.map(e => e.possession_pct));
-  const passDiff = diffEwma(hh.map(e => e.pass_pct), ah.map(e => e.pass_pct));
-  const ibsDiff = diffEwma(
-    hh.map(e => (e.shots_inside_box != null && e.shots_for) ? e.shots_inside_box / e.shots_for : undefined),
-    ah.map(e => (e.shots_inside_box != null && e.shots_for) ? e.shots_inside_box / e.shots_for : undefined),
-  );
-  const saveDiff = diffEwma(hh.map(e => e.gk_saves), ah.map(e => e.gk_saves));
+
+  // ── Discipline (3) ──────────────────────────────────────────────────
+  const foulsDiff = diffEwma(hh.map(e => e.fouls), ah.map(e => e.fouls));
+  const yellowDiff = diffEwma(hh.map(e => e.yellow_cards_for), ah.map(e => e.yellow_cards_for));
+  const redDiff = diffEwma(hh.map(e => e.red_cards_for), ah.map(e => e.red_cards_for));
 
   return [
-    npxgDiff,               // 0
-    npxgaDiff,              // 1
-    eloDiff,                // 2
-    totalNpxg,              // 3
-    homeFactor,             // 4
-    leagueAvg,              // 5
-    restDaysDiff,           // 6
-    0,                      // 7 sos_strength — TODO wire from src/lib/sos.ts
-    isDerby ? 1 : 0,        // 8
-    0,                      // 9 npxg_momentum placeholder
-    0,                      // 10 npxg_volatility placeholder
-    h2hNpxgDiff,            // 11
-    ppdaDiff,               // 12
-    deepDiff,               // 13
-    0, 0, 0, 0, 0, 0, 0,    // 14-20: season-level v2.1 features placeholder
-    // v3 NEW
-    shotsDiff, sotDiff, accDiff, cornerDiff,
-    possDiff, passDiff, ibsDiff, saveDiff,
+    // Core xG (5)
+    xgDiff,                  // 0  xg_diff_ewma
+    xgaDiff,                 // 1  xga_diff_ewma
+    xgMomentum,              // 2  xg_momentum
+    xgVolatility,            // 3  xg_volatility
+    totalXg,                 // 4  total_xg
+    // Elo + Context (5)
+    eloDiff,                 // 5  elo_diff
+    sosStrength,             // 6  sos_strength
+    isDerby ? 1 : 0,         // 7  is_derby
+    h2hXgDiff,               // 8  h2h_xg_diff
+    restDaysDiff,            // 9  rest_days_diff
+    // League (2)
+    homeFactor,              // 10 home_factor
+    leagueAvg,               // 11 league_avg
+    // Physis (5)
+    shotsDiff,               // 12
+    sotDiff,                 // 13
+    accDiff,                 // 14
+    cornerDiff,              // 15
+    possDiff,                // 16
+    // Discipline (3)
+    foulsDiff,               // 17
+    yellowDiff,              // 18
+    redDiff,                 // 19
   ];
 }
 

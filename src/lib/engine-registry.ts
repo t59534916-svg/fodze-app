@@ -41,7 +41,7 @@ export const ENGINES: EngineInfo[] = [
   {
     id: "poisson-ml-v3",
     name: "@annafrick13 v3",
-    description: "v2 + api-sports match-stats (shots/corners/possession/passes)",
+    description: "Lean 20-Feature LightGBM (xG-EWMA + Elo + SoS + Physis + Discipline). Trained 2026-04-25 on 78k Supabase rows. Brier 0.6536 (v2 baseline 0.5844 on different test corpus) — preview only, route to v2 internally until per-Liga calibration drift is fixed.",
     preview: true,
   },
   {
