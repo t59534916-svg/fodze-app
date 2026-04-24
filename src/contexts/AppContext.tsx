@@ -6,6 +6,7 @@ import { loadDirichletCalibration, setCalibrationMethod } from "@/lib/calibratio
 import { loadEnsembleModel } from "@/lib/ensemble";
 import { loadPoissonModel } from "@/lib/poisson-regression";
 import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
+import { loadV3Model } from "@/lib/poisson-ml-engine-v3";
 import { loadBenterWeights, setBenterMode } from "@/lib/benter-blend";
 import { loadFootBayesPosteriors } from "@/lib/footbayes-engine";
 import { loadConformalQuantiles, setConformalMode } from "@/lib/conformal-gate";
@@ -89,6 +90,13 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     });
     loadModel("/lgbm-model-v2.json", "lgbm", model => {
       if (loadLGBMModel(model)) validateGoldenTests();
+    });
+    // v3 — preview engine, optional; ignore failure (file may not exist yet
+    // on every deploy). When loaded, calcMatchPoissonMLv3 currently delegates
+    // to v2 internals but logs the v3-specific feature vector for shadow
+    // analysis.
+    loadModel("/lgbm-model-v3.json", "lgbm-v3", model => {
+      loadV3Model(model);
     });
     // Benter blend weights — optional. Default NEXT_PUBLIC_BENTER_BLEND=off
     // keeps pre-upgrade pipeline behavior. Set to "on" (or "shadow" when
