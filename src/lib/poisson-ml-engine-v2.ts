@@ -29,6 +29,7 @@ import { lgbmPredict, getLGBMRho, getTeamSeasonFeatures } from "./lgbm-runtime";
 import { applySoSAdjustment, type SoSRatings } from "./sos";
 import { calcAbsenceImpact, type PlayerProfile } from "./player-impact";
 import { dualTrackCalibrate } from "./calibration";
+import { getLeagueLiquidityTier } from "./league-liquidity";
 import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 
 // ─── Goldilocks Edge Guard ──────────────────────────────────────────
@@ -43,6 +44,12 @@ import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 //
 // Früher löste jede Edge > 7.5% sofort den Trap-Banner aus; in der Praxis
 // feuerte das bei fast jedem gut kalibrierten Match → Vertrauen kaputt.
+//
+// 2026-04-25 (v4.0 Phase 4): Diese globalen Konstanten sind FALLBACKS.
+// Die echten Schwellen kommen jetzt per-Liga aus league-liquidity.ts —
+// EPL braucht nur 1.5% edge weil sharp money die Linie pre-game zerlegt;
+// Liga 3 braucht 4.5% weil dort Spreads breit sind und 3% Edge oft Rauschen.
+// Diese Werte hier bleiben als Default-Tier wenn die Liga unbekannt ist.
 const EDGE_MIN = 0.025;
 const EDGE_MAX = 0.075;
 const EDGE_TRAP_HARD = 0.10;
@@ -458,27 +465,27 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
 
       if (trackBP !== null && pinnP !== null) {
         const edgeVsPinnacle = trackBP - pinnP;
+        const tier = getLeagueLiquidityTier(league);
 
-        if (edgeVsPinnacle < EDGE_MIN) {
-          // Unter Goldilocks: kein Signal
+        if (edgeVsPinnacle < tier.goldilocksMin) {
+          // Unter Goldilocks: kein Signal (Tier-1=1.5%, Tier-2=2.5%, Tier-3=3.5%)
           bet.isValue = false;
           bet.kelly = 0;
-        } else if (edgeVsPinnacle > EDGE_TRAP_HARD) {
-          // Harter Trap: ≥10% ist epistemic failure
+        } else if (edgeVsPinnacle > tier.trapHard) {
+          // Harter Trap: per-Liga (Tier-1=10%, Tier-2=12%, Tier-3=15%)
           bet.valueTrap = true;
           bet.valueTrapEdge = edgeVsPinnacle;
           bet.valueTrapReason = `Edge ${(edgeVsPinnacle * 100).toFixed(1)}% vs Pinnacle — wahrscheinlich fehlende Info`;
           bet.confidence = "NONE";
           bet.isValue = false;
           bet.kelly = 0;
-        } else if (edgeVsPinnacle > EDGE_MAX) {
-          // Goldilocks-Obergrenze überschritten. Kein Bet, aber keine
-          // Trap-Warnung — innerhalb der Toleranz für gut kalibrierte
-          // Modelle in Nebenligen.
+        } else if (edgeVsPinnacle > tier.goldilocksMax) {
+          // Soft-Trap (silent): zwischen GoldilocksMax und TrapHard.
+          // Kein Bet, aber kein Alarm — Toleranz für gut kalibrierte Modelle.
           bet.isValue = false;
           bet.kelly = 0;
         }
-        // 2.5%–7.5% band: bet authorized with Kelly sizing
+        // GoldilocksMin–GoldilocksMax band: bet authorized with Kelly sizing
       }
     }
   }

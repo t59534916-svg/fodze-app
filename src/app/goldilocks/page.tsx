@@ -8,12 +8,14 @@ import { computeEngineProbs, classifyEdgeSource, type EdgeSource } from "@/lib/g
 import { fuzzyTeamMatch, resolveTeam } from "@/lib/team-resolver";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { card, badge } from "@/styles/components";
+import { getLeagueLiquidityTier } from "@/lib/league-liquidity";
 import type { MatchdayData, RawMatch } from "@/types/match";
 
 // ─── Constants ──────────────────────────────────────────────────────
 
-const EDGE_MIN = 0.025;
-const EDGE_MAX = 0.075;
+// Display-grading thresholds (independent of per-Liga goldilocks zone).
+// EDGE_GRADE_A/B classify the SHAPE of an in-zone edge; the in-zone gate
+// itself is per-league via league-liquidity tiers.
 const EDGE_GRADE_A = 0.05;
 const EDGE_GRADE_B = 0.04;
 
@@ -326,8 +328,9 @@ export default function GoldilocksPage() {
               const marketEdge = mkt.marketFair - impliedProb;
               const engineEdge = mkt.engineFair != null ? mkt.engineFair - impliedProb : undefined;
 
-              const marketInZone = marketEdge >= EDGE_MIN && marketEdge <= EDGE_MAX;
-              const engineInZone = engineEdge != null && engineEdge >= EDGE_MIN && engineEdge <= EDGE_MAX;
+              const tier = getLeagueLiquidityTier(league);
+              const marketInZone = marketEdge >= tier.goldilocksMin && marketEdge <= tier.goldilocksMax;
+              const engineInZone = engineEdge != null && engineEdge >= tier.goldilocksMin && engineEdge <= tier.goldilocksMax;
               const source = classifyEdgeSource(marketInZone, engineInZone);
               if (!source) continue;
 

@@ -28,6 +28,7 @@ import { eloPrediction } from "./ensemble";
 import { poissonLambdaPredict } from "./poisson-regression";
 import { applySoSAdjustment, type SoSRatings } from "./sos";
 import { calcAbsenceImpact, type PlayerProfile } from "./player-impact";
+import { getLeagueLiquidityTier } from "./league-liquidity";
 import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 
 // ─── Feature Builder ────────────────────────────────────────────────
@@ -47,6 +48,10 @@ import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 // Match mit guter Prediction, weil post-calibration Edges von 8–10% in
 // Nicht-Top-5-Ligen normal sind. Die Zweistufigkeit zeigt Traps nur
 // noch bei echten Anomalien, Goldilocks bleibt aber streng 2.5–7.5%.
+//
+// 2026-04-25 (v4.0 Phase 4): Globale Konstanten als Fallback;
+// per-Liga Schwellen kommen aus league-liquidity.ts. EPL = sharp = 1.5%
+// edge schon Signal. Liga 3 = soft = 4.5% nötig.
 const VALUE_CAP_EDGE_HARD = 0.10;
 const VALUE_CAP_EDGE_SOFT = 0.075;
 
@@ -376,18 +381,18 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
                   : null;
       if (pinnP !== null) {
         const edgeVsPinnacle = bet.pModel - pinnP;
-        if (edgeVsPinnacle > VALUE_CAP_EDGE_HARD) {
-          // Harter Trap: ≥10% ist epistemic failure
+        const tier = getLeagueLiquidityTier(league);
+        if (edgeVsPinnacle > tier.trapHard) {
+          // Harter Trap (per-Liga: T1=10% / T2=12% / T3=15%): epistemic failure
           bet.valueTrap = true;
           bet.valueTrapEdge = edgeVsPinnacle;
           bet.valueTrapReason = `Edge ${(edgeVsPinnacle * 100).toFixed(1)}% vs Pinnacle — wahrscheinlich fehlende Info (Verletzung/Sperre/Trainerwechsel)`;
           bet.confidence = "NONE";
           bet.isValue = false;
           bet.kelly = 0;
-        } else if (edgeVsPinnacle > VALUE_CAP_EDGE_SOFT) {
-          // Goldilocks-Obergrenze überschritten. Kein Bet, aber keine
-          // Trap-Warnung — innerhalb der Toleranz für gut kalibrierte
-          // Modelle in Nebenligen.
+        } else if (edgeVsPinnacle > tier.goldilocksMax) {
+          // Soft-Trap (silent): keine Warnung, kein Bet — Toleranz für
+          // gut kalibrierte Modelle in der jeweiligen Liga.
           bet.isValue = false;
           bet.kelly = 0;
         }
