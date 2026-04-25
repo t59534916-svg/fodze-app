@@ -8,6 +8,8 @@ import LiveCalibration from "@/components/performance/LiveCalibration";
 import ClvChart from "@/components/performance/ClvChart";
 import CrossEngineBacktest from "@/components/performance/CrossEngineBacktest";
 import { computeBetStats, computeClvStats } from "@/lib/bet-metrics";
+import { computeLeagueCLVBreakdown, CLV_FEEDBACK_WINDOW } from "@/lib/clv-feedback";
+import { LEAGUES } from "@/lib/dixon-coles";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
 import { text } from "@/styles/components";
 
@@ -204,6 +206,73 @@ function GradeBar() {
   );
 }
 
+// ─── Per-League CLV Breakdown (Phase 4 — drift detection) ───
+function LeagueClvBreakdown() {
+  const { userBets } = useApp();
+  const rows = useMemo(() => computeLeagueCLVBreakdown(userBets), [userBets]);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const dampenedCount = rows.filter(r => r.kellyMultiplier < 1).length;
+
+  return (
+    <div style={S.card}>
+      <div style={{ ...S.label, marginBottom: 4 }}>
+        Per-Liga CLV-Drift{" "}
+        <span style={{ fontSize: 9, color: color.textMuted, fontWeight: 400 }}>
+          — Kelly-Dampening triggert bei z-score &lt; -1.0 nach ≥{CLV_FEEDBACK_WINDOW} settled bets
+        </span>
+      </div>
+      {dampenedCount > 0 && (
+        <div style={{ fontSize: fontSize.xs, color: "#c47070", marginBottom: 8 }}>
+          ⚠ {dampenedCount} Liga{dampenedCount > 1 ? "en" : ""} aktuell auf 50% Kelly gedämpft
+        </div>
+      )}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", fontSize: fontSize.sm, fontFamily: fontFamily.mono, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ color: color.textMuted, textAlign: "right" }}>
+              <th style={{ textAlign: "left", padding: "6px 8px 6px 0" }}>Liga</th>
+              <th style={{ padding: "6px 8px" }}>Bets</th>
+              <th style={{ padding: "6px 8px" }}>Ø CLV</th>
+              <th style={{ padding: "6px 8px" }}>z-Score</th>
+              <th style={{ padding: "6px 0 6px 8px" }}>Kelly×</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const triggered = r.kellyMultiplier < 1;
+              const sufficient = r.count >= CLV_FEEDBACK_WINDOW;
+              const trColor = triggered ? "#c47070" : sufficient ? color.text : color.textMuted;
+              const lgName = LEAGUES[r.league]?.name ?? r.league;
+              return (
+                <tr key={r.league} style={{ color: trColor, borderTop: `1px solid ${color.border}` }}>
+                  <td style={{ textAlign: "left", padding: "4px 8px 4px 0" }}>{lgName}</td>
+                  <td style={{ textAlign: "right", padding: "4px 8px" }}>{r.count}</td>
+                  <td style={{ textAlign: "right", padding: "4px 8px" }}>
+                    {r.meanClv != null ? `${r.meanClv >= 0 ? "+" : ""}${r.meanClv.toFixed(2)}` : "—"}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "4px 8px" }}>
+                    {r.zScore != null ? r.zScore.toFixed(2) : "—"}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "4px 0 4px 8px", fontWeight: triggered ? fontWeight.bold : fontWeight.normal }}>
+                    {r.kellyMultiplier.toFixed(2)}×
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize: fontSize.xs, color: color.textFaint, marginTop: 8 }}>
+        Volumen-basiertes Fenster (last {CLV_FEEDBACK_WINDOW} settled bets pro Liga). Triggert auch in Nebenligen mit niedrigem Bet-Rhythmus.
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ───
 function LivePerformance() {
   const { userBets } = useApp();
@@ -356,6 +425,9 @@ export default function PerformancePage() {
 
           {/* Live CLV trend from actual bets */}
           <ClvChart />
+
+          {/* Per-league CLV breakdown — Phase 4 drift detection */}
+          <LeagueClvBreakdown />
 
           {/* Past bets with share button */}
           <BetHistoryShare />
