@@ -126,8 +126,16 @@ function extractBestOdds(bookmakers, market) {
     results.bestD = Math.max(...results.allBooks.map(b => b.D || 0));
     results.bestA = Math.max(...results.allBooks.map(b => b.A || 0));
   } else if (market === "totals") {
-    results.bestO = Math.max(...results.allBooks.map(b => b.O || 0));
-    results.bestU = Math.max(...results.allBooks.map(b => b.U || 0));
+    // CRITICAL: Only aggregate the 2.5 line. Different books offer 2.5 / 3.0 /
+    // 3.5 lines depending on expected goals; mixing them stored sharp_over25 =
+    // 1.85 (= Pinnacle's O@3.0) and best_over25 = 2.36 (= onexbet's O@3.5)
+    // — both labeled as "O 2.5" in DB. Engine compared model P(O2.5)=65% to
+    // "market" 1/2.36 = 42% → spurious +23% edge → false TRAP storms.
+    // Filter to point=2.5 ONLY. If no book offers 2.5, leave null (engine
+    // skips the O25 bet rather than fabricating a fake market price).
+    const totals25 = results.allBooks.filter(b => b.point === 2.5);
+    results.bestO = totals25.length ? Math.max(...totals25.map(b => b.O || 0)) : null;
+    results.bestU = totals25.length ? Math.max(...totals25.map(b => b.U || 0)) : null;
   }
 
   return results;
@@ -152,9 +160,12 @@ function processEvent(event) {
   h2h.bestD = Math.max(...h2h.allBooks.filter(b => b.D).map(b => b.D));
   h2h.bestA = Math.max(...h2h.allBooks.filter(b => b.A).map(b => b.A));
 
-  // Sharp book odds (Pinnacle)
+  // Sharp book odds (Pinnacle). For totals, restrict to point=2.5 — Pinnacle
+  // often offers O@3.0 or O@3.5 for high-favorite matches and a 3.0 price
+  // (1.85) silently stored as sharp_over25 was a major TRAP-driver pre-fix.
+  // If Pinnacle doesn't offer 2.5 for this match, sharp_over25 stays null.
   const sharpH2H = h2h.allBooks.find(b => SHARP_BOOKS.includes(b.book));
-  const sharpTotals = totals.allBooks.find(b => SHARP_BOOKS.includes(b.book));
+  const sharpTotals = totals.allBooks.find(b => SHARP_BOOKS.includes(b.book) && b.point === 2.5);
 
   return {
     event_id: event.id,
