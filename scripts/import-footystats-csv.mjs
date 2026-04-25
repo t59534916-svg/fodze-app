@@ -297,9 +297,14 @@ async function processFile(filePath, leagueKey) {
   let skipped_no_xg = 0;
   for (const r of data) {
     if (r.length < header.length) continue;
-    // Skip matches without final score (future fixtures included in some FS CSVs)
-    const status = ci.status >= 0 ? r[ci.status] : "";
-    if (status && !/complete/i.test(status)) { skipped_incomplete++; continue; }
+    // Skip matches without final score (future fixtures included in some FS CSVs).
+    // CRITICAL: must be exact match — /complete/i.test("incomplete") was TRUE
+    // (substring match) and let 1502 future xg=0 / goals=0-0 rows pollute the DB
+    // 2026-04-25, leaking into MatchdayContext.loadCached's slice(-8) tail and
+    // systematically under-predicting team strength → 14-29% spurious edges
+    // → false TRAP storms in Tier-1 leagues. Always normalize + exact-compare.
+    const status = ci.status >= 0 ? String(r[ci.status] || "").trim().toLowerCase() : "";
+    if (status && status !== "complete") { skipped_incomplete++; continue; }
 
     const date = toIsoDate(r[ci.date]);
     const home = (r[ci.home_team] || "").trim();
