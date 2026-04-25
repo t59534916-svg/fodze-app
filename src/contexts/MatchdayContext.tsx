@@ -16,6 +16,7 @@ import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
 import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
+import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
 import type { MatchdayData, RawMatch, OddsData, OddsSnapshot, MatchCalc, ProcessedMatch, ComboLeg, BetCalc } from "@/types/match";
@@ -63,7 +64,14 @@ export function useMatchdayContext() {
 }
 
 export function MatchdayProvider({ children }: { children: React.ReactNode }) {
-  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded, engine } = useApp();
+  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded, engine, userBets } = useApp();
+  // Per-league Kelly multiplier — re-computed when bets list or league
+  // changes. Returns 1.0 unless 30-day rolling CLV z-score < -1.0 with
+  // ≥40 settled bets in this league (volume gate).
+  const leagueKellyMultiplier = useMemo(
+    () => computeLeagueKellyMultiplier(league, userBets),
+    [league, userBets],
+  );
 
   const [data, setData] = useState<MatchdayData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -436,7 +444,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const ensemblePin = o._sharp && o._sharp.h != null && o._sharp.d != null && o._sharp.a != null
       ? { sharp_h: o._sharp.h, sharp_d: o._sharp.d, sharp_a: o._sharp.a }
       : undefined;
-    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, ensemblePin, undefined, league, "ensemble");
+    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, ensemblePin, undefined, league, "ensemble", leagueKellyMultiplier);
 
     const ensembleCalc: MatchCalc = {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,
@@ -463,7 +471,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       // we don't multiply weight-file bloat. A dedicated "bayes" entry can
       // be added to benter-weights.json post-validation if it ships.
       const bayesBets = calculateBetsEnhanced(
-        bayesMk, enh.mk_low, enh.mk_high, no, frac, bayesPin, undefined, league, "ensemble",
+        bayesMk, enh.mk_low, enh.mk_high, no, frac, bayesPin, undefined, league, "ensemble", leagueKellyMultiplier,
       );
       bayesCalc = {
         lambdaH: bayesLambdas.lambdaH, lambdaA: bayesLambdas.lambdaA,
@@ -503,8 +511,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // prior "y" / "n" flag only caught null → present, not content
     // changes within the rating table.
     const sosKey = sosRatings ? `sos${Object.keys(sosRatings).length}` : "sos0";
-    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosKey}|pxg${playerXgIndex.size}|${matchIds}`;
-  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data, playerXgIndex]);
+    // Include leagueKellyMultiplier so per-league CLV-feedback dampening
+    // changes (e.g., new bet settlement flips the trigger) invalidate the
+    // engine cache and re-compute Kelly stakes immediately.
+    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosKey}|pxg${playerXgIndex.size}|lkm${leagueKellyMultiplier}|${matchIds}`;
+  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data, playerXgIndex, leagueKellyMultiplier]);
 
   const allEngineCalcs = useMemo(() => {
     // Clear inline before lookups — useEffect fires AFTER render, which

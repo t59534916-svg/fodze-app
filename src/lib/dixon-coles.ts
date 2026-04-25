@@ -636,12 +636,17 @@ export function kellyFraction(
   quote:number,
   fraction=0.33,
   varianceHaircut=1,
+  leagueKellyMultiplier=1,
 ):number {
   if (quote<=1) return 0;
   const k = (pEigen*quote-1)/(quote-1);
   const cap = fraction <= 0.28 ? 0.025 : fraction <= 0.40 ? 0.04 : 0.06;
   const h = Math.max(0.5, Math.min(1, varianceHaircut));
-  return Math.max(0, Math.min(k*fraction*h, cap));
+  // Per-league CLV-feedback dampening: triggered when 30-day rolling
+  // CLV z-score for this league fell below -1.0 → halve Kelly.
+  // 1.0 = no dampening, 0.5 = halve. Defensive clamp [0, 1].
+  const lkm = Math.max(0, Math.min(1, leagueKellyMultiplier));
+  return Math.max(0, Math.min(k*fraction*h*lkm, cap));
 }
 
 const PRIOR_K = 6;
@@ -785,6 +790,7 @@ export function calcMatchEnhanced(
     rhoModel?:RhoModelCoefficients;          // dynamic rho model
     residualModels?:ResidualModels;          // XGBoost residual corrections
     restDaysDiff?:number;                    // for dynamic rho features
+    leagueKellyMultiplier?:number;           // v4 Phase 4: per-Liga CLV-feedback dampening (1.0 default)
   }
 ):EnhancedResult {
   // Guard against division by zero
@@ -951,6 +957,7 @@ export function calculateBetsEnhanced(
   pinnacleOdds?:PinnacleOdds,anchorConfig?:Partial<AnchorConfig>,
   league?:string,
   engine:"v1"|"v2"|"ensemble"="ensemble",
+  leagueKellyMultiplier:number=1,
 ):EnhancedBetCalc[] {
   const has1X2=odds.h>0&&odds.d>0&&odds.a>0;
   const vig=has1X2?vigAdjustBest([odds.h,odds.d,odds.a]):null;
@@ -1024,7 +1031,9 @@ export function calculateBetsEnhanced(
     // [0.5, 1.0]). Wide CIs = high model uncertainty = smaller bet.
     const ciWidth = normalizedCIWidth(pLow, pHigh, pModel);
     const varianceHaircut = Math.max(0.5, Math.min(1, 1 - 0.5 * ciWidth));
-    const k=kellyFraction(pModel,q,fraction,varianceHaircut)*kellyDamp*conformalFactor;
+    // Per-league CLV-feedback dampening passed via leagueKellyMultiplier.
+    // Default 1.0 = no dampening; 0.5 when 30-day league CLV z-score < -1.
+    const k=kellyFraction(pModel,q,fraction,varianceHaircut,leagueKellyMultiplier)*kellyDamp*conformalFactor;
     const eLow=pLow-pMarket, eHigh=pHigh-pMarket, sig=eLow>0;
     let conf:"HIGH"|"MEDIUM"|"LOW"|"NONE";
     if(sig&&edge>0.05)conf="HIGH";else if(sig)conf="MEDIUM";else if(edge>0)conf="LOW";else conf="NONE";
