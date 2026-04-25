@@ -184,12 +184,11 @@ function MatchReportCard({ report, sos }: { report: MatchReport; sos?: SoSRating
           <span style={S.tag(r.confidence >= 75 ? "#6aad55" : r.confidence >= 50 ? "#d4b86a" : "#e07070")}>
             {r.confidence}% Konfidenz
           </span>
-          {/* EdgeBadge with Goldilocks-zone meter — tells the reader at a
-              glance whether the best 1X2 edge is a real value signal (green
-              2.5–7.5%), too thin (amber), or a suspected value-trap
-              (warn >7.5%). Same contract as MatchCard. */}
+          {/* EdgeBadge with per-Liga Goldilocks-zone meter (Phase 4
+              tiers). Same contract as MatchCard — passes league so the
+              zone thresholds adapt to sharp/moderate/soft markets. */}
           {bestEdge && (
-            <EdgeBadge edge={bestEdge.edge} />
+            <EdgeBadge edge={bestEdge.edge} league={r.league} />
           )}
           {r.kickoff && <span style={{ fontSize: 9, color: "#c4a26550" }}>{formatKickoff(r.kickoff)}</span>}
           <span style={{ fontSize: 9, color: "#a89070", marginLeft: "auto" }}>

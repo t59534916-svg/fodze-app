@@ -1,21 +1,33 @@
 "use client";
 import { color } from "@/styles/tokens";
+import { getLeagueLiquidityTier, DEFAULT_TIER } from "@/lib/league-liquidity";
 
-// Goldilocks zone per FODZE engine contract (poisson-ml-engine-v2):
-// - [2.5%, 7.5%]  = green, authorized bet
-// - [0%, 2.5%)    = amber, too thin (not worth the variance)
-// - (7.5%, ∞)     = warn, value-trap suspected (missing info)
-// - negative      = neutral grey, no value
-const MIN = 2.5;
-const MAX = 7.5;
+// Goldilocks zone is now PER-LEAGUE (Phase 4, 2026-04-25):
+// - Tier-1 (sharp: EPL/La Liga/Serie A/Buli/Ligue 1/UEFA): 1.5-5% goldilocks, trap >10%
+// - Tier-2 (moderate, default for unknown): 2.5-7.5% goldilocks, trap >12%
+// - Tier-3 (soft: Liga 3/L1/L2/Greek/Eerste): 3.5-8.5% goldilocks, trap >15%
+//
+// EdgeBadge previously used hardcoded MIN=2.5/MAX=7.5/trap>7.5% globally,
+// which mislabeled e.g. EPL +8.7% as "TRAP?" even though the engine's
+// per-Liga classification correctly placed it in the soft-skip zone
+// (8% < trapHard=10%). Symptom: EPL/Buli matches showed 80%+ TRAP rate
+// in UI even though Kelly stakes were correctly calibrated.
 const DISPLAY_MAX = 12; // anything above 12% is far-trap territory; cap the meter
 
-export type EdgeZone = "goldilocks" | "thin" | "trap" | "none";
+export type EdgeZone = "goldilocks" | "thin" | "soft" | "trap" | "none";
 
-export function classifyEdge(edgePct: number): EdgeZone {
+export function classifyEdge(edgePct: number, leagueKey?: string): EdgeZone {
   if (edgePct <= 0) return "none";
-  if (edgePct < MIN) return "thin";
-  if (edgePct <= MAX) return "goldilocks";
+  const tier = leagueKey ? getLeagueLiquidityTier(leagueKey) : DEFAULT_TIER;
+  const minPct = tier.goldilocksMin * 100;
+  const maxPct = tier.goldilocksMax * 100;
+  const trapHardPct = tier.trapHard * 100;
+  if (edgePct < minPct) return "thin";
+  if (edgePct <= maxPct) return "goldilocks";
+  // Above goldilocksMax but ≤ trapHard = soft skip (no Kelly, no LOUD
+  // alarm — UI mirrors engine's silent skip in poisson-ml-engine-v2.ts).
+  if (edgePct <= trapHardPct) return "soft";
+  // Above trapHard = hard trap (matches engine bet.valueTrap=true).
   return "trap";
 }
 
@@ -23,6 +35,9 @@ const ZONE_STYLES: Record<EdgeZone, { fg: string; bg: string; border: string; la
   none:       { fg: color.goldMid,    bg: `${color.goldMid}15`,  border: `${color.goldMid}25`,  label: "ZERO" },
   thin:       { fg: color.goldShine,  bg: `${color.goldMid}18`,  border: `${color.goldMid}30`,  label: "THIN" },
   goldilocks: { fg: color.value,      bg: `${color.value}18`,    border: `${color.value}35`,    label: "ZONE" },
+  // Soft skip: outside Goldilocks but below hard-trap threshold. Subtle
+  // gold-tone styling — visible enough to flag, not loud enough to alarm.
+  soft:       { fg: color.goldShine,  bg: `${color.goldMid}20`,  border: `${color.goldMid}40`,  label: "SOFT" },
   trap:       { fg: color.warn,       bg: `${color.warn}18`,     border: `${color.warn}35`,     label: "TRAP?" },
 };
 
@@ -40,15 +55,18 @@ const ZONE_STYLES: Record<EdgeZone, { fg: string; bg: string; border: string; la
  *
  * Layout (compact): "+28.1% · [▓▓▓▓▓▓│░]" with "TRAP?" pill overlay.
  */
-export default function EdgeBadge({ edge, showMeter = true }: { edge: number; showMeter?: boolean }) {
+export default function EdgeBadge({ edge, showMeter = true, league }: { edge: number; showMeter?: boolean; league?: string }) {
   const pct = edge * 100;
-  const zone = classifyEdge(pct);
+  const zone = classifyEdge(pct, league);
   const s = ZONE_STYLES[zone];
+  const tier = league ? getLeagueLiquidityTier(league) : DEFAULT_TIER;
+  const minPct = tier.goldilocksMin * 100;
+  const maxPct = tier.goldilocksMax * 100;
 
   const clamped = Math.max(0, Math.min(pct, DISPLAY_MAX));
   const markerPct = (clamped / DISPLAY_MAX) * 100;
-  const zoneStart = (MIN / DISPLAY_MAX) * 100;
-  const zoneEnd = (MAX / DISPLAY_MAX) * 100;
+  const zoneStart = (minPct / DISPLAY_MAX) * 100;
+  const zoneEnd = (maxPct / DISPLAY_MAX) * 100;
 
   // Sign-in-number pattern avoids "+−0.5%" when edge is negative. We
   // still want the leading character to be part of the number for
@@ -67,9 +85,10 @@ export default function EdgeBadge({ edge, showMeter = true }: { edge: number; sh
         border: `1px solid ${s.border}`,
       }}
       title={
-        zone === "goldilocks" ? "Goldilocks-Zone (2.5–7.5%) — authorisiert"
-        : zone === "thin" ? "Unter 2.5% — zu dünn für Kelly-Stake"
-        : zone === "trap" ? "Über 7.5% — wahrscheinlich fehlende Info (Value-Trap)"
+        zone === "goldilocks" ? `Goldilocks-Zone (${minPct.toFixed(1)}–${maxPct.toFixed(1)}%) — authorisiert`
+        : zone === "thin" ? `Unter ${minPct.toFixed(1)}% — zu dünn für Kelly-Stake`
+        : zone === "soft" ? `Über ${maxPct.toFixed(1)}% — außerhalb Goldilocks (kein Bet, keine Trap)`
+        : zone === "trap" ? `Über ${(tier.trapHard * 100).toFixed(1)}% — wahrscheinlich fehlende Info (Value-Trap)`
         : "Kein Value"
       }
     >
@@ -106,7 +125,7 @@ export default function EdgeBadge({ edge, showMeter = true }: { edge: number; sh
           }} />
         </div>
       )}
-      {zone === "trap" && (
+      {(zone === "trap" || zone === "soft") && (
         <span style={{
           fontSize: 7, fontWeight: 700, color: s.fg, letterSpacing: 0.5,
           opacity: 0.8,

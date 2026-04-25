@@ -114,12 +114,13 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
             <span style={{ fontSize: 9, color: "#c47070", fontWeight: 600, minWidth: 24, textAlign: "right" }}>{pc(calc.mk.A)}</span>
           </div>
 
-          {/* Zone-colored edge readout with Goldilocks meter — green
-              for 2.5–7.5% authorized band, amber for thin <2.5%, warn
-              with "TRAP?" pill for >7.5% suspected value-trap. */}
+          {/* Zone-colored edge readout with per-Liga Goldilocks meter:
+              Tier-1 (sharp) 1.5-5%, Tier-2 (default) 2.5-7.5%, Tier-3
+              (soft) 3.5-8.5%. SOFT pill for between max and trapHard
+              (no Kelly, no alarm). TRAP? pill only above trapHard. */}
           <div style={{ flexShrink: 0 }}>
             {bestBet ? (
-              <EdgeBadge edge={bestBet.edge} />
+              <EdgeBadge edge={bestBet.edge} league={league} />
             ) : (match.tags?.length ?? 0) > 0 ? (
               <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: "#c4a26515", color: "#c4a26570" }}>
                 {match.tags![0]}
