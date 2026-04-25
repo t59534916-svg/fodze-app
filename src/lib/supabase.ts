@@ -400,10 +400,19 @@ export async function loadAllTeamXGHistory(
   league: string,
   limit: number = 3000
 ): Promise<TeamXGMatch[]> {
+  // Defense-in-depth: filter out future matches at query time. The Footy
+  // Stats CSV importer was leaking 1502 future-zero rows into the DB
+  // (regex /complete/i matched "incomplete" via substring); even after the
+  // import-side fix, this guard ensures no past or future bug source can
+  // pollute the engine's "last 8" tail used in MatchdayContext.loadCached.
+  // Today-or-later matches with xg=0 systematically under-predict team
+  // strength → false-positive Tier-1 TRAP storms.
+  const today = new Date().toISOString().slice(0, 10);
   const { data, error } = await supabase
     .from("team_xg_history")
     .select("*")
     .eq("league", league)
+    .lt("match_date", today)
     .order("match_date", { ascending: false })
     .limit(limit);
   if (error) { console.error("loadAllTeamXGHistory error:", error); return []; }
