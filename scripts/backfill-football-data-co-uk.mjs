@@ -113,7 +113,12 @@ async function upsertBatch(rows) {
   let ok = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const chunk = rows.slice(i, i + BATCH);
-    const resp = await fetch(`${SUPA_URL}/rest/v1/odds_closing_history`, {
+    // PostgREST upsert requires BOTH ?on_conflict=<unique-col> AND
+    // Prefer: resolution=merge-duplicates. Without the query-param the
+    // header is silently ignored and we get 23505 unique-violation —
+    // exactly what happened on the 2026-04-26 re-run after FootyStats
+    // had already populated the (match_key) UNIQUE rows.
+    const resp = await fetch(`${SUPA_URL}/rest/v1/odds_closing_history?on_conflict=match_key`, {
       method: "POST",
       headers: {
         apikey: SUPA_KEY,

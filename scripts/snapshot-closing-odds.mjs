@@ -122,6 +122,48 @@ async function updateBet(betId, closingOdds, clv) {
   }
 }
 
+// Persist all current within-window sharp closes to odds_closing_history
+// so bets placed retroactively (after kickoff but before settlement) can
+// still be CLV-backfilled by fetch-results.mjs::lookupClosingFromHistory.
+//
+// 2026-04-26 Background: football-data.co.uk stopped publishing PSCH after
+// 2026-01-14. Since the 4h cron + 2h-window combo means we already capture
+// the canonical sharp close for every match in normal operation, the only
+// missing piece was persistence beyond bets. This dual-write adds that.
+//
+// match_key uses fodze format (league:homenorm-awaynorm) — different from
+// the football-data.co.uk row format (league|home|away|date) but the table
+// only requires UNIQUE(match_key) so they coexist; lookups iterate both.
+async function persistClosingSnapshot(league, matchDate, homeTeam, awayTeam, sharpH, sharpD, sharpA, sharpO25, sharpU25) {
+  if (DRY) return;
+  const norm = (s) => (s || "").toLowerCase().replace(/\s/g, "");
+  const fodzeKey = `${league}:${norm(homeTeam)}-${norm(awayTeam)}`;
+  const payload = {
+    match_key: fodzeKey,
+    league,
+    match_date: matchDate,
+    home_team: homeTeam,
+    away_team: awayTeam,
+    psch: sharpH > 1 ? sharpH : null,
+    pscd: sharpD > 1 ? sharpD : null,
+    psca: sharpA > 1 ? sharpA : null,
+    psc_over25: sharpO25 > 1 ? sharpO25 : null,
+    psc_under25: sharpU25 > 1 ? sharpU25 : null,
+    source: "live-odds-snapshot",
+  };
+  const resp = await fetch(
+    `${SUPA_URL}/rest/v1/odds_closing_history?on_conflict=match_key`,
+    {
+      method: "POST",
+      headers: { ...SUPA_HEADERS, Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify([payload]),
+    },
+  );
+  if (!resp.ok) {
+    console.error(`  ⚠️ closing-history persist ${fodzeKey}: ${resp.status} ${await resp.text()}`);
+  }
+}
+
 async function main() {
   console.log(`⏱️  FODZE Closing-Odds Snapshot${DRY ? " (DRY)" : ""} · window ${windowHours}h\n`);
 
@@ -133,13 +175,38 @@ async function main() {
   console.log(`📋 ${bets.length} pending bets (last-write-wins on closing_odds)`);
   console.log(`📊 ${liveOdds.length} live odds events\n`);
 
+  const now = new Date();
+  const windowEndMs = now.getTime() + windowHours * 3_600_000;
+
+  // ─── Forward-looking persistence (2026-04-26 fix) ─────────────────
+  // Persist EVERY in-window match's sharp close to odds_closing_history,
+  // independent of whether a user bet exists yet. Why: bets placed
+  // retroactively (after kickoff but before settlement) currently can't
+  // be CLV-attributed because live_odds discards completed matches as
+  // soon as the next 4h-cron runs. By snapshotting now, fetch-results.mjs
+  // can backfill at settlement time. Idempotent via match_key UNIQUE.
+  let persistedHistory = 0;
+  for (const m of liveOdds) {
+    const ko = m.commence_time ? new Date(m.commence_time).getTime() : null;
+    if (!ko || ko < now.getTime() || ko > windowEndMs) continue;
+    if (!m.league || !m.home_team || !m.away_team) continue;
+    const matchDate = m.commence_time.slice(0, 10); // YYYY-MM-DD
+    await persistClosingSnapshot(
+      m.league, matchDate, m.home_team, m.away_team,
+      Number(m.sharp_h), Number(m.sharp_d), Number(m.sharp_a),
+      Number(m.sharp_over25), Number(m.sharp_under25),
+    );
+    persistedHistory++;
+  }
+  if (persistedHistory > 0) {
+    console.log(`🗄️  ${persistedHistory} matches persisted to odds_closing_history (forward-CLV-cache)\n`);
+  }
+
   if (bets.length === 0) {
-    console.log("Nothing to snapshot. Exiting.");
+    console.log("No pending bets to snapshot. (closing-history was still updated.)");
     return;
   }
 
-  const now = new Date();
-  const windowEndMs = now.getTime() + windowHours * 3_600_000;
   let snapped = 0;
   let skippedFuture = 0;
   let skippedPast = 0;
