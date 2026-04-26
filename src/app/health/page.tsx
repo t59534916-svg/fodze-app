@@ -55,6 +55,14 @@ interface SourceRow {
   status: "fresh" | "stale" | "dead";
 }
 
+interface BrierSnapshot {
+  engine: string;
+  n: number;
+  brier_1x2: number | null;
+  brier_o25: number | null;
+  window_end_date: string;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function ago(iso?: string | null): string {
@@ -131,6 +139,7 @@ export default function HealthPage() {
   const [tables, setTables] = useState<TableRow[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [bets, setBets] = useState<{ total: number; settled: number; withClv: number; pending: number; lastSettled?: string } | null>(null);
+  const [brier, setBrier] = useState<BrierSnapshot[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -310,6 +319,24 @@ export default function HealthPage() {
         if (!cancelled) setBets({ total, settled, withClv, pending, lastSettled });
       }
 
+      // Live Brier monitor — most recent snapshot per engine (overall row).
+      // Populated by `node scripts/monitor-live-brier.mjs --persist` on a
+      // nightly cron. The '__overall' sentinel league = engine-level
+      // aggregate across all leagues in the window.
+      const { data: brierRows } = await supabase
+        .from("live_brier_snapshots")
+        .select("engine, n, brier_1x2, brier_o25, window_end_date")
+        .eq("league", "__overall")
+        .order("window_end_date", { ascending: false })
+        .order("brier_1x2", { ascending: true })
+        .limit(20);
+      if (brierRows && !cancelled) {
+        // Take only the most recent window's snapshots (one per engine).
+        const latestDate = brierRows[0]?.window_end_date;
+        const latest = brierRows.filter((r) => r.window_end_date === latestDate);
+        setBrier(latest as BrierSnapshot[]);
+      }
+
       if (!cancelled) setLoading(false);
     })();
 
@@ -449,6 +476,56 @@ export default function HealthPage() {
             ⚠ 0 von {bets.settled} gesettleten Bets hat CLV-Daten. Live-odds-snapshot Cron sammelt
             ab 2026-04-26 für alle in-window Matches in odds_closing_history.
           </div>
+        )}
+      </Section>
+
+      {/* Section 5: Live Engine Brier — populated by scripts/monitor-live-brier.mjs.
+          Joins pipeline_shadow_log × team_xg_history.goals_for/against to compute
+          REAL per-engine Brier on settled production matches (not the static
+          backtest-summary.json OOT corpus). Empty until first cron run. */}
+      <Section title="LIVE ENGINE BRIER" subtitle={brier && brier.length > 0 ? `window ending ${brier[0].window_end_date}` : "no snapshot yet"}>
+        {!brier || brier.length === 0 ? (
+          <div style={{ fontSize: 11, color: "#c4a26560", padding: 8 }}>
+            Keine Snapshots — `node scripts/monitor-live-brier.mjs --persist` einmal laufen lassen,
+            dann nightly als Cron einrichten. Ersetzt statisches backtest-summary.json durch
+            empirische Production-Brier.
+          </div>
+        ) : (
+          <>
+            <div style={labelStyle}>engine · n · Brier 1X2 (lower = better) · Brier O25</div>
+            {brier.map(b => (
+              <div key={b.engine} style={{
+                display: "grid", gridTemplateColumns: "1fr auto auto auto",
+                gap: 10, padding: "8px 0", borderBottom: "1px solid #c4a26510",
+                alignItems: "center",
+              }}>
+                <span style={{ fontSize: 12, color: "#ede4d4", fontFamily: "monospace" }}>{b.engine}</span>
+                <span style={{
+                  fontSize: 11, color: "#c4a26580", fontFamily: "monospace",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  n={b.n}
+                </span>
+                <span style={{
+                  fontSize: 12, color: "#d4b86a", fontFamily: "monospace",
+                  fontVariantNumeric: "tabular-nums", minWidth: 70, textAlign: "right",
+                }}>
+                  {b.brier_1x2 != null ? Number(b.brier_1x2).toFixed(4) : "—"}
+                </span>
+                <span style={{
+                  fontSize: 11, color: "#c4a26580", fontFamily: "monospace",
+                  fontVariantNumeric: "tabular-nums", minWidth: 60, textAlign: "right",
+                }}>
+                  {b.brier_o25 != null ? Number(b.brier_o25).toFixed(4) : "—"}
+                </span>
+              </div>
+            ))}
+            <div style={{ marginTop: 8, fontSize: 9, color: "#c4a26560", lineHeight: 1.5 }}>
+              Empirische Brier auf Matches die nach Prediction settlten. Static OOT-Baseline (n=6691):
+              v2_dirichlet 0.6083, v1 0.6518. Sample &lt; 30 = statistisch zu klein für Engine-Vergleich;
+              warten bis n ≥ 100 pro Engine für aussagekräftigen Vote.
+            </div>
+          </>
         )}
       </Section>
 
