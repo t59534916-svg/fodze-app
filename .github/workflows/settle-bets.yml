@@ -49,18 +49,21 @@ jobs:
             node scripts/fetch-results.mjs --days "$DAYS"
           fi
 
-      - name: Backfill Liga 3 goals-as-xG proxy (OpenLigaDB, free)
+      - name: Backfill BL1+BL2+Liga3 goals-as-xG proxy (OpenLigaDB, free)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: node scripts/backfill-liga3-openligadb.mjs
-        # OpenLigaDB (free, no key) covers 3. Liga back to 1963. Upserts
-        # current + previous season daily — idempotent, so we always have
-        # the most recent matchday within 24h of the final whistle.
-        # The previous Odds-API-based script was capped at daysFrom=3 and
-        # missed matches whenever the cron didn't fire in that window;
-        # OpenLigaDB has no such limit.
+        # OpenLigaDB (free, no key) covers all 3 German tiers (bl1/bl2/bl3).
+        # Script generalized 2026-04-26 — no flags = all 3 leagues default.
+        # Upserts current + previous season daily; idempotent so re-runs
+        # within 24h of final whistle always have latest matchday.
+        # For BL1+BL2 the goals-proxy rows COEXIST with FootyStats real-xG
+        # rows — UNIQUE merge means FootyStats wins when imported (richer
+        # data), but goals-proxy fills gaps on days FootyStats CSV hasn't
+        # been manually imported yet. Eliminates the BL1/BL2 "0 entries
+        # for finished match" UX glitch.
 
       - name: (Legacy) Odds-API Liga 3 goals proxy — disabled
         if: false

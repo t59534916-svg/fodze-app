@@ -1,20 +1,32 @@
 #!/usr/bin/env node
 /**
- * FODZE Liga 3 Backfill — OpenLigaDB (free, no API key)
+ * FODZE OpenLigaDB Backfill — German leagues (Bundesliga, 2. Bundesliga, 3. Liga)
  *
- * The-Odds-API's scores endpoint is limited to daysFrom=3, which means its
- * goals-proxy backfill misses matches whenever the cron doesn't fire within
- * the 3-day window after a matchday. Result: Liga 3's team_xg_history stays
- * empty forever.
+ * Filename historically said "liga3-openligadb" but the script was
+ * generalized 2026-04-26 to also cover Bundesliga + 2. Bundesliga since
+ * OpenLigaDB has free coverage of all three German tiers with no API key.
+ * The cron in settle-bets.yml still references this filename — kept as-is
+ * to avoid touching the workflow + secrets re-binding. Header reflects
+ * actual scope.
  *
- * OpenLigaDB (openligadb.de) is a free community-maintained API covering
- * German football — Bundesliga (bl1), 2. Bundesliga (bl2), 3. Liga (bl3) —
- * back to 1963. No key required. We pull the 2024/25 + 2025/26 seasons
- * for Liga 3 and write `team_xg_history` rows with source=goals-proxy
- * (same as the existing backfill, so downstream code treats them uniformly).
+ * Why this exists: The-Odds-API's scores endpoint is daysFrom=3-limited,
+ * which means goals-proxy backfill misses matches whenever the cron
+ * doesn't fire within that window. OpenLigaDB has no such restriction —
+ * matches stay queryable forever. We pull the current + previous season
+ * for each league and write `team_xg_history` rows with source=goals-proxy
+ * (xG is approximated from goals, since OpenLigaDB has no xG data).
+ *
+ * For Bundesliga + 2.Bundesliga the goals-proxy rows COEXIST with the
+ * higher-quality footystats rows (UNIQUE on team/league/date/venue, so
+ * upserts MERGE — footystats real xG wins because it lands second after
+ * the manual CSV import). The OpenLigaDB rows fill the gap on days where
+ * the manual FootyStats CSV import hasn't happened yet, ensuring the
+ * dashboard never shows 0 entries for a finished match.
  *
  * Usage:
- *   node scripts/backfill-liga3-openligadb.mjs            # current season
+ *   node scripts/backfill-liga3-openligadb.mjs                          # all 3 leagues, current+prev season
+ *   node scripts/backfill-liga3-openligadb.mjs --league liga3            # single league
+ *   node scripts/backfill-liga3-openligadb.mjs --leagues bundesliga,liga3
  *   node scripts/backfill-liga3-openligadb.mjs --seasons 2024,2025
  *   node scripts/backfill-liga3-openligadb.mjs --dry
  */
@@ -42,17 +54,45 @@ if (!SUPA_URL || !SUPA_KEY) {
   process.exit(1);
 }
 
+// FODZE league key → OpenLigaDB shortcut. OpenLigaDB doc:
+// https://www.openligadb.de/Resources/OpenLigaDB-API.htm
+//   bl1 = Bundesliga (1. Liga)
+//   bl2 = 2. Bundesliga
+//   bl3 = 3. Liga
+const LEAGUE_MAP = {
+  bundesliga:  "bl1",
+  bundesliga2: "bl2",
+  liga3:       "bl3",
+};
+
+// ─── CLI args ──────────────────────────────────────────────────────
 const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
 const seasonsArg = args.find((_, i) => args[i - 1] === "--seasons");
-// Default: current season + previous (for EWMA depth on relegated/promoted
-// teams). 2025 = 2025/26 in OpenLigaDB convention.
+const leagueArg = args.find((_, i) => args[i - 1] === "--league");
+const leaguesArg = args.find((_, i) => args[i - 1] === "--leagues");
+
+let LEAGUES;
+if (leagueArg) {
+  LEAGUES = [leagueArg];
+} else if (leaguesArg) {
+  LEAGUES = leaguesArg.split(",").map((s) => s.trim()).filter(Boolean);
+} else {
+  LEAGUES = Object.keys(LEAGUE_MAP); // default: all 3 German leagues
+}
+
+for (const lg of LEAGUES) {
+  if (!LEAGUE_MAP[lg]) {
+    console.error(`❌ Unknown league "${lg}". Supported: ${Object.keys(LEAGUE_MAP).join(", ")}`);
+    process.exit(1);
+  }
+}
+
+// Default seasons: current + previous season (for EWMA depth on relegated/
+// promoted teams). 2025 = 2025/26 in OpenLigaDB convention.
 const SEASONS = seasonsArg
   ? seasonsArg.split(",").map((s) => s.trim()).filter(Boolean)
   : ["2024", "2025"];
-
-const LEAGUE_KEY = "liga3";     // FODZE internal
-const OPENLIGA_KEY = "bl3";     // OpenLigaDB league shortcut
 
 const SUPA_HEADERS = {
   apikey: SUPA_KEY,
@@ -62,10 +102,10 @@ const SUPA_HEADERS = {
 
 // ─── Fetch + shape ────────────────────────────────────────────────
 
-async function fetchSeason(season) {
-  const url = `https://api.openligadb.de/getmatchdata/${OPENLIGA_KEY}/${season}`;
+async function fetchSeason(openligaKey, season) {
+  const url = `https://api.openligadb.de/getmatchdata/${openligaKey}/${season}`;
   const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`OpenLigaDB ${season} ${resp.status}: ${await resp.text()}`);
+  if (!resp.ok) throw new Error(`OpenLigaDB ${openligaKey} ${season} ${resp.status}: ${await resp.text()}`);
   return resp.json();
 }
 
@@ -81,7 +121,7 @@ function finalResult(m) {
   return { home: last.pointsTeam1, away: last.pointsTeam2 };
 }
 
-function buildRows(matches) {
+function buildRows(matches, fodzeLeague) {
   const rows = [];
   for (const m of matches) {
     if (!m.matchIsFinished) continue;
@@ -96,7 +136,7 @@ function buildRows(matches) {
     // Home perspective
     rows.push({
       team: home, opponent: away,
-      league: LEAGUE_KEY, venue: "home", match_date: date,
+      league: fodzeLeague, venue: "home", match_date: date,
       xg: score.home, xga: score.away,
       goals_for: score.home, goals_against: score.away,
       source: "goals-proxy",
@@ -104,7 +144,7 @@ function buildRows(matches) {
     // Away perspective
     rows.push({
       team: away, opponent: home,
-      league: LEAGUE_KEY, venue: "away", match_date: date,
+      league: fodzeLeague, venue: "away", match_date: date,
       xg: score.away, xga: score.home,
       goals_for: score.away, goals_against: score.home,
       source: "goals-proxy",
@@ -139,18 +179,27 @@ async function upsertBatch(rows) {
 // ─── Main ─────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`⚽ Liga 3 OpenLigaDB Backfill${DRY ? " (DRY)" : ""}`);
+  console.log(`⚽ OpenLigaDB Backfill${DRY ? " (DRY)" : ""}`);
+  console.log(`   Leagues: ${LEAGUES.join(", ")}`);
   console.log(`   Seasons: ${SEASONS.join(", ")}\n`);
 
   let allRows = [];
-  for (const season of SEASONS) {
-    const matches = await fetchSeason(season);
-    const rows = buildRows(matches);
-    const teams = new Set([...rows.map((r) => r.team)]);
-    console.log(
-      `  📅 Season ${season}: ${matches.length} matches, ${rows.length / 2} completed, ${teams.size} teams`,
-    );
-    allRows = allRows.concat(rows);
+  for (const fodzeLeague of LEAGUES) {
+    const openligaKey = LEAGUE_MAP[fodzeLeague];
+    for (const season of SEASONS) {
+      try {
+        const matches = await fetchSeason(openligaKey, season);
+        const rows = buildRows(matches, fodzeLeague);
+        const teams = new Set([...rows.map((r) => r.team)]);
+        console.log(
+          `  📅 ${fodzeLeague.padEnd(12)} ${season} (${openligaKey}): ${matches.length} matches, ${rows.length / 2} completed, ${teams.size} teams`,
+        );
+        allRows = allRows.concat(rows);
+      } catch (e) {
+        // Don't abort the whole run if one league/season fails — log + continue
+        console.warn(`  ⚠ ${fodzeLeague} ${season} fetch failed: ${e.message}`);
+      }
+    }
   }
 
   console.log(`\n📦 Total: ${allRows.length} rows (${allRows.length / 2} matches, home+away perspectives)`);
@@ -177,9 +226,10 @@ async function main() {
   }
 
   console.log(`\n✅ Done — ${done} rows written to team_xg_history (source=goals-proxy)`);
-  console.log("\nℹ️  Goals are a noisy xG proxy. For Liga 3 this is the best free source");
-  console.log("   short of paying for FootyStats. Engine will use these once each team");
-  console.log("   has ~15 entries (Bayesian shrinkage minimum).");
+  console.log("\nℹ️  Goals are a noisy xG proxy. For Bundesliga + 2.BL the FootyStats CSVs");
+  console.log("   provide real xG and overwrite these via on-conflict merge. For Liga 3 this");
+  console.log("   is the best free source short of paying for FootyStats API. Engine will use");
+  console.log("   these once each team has ~15 entries (Bayesian shrinkage minimum).");
 }
 
 main().catch((e) => {
