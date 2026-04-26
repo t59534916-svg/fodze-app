@@ -115,7 +115,8 @@ export interface OverdispersionConfig {
   [league: string]: number;
 }
 
-// Default values (to be replaced by fit_alpha.py output)
+// Default values — conservative fallbacks; replaced by fit_alpha.py output
+// when public/overdispersion.json is loaded at boot via AppContext.
 export const DEFAULT_OVERDISPERSION: OverdispersionConfig = {
   bundesliga: 0.058,
   epl: 0.042,
@@ -131,11 +132,55 @@ export const DEFAULT_OVERDISPERSION: OverdispersionConfig = {
   default: 0.060,
 };
 
+// ─── Loaded-config state (Phase 2.5 — fitted overdispersion) ───────
+//
+// Module-level cache for fitted alpha values from public/overdispersion.json.
+// AppContext loads the JSON at boot via loadOverdispersionConfig(); getAlpha()
+// then uses fitted values in preference to DEFAULT_OVERDISPERSION.
+//
+// Why dormant-by-default protected: a corrupt/missing JSON simply leaves
+// LOADED_OVERDISPERSION as null, and getAlpha falls back to the conservative
+// hardcoded defaults — no production breakage from data-fit issues.
+let LOADED_OVERDISPERSION: OverdispersionConfig | null = null;
+
+export function loadOverdispersionConfig(json: unknown): void {
+  if (!json || typeof json !== "object") {
+    throw new Error("Invalid overdispersion-config: not an object");
+  }
+  const cfg = json as Record<string, unknown>;
+  // Sanity: every value must be a non-negative finite number
+  for (const [k, v] of Object.entries(cfg)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+      throw new Error(`Invalid overdispersion[${k}]=${v} (need non-negative number)`);
+    }
+  }
+  LOADED_OVERDISPERSION = cfg as OverdispersionConfig;
+}
+
+export function isOverdispersionLoaded(): boolean {
+  return LOADED_OVERDISPERSION !== null;
+}
+
+// Test helper — restore pristine state between unit tests.
+export function resetOverdispersion(): void {
+  LOADED_OVERDISPERSION = null;
+}
+
 /**
  * Get the overdispersion alpha for a league.
+ *
+ * Resolution order:
+ *   1. Caller-supplied `config` (highest priority — explicit per-call override)
+ *   2. Module-level LOADED_OVERDISPERSION (fitted values from JSON, if loaded)
+ *   3. DEFAULT_OVERDISPERSION (hardcoded conservative fallback)
+ *
+ * The fitted-vs-default delta is ~10–30% per league (e.g., serie_a fitted
+ * 0.032 vs default 0.067 = -52%). Lower α tightens the goal-PMF tails →
+ * better-calibrated O25/U25 probabilities + small Brier improvement on
+ * the goal-line markets.
  */
 export function getAlpha(league: string, config?: OverdispersionConfig): number {
-  const cfg = config || DEFAULT_OVERDISPERSION;
+  const cfg = config || LOADED_OVERDISPERSION || DEFAULT_OVERDISPERSION;
   return cfg[league] ?? cfg.default ?? 0.06;
 }
 

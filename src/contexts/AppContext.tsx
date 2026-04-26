@@ -11,6 +11,7 @@ import { loadBenterWeights, setBenterMode } from "@/lib/benter-blend";
 import { loadFootBayesPosteriors } from "@/lib/footbayes-engine";
 import { loadConformalQuantiles, setConformalMode } from "@/lib/conformal-gate";
 import { loadPlayerPropsPosteriors } from "@/lib/player-props-engine";
+import { loadOverdispersionConfig } from "@/lib/neg-binomial";
 import { type PredictionEngine, DEFAULT_ENGINE, isValidEngine, ENGINES } from "@/lib/engine-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
@@ -183,6 +184,18 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
         }
       });
     }
+
+    // Per-Liga overdispersion alphas — fitted via tools/fit_alpha.py on
+    // historical data. Replaces conservative DEFAULT_OVERDISPERSION
+    // hardcodes in src/lib/neg-binomial.ts. Fitted values are typically
+    // 10-30% lower than defaults (e.g. serie_a 0.032 fitted vs 0.067
+    // default = -52%), tightening the goal-PMF tails for better-calibrated
+    // O25/U25 probabilities. Failure is silent-safe: a corrupt JSON throws
+    // from loadOverdispersionConfig, gets logged in modelErrors, and
+    // getAlpha falls back to the conservative defaults.
+    loadModel("/overdispersion.json", "overdispersion", config => {
+      loadOverdispersionConfig(config);
+    });
   }, []);
 
   // Load user profile + bets + API check + league status
