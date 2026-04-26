@@ -13,6 +13,7 @@ import GoldButton from "@/components/shared/GoldButton";
 import MatchCard from "@/components/match/MatchCard";
 import MatchDetail from "@/components/match/MatchDetail";
 import BetTracker from "@/components/matchday/BetTracker";
+import ManualBetForm from "@/components/matchday/ManualBetForm";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
@@ -307,6 +308,12 @@ export default function MatchdayPage() {
           KOMBI-BUILDER →
         </GoldButton>
       )}
+
+      {/* Manual Bet Tracker — bypasses engine isValue filter so any bet
+          (auch außerhalb Goldilocks) kann getrackt werden. Closing-odds
+          + CLV werden automatisch von snapshot-Cron ergänzt wenn 2h vor
+          Kickoff. Bei vergangenen Spielen bleibt CLV null. */}
+      <ManualBetForm />
 
       {/* Bet Tracker */}
       <BetTracker />
