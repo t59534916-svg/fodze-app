@@ -302,6 +302,16 @@ function Seiten() {
         Zusätzlich vier Tabs: <span style={S.em}>Übersicht</span>, <span style={S.em}>Kalibrierung</span>
         (Isotonic-Kurven als Legacy-Fallback), <span style={S.em}>P&amp;L Simulation</span>,
         <span style={S.em}> Cross-Engine</span> (aktuelle OOT-Brier/BSS/ECE/Coverage pro Engine, 4×4 Kelly-Matrix).
+        Plus per-Liga CLV-Breakdown mit z-Score und Kelly-Multiplier.
+      </p>
+
+      <h3 style={S.h3}>System-Status · <LinkPath href="/health">/health</LinkPath></h3>
+      <p style={S.p}>
+        Live Engine-Health-Dashboard (URL-only, kein Navbar-Tab). Vier Sections:
+        <span style={S.em}> Calibration Layer</span> (welche Phase 2.x Layer geladen sind, mit env-Wert + Brier-Effekt),
+        <span style={S.em}> Supabase Tabellen</span> (row counts + freshness + status pills),
+        <span style={S.em}> Datenquellen-Freshness</span> (per-source last update mit fresh/stale/dead flags),
+        <span style={S.em}> Bet Portfolio</span> (CLV-Coverage). Ersetzt 30-min SQL-Probing durch 5-Sekunden Browser-Visit.
       </p>
 
       <h3 style={S.h3}>Kombis &amp; Simulator</h3>
@@ -317,20 +327,20 @@ function Seiten() {
 function Engines() {
   return (
     <>
-      <h2 style={S.sectionTitle}>Die 3 Prediction Engines</h2>
+      <h2 style={S.sectionTitle}>Die Prediction Engines</h2>
       <p style={S.p}>
-        Oben im Spieltag kannst du zwischen 3 Engines wechseln. Jede hat Stärken und Schwächen.
+        Oben im Spieltag kannst du zwischen den Engines wechseln. Jede hat Stärken und Schwächen.
       </p>
 
       <h3 style={S.h3}>@annafrick13 v2 + Dirichlet (Default)</h3>
       <p style={S.p}>
         LightGBM Tweedie mit 21 npxG-Features (Momentum, Volatility, PPDA, Setpiece-Share, Game-State-xG),
-        Monotonic Constraints auf 10/14 physisch eindeutigen Features, Optuna-tuned ρ=−0,053.
+        Monotonic Constraints auf 10/14 physisch eindeutigen Features.
         Danach Dirichlet-ODIR Kalibrierung pro Liga-Cluster (top5 / mid_european / lower).
       </p>
       <p style={S.p}>
         OOT-Metriken auf 6.691 Zeilen (2023-08 → 2024-06):
-        Brier 0,6083 · BSS +0,0649 · ECE 0,0049 (2,6× besser kalibriert als roh).
+        Brier 0,6083 · BSS +0,0649 · ECE 0,0049 (3× besser kalibriert als roh).
         Details + Per-Liga-Breakdown im <LinkPath href="/performance">Cross-Engine</LinkPath> Tab.
       </p>
       <p style={S.muted}>→ Default seit Deploy. Nutze wenn du unsicher bist — schlägt Climatology in 18/18 Ligen.</p>
@@ -344,6 +354,20 @@ function Engines() {
       </p>
       <p style={S.muted}>→ Wähle nur für konsistente Over/Under + Correct Score; bei 1X2 ist v2 besser.</p>
 
+      <h3 style={S.h3}>@annafrick13 v3 Lean (Preview)</h3>
+      <p style={S.p}>
+        LightGBM Tweedie mit 20 dense Features (xG core + Elo + h2h + physis + discipline). Optuna 50-trial
+        getuned, 90-Tage Recency-Decay gegen Time-Drift. Trainiert auf 76.611 FootyStats rows.
+      </p>
+      <p style={S.p}>
+        Holdout-Brier 0,6318 (n=6498) — drift home +1,2% / away −1,8% (Time-Drift fully contained).
+      </p>
+      <p style={S.muted}>
+        → Preview-only — routet intern zu v2. Schema-Gap zu v2 (0,024 Brier) ist strukturell, nicht
+        hyperparameter-fixable: v2 hat Understat-trained npxg/ppda/deep features, die v3 wegen 0%-Coverage
+        in current schema droppen musste.
+      </p>
+
       <h3 style={S.h3}>Standard (ensemble-v1)</h3>
       <p style={S.p}>
         4-Modell Ensemble: Dixon-Coles + Elo + Logistic + Market. Historischer Default der Version 7.0,
@@ -353,19 +377,40 @@ function Engines() {
 
       <h3 style={S.h3}>Engine-Vergleich im Match-Detail</h3>
       <p style={S.p}>
-        Alle 3 laufen immer parallel. Im Match-Detail siehst du sie side-by-side.
+        Alle Engines laufen immer parallel. Im Match-Detail siehst du sie side-by-side.
       </p>
       <ul style={S.list}>
         <li>Spread &lt; 8pp → <TagAgree /> → verlässlich</li>
         <li>Spread ≥ 8pp → <TagDisagree /> → im Zweifel nicht wetten</li>
       </ul>
 
-      <h3 style={S.h3}>Nachgeschaltete Layer (optional per Env-Flag)</h3>
+      <h3 style={S.h3}>Phase 2.x Calibration Layer (alle 4 LIVE seit 2026-04-26)</h3>
+      <p style={S.p}>
+        Nachgeschaltete Layer, die auf jede Engine-Prediction angewendet werden. Live-Status pro Layer
+        siehst du auf <LinkPath href="/health">/health</LinkPath>.
+      </p>
       <ul style={S.list}>
-        <li><span style={S.em}>Dirichlet-ODIR</span> — 3×3 W-Matrix + Bias pro Liga-Cluster, default an seit März 2026</li>
-        <li><span style={S.em}>Benter-Blend</span> — Log-Pool mit Pinnacle Close, nur auf 4 Ligen aktiv (β₁ ≥ 0,15 Gate)</li>
-        <li><span style={S.em}>Conformal Gate</span> — Singleton-Prediction-Sets als Kelly-Filter (off/warn/enforce/dampen), default off</li>
+        <li>
+          <span style={S.em}>Dirichlet 1X2</span> — 3-Cluster ODIR (top5 / mid_european / lower).
+          Gemessen −0,0019 Brier, ECE 0,0146 → 0,0049
+        </li>
+        <li>
+          <span style={S.em}>Benter Market×Modell-Blend</span> — Per-Liga β₁/β₂ aus n=5586 OOT.
+          In 6 von 16 Ligen schlägt das Modell den Markt (z.B. super_lig β₂=1,31, EPL β₂=1,17)
+        </li>
+        <li>
+          <span style={S.em}>Conformal Staking-Gate</span> — Singleton-Prediction-Sets, mode=warn (Set-Size logging,
+          aber Kelly-Stake unverändert). Coverage 96,7% empirisch @ α=0,05
+        </li>
+        <li>
+          <span style={S.em}>Per-Liga Overdispersion α</span> — Fitted Negative-Binomial-α pro Liga statt
+          konservative Defaults. Tighter O25/U25 PMFs (serie_a −52%, la_liga −31%)
+        </li>
       </ul>
+      <p style={S.muted}>
+        Alle 4 Layer per Environment-Variables aktiviert; failure-safe (corrupt JSON → fallback auf Default,
+        keine Production-Risk).
+      </p>
     </>
   );
 }
@@ -426,26 +471,74 @@ function ValueBetting() {
 function Goldilocks() {
   return (
     <>
-      <h2 style={S.sectionTitle}>Die Goldilocks-Zone</h2>
+      <h2 style={S.sectionTitle}>Die Goldilocks-Zone (per-Liga 3-Tier)</h2>
       <p style={S.p}>
-        Warum <LinkPath href="/goldilocks">/goldilocks</LinkPath> nur Wetten mit Edge <span style={S.em}>2.5% bis 7.5%</span> zeigt:
+        <LinkPath href="/goldilocks">/goldilocks</LinkPath> filtert Wetten nach Edge — aber die Schwelle ist
+        <span style={S.em}> liga-spezifisch</span>. Sharper Markt = enger Korridor; weicher Markt = breiterer.
+        Was in EPL Value ist, wäre in League Two Rauschen.
       </p>
+
+      <h3 style={S.h3}>Die 3 Liga-Tiers</h3>
+      <table style={S.table}>
+        <thead>
+          <tr>
+            <th style={S.th}>Tier</th>
+            <th style={S.th}>Goldilocks</th>
+            <th style={S.th}>Trap-Soft</th>
+            <th style={S.th}>Trap-Hard</th>
+            <th style={S.th}>Beispiel-Ligen</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={S.td}><span style={badge("value")}>Sharp</span></td>
+            <td style={S.td}>1,5–5%</td>
+            <td style={S.td}>8%</td>
+            <td style={S.td}>10%</td>
+            <td style={S.td}>EPL, La Liga, Serie A, Bundesliga, Ligue 1, CL/EL</td>
+          </tr>
+          <tr>
+            <td style={S.td}><span style={badge("gold")}>Moderate</span></td>
+            <td style={S.td}>2,5–7,5%</td>
+            <td style={S.td}>10%</td>
+            <td style={S.td}>12%</td>
+            <td style={S.td}>Championship, BL2, La Liga 2, Serie B, Ligue 2, Eredivisie, Primeira, Jupiler Pro, Süper Lig, Swiss SL, Austria BL, Scottish Prem (12 Ligen)</td>
+          </tr>
+          <tr>
+            <td style={S.td}><span style={badge("warn")}>Soft</span></td>
+            <td style={S.td}>3,5–8,5%</td>
+            <td style={S.td}>12%</td>
+            <td style={S.td}>15%</td>
+            <td style={S.td}>Liga 3, League One, League Two, Greek SL, Eerste Divisie</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 style={S.h3}>Was die Schwellen bedeuten</h3>
       <ul style={S.list}>
-        <li><span style={S.em}>Unter 2.5%</span> — statistisches Rauschen, wahrscheinlich kein echter Edge</li>
-        <li><span style={S.em}>Über 7.5%</span> — verdächtig: der Markt weiß vermutlich etwas, das du nicht weißt (Aufstellung, Verletzung, Rotation)</li>
-        <li>Der Sweet Spot: groß genug für realen Profit, klein genug um realistisch zu sein</li>
+        <li><span style={S.em}>Goldilocks-Range</span> — angezeigte Wetten, Kelly-Stake aktiv</li>
+        <li><span style={S.em}>Soft-Skip</span> (zwischen Goldilocks-Max und Trap-Hard) — kein Bet, aber auch keine Trap-Warnung. Kann legitime Information sein, lohnt aber nicht das Risiko</li>
+        <li><span style={S.em}>Hard-Trap</span> (über Trap-Hard) — TRAP?-Pill: der Markt weiß vermutlich etwas, das du nicht weißt (Lineup, Injury, Rotation). NICHT folgen</li>
       </ul>
 
-      <h3 style={S.h3}>Grade A / B / C</h3>
+      <h3 style={S.h3}>EdgeBadge-Lesart auf MatchCard</h3>
+      <p style={S.p}>
+        Jede Match-Karte hat ein EdgeBadge mit per-Liga-Meter. Pille zeigt Zone:
+        <span style={badge("value")}>ZONE</span> = goldilocks, <span style={badge("gold")}>SOFT</span> = soft-skip,
+        <span style={badge("warn")}>TRAP?</span> = hard-trap. Ohne Pill = innerhalb Range, normaler Bet.
+      </p>
+
+      <h3 style={S.h3}>Grade A / B / C (Moderate-Tier-Referenz)</h3>
       <ul style={S.list}>
         <li><TagA /> — ≥ 5%, stärkste Picks</li>
         <li><TagB /> — 4–5%, solide</li>
-        <li><TagC /> — 2.5–4%, marginal</li>
+        <li><TagC /> — 2,5–4%, marginal</li>
       </ul>
 
       <p style={S.muted}>
-        Auf <LinkPath href="/goldilocks">/goldilocks</LinkPath> sortiert nach Edge desc.
-        Tippe eine Karte → du landest direkt beim Match in der Analyse.
+        Auf <LinkPath href="/goldilocks">/goldilocks</LinkPath> sortiert nach Edge desc, automatisch je Liga
+        in der korrekten Range gefiltert. Tippe eine Karte → du landest direkt beim Match in der Analyse.
+        Die Per-Liga-Tiers werden in <LinkPath href="/handbuch">src/lib/league-liquidity.ts</LinkPath> gepflegt.
       </p>
     </>
   );
@@ -571,6 +664,47 @@ function Faq() {
       <p style={S.p}>
         v1/v2 fallbacken auf Standard wenn xG-Historie fehlt. Feature, kein Bug —
         verhindert dass v2 mit schlechten Daten halluziniert.
+      </p>
+
+      <h3 style={S.h3}>Wo sehe ich was gerade in Production aktiv ist?</h3>
+      <p style={S.p}>
+        Auf <LinkPath href="/health">/health</LinkPath>. Zeigt für jede Calibration-Layer (Dirichlet/Benter/
+        Conformal/Overdispersion) den Loaded-Status, env-Wert und gemessenen Brier-Effekt. Plus Supabase-Tabellen
+        mit Zeilen + Freshness, Datenquellen-Stati (frisch/stale/dead), und deine Bet-Coverage. Ein Klick
+        statt 30 Minuten SQL-Probing.
+      </p>
+
+      <h3 style={S.h3}>Warum sehe ich für mein Spiel keinen BET-Button?</h3>
+      <p style={S.p}>
+        Der BET-Button erscheint nur für Bets, die das Modell als <span style={S.em}>isValue=true</span>
+        klassifiziert (Edge im per-Liga Goldilocks-Korridor). Wenn du eine Wette tracken willst, die das
+        Modell nicht als Value sieht (z.B. Liebhaber-Bet auf Heim-Sieg ohne Edge), nutze den
+        <span style={S.em}> Manuelle Wette Tracken</span> Block oben auf <LinkPath href="/matchday">/matchday</LinkPath> —
+        bypassed den Engine-Filter komplett, schreibt direkt in die bets-Tabelle.
+      </p>
+
+      <h3 style={S.h3}>Warum andere Goldilocks-Range pro Liga?</h3>
+      <p style={S.p}>
+        Sharper Markt = enger Korridor. EPL-Linien sind so präzise, dass +5% Edge schon verdächtig ist.
+        Bei League Two oder Greek SL ist +5% Edge dagegen normal, weil die Linien weicher sind. Die 3-Tier-
+        Klassifikation in <span style={S.em}>src/lib/league-liquidity.ts</span> mapped jede Liga zu Sharp/
+        Moderate/Soft mit eigenen Schwellen. Details: Goldilocks-Section.
+      </p>
+
+      <h3 style={S.h3}>Was macht die CLV-Feedback Kelly-Dampening?</h3>
+      <p style={S.p}>
+        Wenn deine Closing-Line-Value-Statistik in einer Liga schlecht wird (z-score &lt; -1 über die
+        letzten 40 settled Bets), halbiert die App automatisch deinen Kelly-Stake für diese Liga.
+        Volumen-basiertes Window — funktioniert auch in Nebenligen mit wenig Spielen pro Woche.
+        Pro-Liga-Multiplier siehst du im <LinkPath href="/performance">/performance</LinkPath> Tab.
+      </p>
+
+      <h3 style={S.h3}>Wo wurden die Closing-Quoten denn vor Bet-Settlement gespeichert?</h3>
+      <p style={S.p}>
+        Seit 2026-04-26 persistiert der snapshot-closing-odds Cron alle in-window Match-Closes nach
+        <span style={S.em}> odds_closing_history</span> (auch ohne aktive User-Bet). Das heißt: auch
+        wenn du nach Kickoff platzierst, kann <span style={S.em}>fetch-results.mjs</span> beim Settlement
+        den CLV nachträglich rechnen. Vorher gingen retroaktive Bets ohne CLV-Tracking unter.
       </p>
     </>
   );
