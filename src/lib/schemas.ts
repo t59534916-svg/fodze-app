@@ -117,6 +117,9 @@ export const SHADOW_LOG_ENGINE_VARIANTS = [
   "ensemble",
   "poisson-ml",
   "poisson-ml-v2",
+  // v3 added 2026-04-26 — preview engine, but its independent predictions
+  // are captured here for retrospective Brier comparison vs v2_dirichlet.
+  "poisson-ml-v3",
   "footbayes-hierarchical",
 ] as const;
 

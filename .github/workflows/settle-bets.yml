@@ -49,6 +49,19 @@ jobs:
             node scripts/fetch-results.mjs --days "$DAYS"
           fi
 
+      - name: Populate match_outcomes (predictions×reality bridge)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/populate-match-outcomes.mjs --days 30
+        # Joins team_xg_history's home/away rows into one match_outcomes
+        # row per match (with goals + xG + shots + corners + cards). The
+        # /backtest page joins match_predictions × match_outcomes for
+        # per-engine Brier/log-loss. Idempotent UPSERT on match_key.
+        # Filters FootyStats -1 sentinels to NULL to avoid polluting the
+        # joined Brier reports.
+
       - name: Backfill BL1+BL2+Liga3 goals-as-xG proxy (OpenLigaDB, free)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

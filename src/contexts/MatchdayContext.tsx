@@ -553,7 +553,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       match_key: string; league: string;
       home_team: string; away_team: string;
       kickoff: string | null;
-      engine_variant: "ensemble" | "poisson-ml" | "poisson-ml-v2" | "footbayes-hierarchical";
+      engine_variant: "ensemble" | "poisson-ml" | "poisson-ml-v2" | "poisson-ml-v3" | "footbayes-hierarchical";
       prob_h: number; prob_d: number; prob_a: number;
       prob_o25: number | null;
       feature_version: string;
@@ -584,6 +584,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         { v: "ensemble", c: calcs.ensembleCalc },
         { v: "poisson-ml", c: calcs.v1Calc },
         { v: "poisson-ml-v2", c: calcs.v2Calc },
+        // v3 added 2026-04-26 — currently routes internally to v2 in
+        // engine-registry (preview mode), but the SHADOW prediction is
+        // computed independently via calcMatchPoissonMLv3 → captures
+        // the actual v3-feature-vector posterior. Once we have ≥100
+        // resolved v3 predictions in live_brier_snapshots we can decide
+        // whether to flip preview→primary.
+        { v: "poisson-ml-v3", c: calcs.v3Calc },
         { v: "footbayes-hierarchical", c: calcs.bayesCalc },
       ];
       for (const { v, c } of variants) {
@@ -650,6 +657,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           { engine: "ensemble-v1", c: calcs.ensembleCalc },
           { engine: "poisson-ml", c: calcs.v1Calc },
           { engine: "poisson-ml-v2", c: calcs.v2Calc },
+          // v3 added 2026-04-26 — preview engine, but its predictions
+          // are captured for retrospective Brier comparison via /backtest.
+          { engine: "poisson-ml-v3", c: calcs.v3Calc },
         ];
         for (const { engine, c } of variants) {
           if (!c?.mk) continue;
