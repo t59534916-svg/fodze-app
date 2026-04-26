@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vier Prediction-Engines: Standard Ensemble, @annafrick13 v1 (Poisson-ML), v2 (LightGBM Tweedie, production), v3 (LightGBM Tweedie, 29-Feature preview — skeleton bis Model trainiert). Value-Bet-Detection mit Goldilocks-Guard + 3-tier Trap-Zone (2.5-7.5% Goldilocks / 7.5-10% silent skip / >10% hard Trap). Kelly-Staking mit K/M/A Risk-Profilen, automatisches Bet-Settlement + CLV-Tracking.
+Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vier Prediction-Engines: Standard Ensemble, @annafrick13 v1 (Poisson-ML), v2 (LightGBM Tweedie, production), v3 (Lean 20-Feature LightGBM Tweedie, preview-only — Brier 0.6318). **Phase 2.x Calibration Layer LIVE in Production** seit 2026-04-26: Dirichlet 1X2 Kalibrierung, per-Liga Benter Market×Modell-Blend, Conformal Staking-Gate (warn-mode), per-Liga Negative-Binomial Overdispersion. Per-Liga Goldilocks 3-Tier (Sharp 1.5-5% / Moderate 2.5-7.5% / Soft 3.5-8.5%) mit getrennten Soft-Skip + Hard-Trap-Bannern. Kelly-Staking mit K/M/A Risk-Profilen + Variance-Haircut + Per-Liga CLV-Feedback-Dampening, automatisches Bet-Settlement + CLV-Forward-Cache.
 
-**Daten-Bestand**: ~80.000 team-match rows in `team_xg_history`, davon ~71.000 mit echtem xG aus 4 Quellen (Understat Top-5, FootyStats Nebenligen, api-sports historical, Transfermarkt injuries). Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~350 Teams), MatchCard-Accent-Gradients (home→away team color), per-match referee + discipline features.
+**Daten-Bestand**: 103.037 team-match rows in `team_xg_history`, davon ~95.000 mit echtem xG aus 4 Quellen (Understat Top-5 28k, FootyStats 22 Ligen 76.6k, api-sports historical, shots-model fallback). 24.681+ Closing-Odds rows in `odds_closing_history` (football-data.co.uk + live-odds-snapshot forward-cache). Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~398 Teams), MatchCard-Accent-Gradients (home→away team color), per-match referee + discipline features. **Live System-State auf `/health`** Dashboard (Calibration-Layer + Tabellen + Datenquellen-Freshness + Bet-Coverage in einer Ansicht).
 
 ---
 
@@ -16,7 +16,7 @@ Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vie
 ```bash
 npm install
 npm run dev         # http://localhost:3000
-npm run test        # 498 Tests (vitest)
+npm run test        # 550 Tests (vitest)
 npm run test:watch
 npm run build       # Production Build (läuft auch in CI)
 npm run lint        # Next lint (warnings nur, non-blocking)
@@ -205,6 +205,17 @@ Strip rendert nur wenn `stripHasContent` (mindestens ein Signal vorhanden) — k
 3. In `MatchDetail.tsx` anzeigen (default View oder im collapsible `<details>`)
 4. Test in `tests/dixon-coles.test.ts` schreiben
 
+### Engine Health Dashboard (`/health`, 2026-04-26)
+
+URL-only diagnostic page (kein Navbar-Tab). 4 Sections in `src/app/health/page.tsx`:
+
+1. **CALIBRATION LAYER** — synchroner Read aus Module-Level State (`isDirichletLoaded()`, `isBenterActive()`, `isConformalLoaded()`, `isOverdispersionLoaded()`, `isV3ModelLoaded()`) + `process.env.NEXT_PUBLIC_*` env-vars. Zeigt pro Layer: Status-Pill, Detail, env-var-Wert, gemessenen Brier-Impact.
+2. **SUPABASE TABLES** — 14 tracked tables mit row count + latest-row freshness + status pill. Nutzt `supabase.from(...).select("*", {head:true, count:"exact"})` für fast-counts ohne row-data-transfer.
+3. **DATA SOURCE FRESHNESS** — per-source `MAX(match_date)` für team_xg_history + odds_closing_history. Zeigt Stale-Sources (z.B. football-data.co.uk PSCH seit 2026-01-14).
+4. **BET PORTFOLIO** — total/settled/with-CLV/pending counts + Yellow-Warning bei null CLV-Coverage.
+
+Wenn neue Loader/Calibration-Layer hinzukommen: in `layers` array von `health/page.tsx:96-120` einen LayerRow ergänzen mit (status, detail, envVar, brierImpact).
+
 ---
 
 ## Daten-Pipelines
@@ -306,9 +317,16 @@ Mapping-Systeme:
 
 `src/lib/absence-parser.ts` parst die `match.home.injuries` Free-Text-Strings (Format: `"Name (Pos, Reason, bis DATE), Name2 (Pos, Reason)"` — exakt das Format das Transfermarkt-Scrape produziert). Deutsche Positions-Hints werden gemapped (TW→GK, IV→DEF, MF→MID, ST→FWD). Ergebnis geht als `absences: { home, away }` in v1/v2 + calcMatchEnhanced → `calcAbsenceImpact` skaliert λH/λA um typisch ±5-15%.
 
-### CLV-Tracking
+### CLV-Tracking + Forward-Cache (2026-04-26)
 
-`bets.closing_odds` + `bets.clv` Columns. Der `snapshot-closing-odds.mjs` Cron läuft alle 4h (last-write-wins, nicht first-write-wins) und snapshoted sharp-Quoten für pending bets innerhalb 2h vor Kickoff. `CLV = log(odds_placed / closing_odds) × 100`. `fetch-results.mjs` recomputed CLV beim Settlement als Defense-in-Depth. `computeClvStats` in `bet-metrics.ts` aggregiert (null statt 0 für fehlende Werte — kein False-Positive). `/performance` LiveCalibration zeigt live CLV-Chart.
+`bets.closing_odds` + `bets.clv` Columns. Der `snapshot-closing-odds.mjs` Cron läuft alle 4h (last-write-wins, nicht first-write-wins) und schreibt jetzt **doppelt**:
+
+1. **Per-Bet (legacy):** snapshoted sharp-Quoten für pending bets innerhalb 2h vor Kickoff → `bets.closing_odds` + `bets.clv`
+2. **Forward-Cache (neu):** persistiert ALLE in-window Match-Closes nach `odds_closing_history` mit `source='live-odds-snapshot'` (idempotent via match_key UNIQUE) — egal ob User-Bet existiert oder nicht. Bets, die retroaktiv platziert werden (nach Kickoff aber vor Settlement), können CLV-recovered werden via `fetch-results.mjs::lookupClosingFromHistory`.
+
+`CLV = log(odds_placed / closing_odds) × 100`. `fetch-results.mjs` recomputed CLV beim Settlement als Defense-in-Depth. `computeClvStats` in `bet-metrics.ts` aggregiert (null statt 0 für fehlende Werte — kein False-Positive). `/performance` LiveCalibration zeigt live CLV-Chart.
+
+**⚠ Upstream-Outage seit 2026-01-14:** football-data.co.uk hat aufgehört Pinnacle-Closing-Spalten (PSCH/PSCD/PSCA) für aktuelle Saisons zu publizieren. Die 24.681 historischen Rows bleiben als Backtest-Korpus, aber going forward ist `live-odds-snapshot` die alleinige Closing-Quelle. Die `backfill-football-data-co-uk.mjs` PostgREST upsert-Logik wurde 2026-04-26 mit `?on_conflict=match_key` repariert (Header `Prefer: resolution=merge-duplicates` ist ohne diesen Query-Param ein silent no-op).
 
 ---
 
@@ -344,7 +362,7 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ---
 
-## Tests (498 total, 32 files)
+## Tests (550 total, 36 files)
 
 ```bash
 npm run test              # alle Tests
@@ -355,6 +373,7 @@ npx vitest run tests/bet-metrics.test.ts  # einzelne Datei
 Coverage-Hotspots:
 - `dixon-coles.test.ts` — λ-Berechnung, Vig-Removal, Kelly, Home-Factor, 24 Ligen-Count
 - `kelly.test.ts` — K/M/A Risk-Profile mit caps (2.5% / 4% / 6%)
+- `c-kelly.test.ts` — Variance-Haircut via Bootstrap-CI
 - `bet-metrics.test.ts` — betProfit, computeBetStats, computeCalibration, computeClvStats (8 CLV cases)
 - `backtest.test.ts` — Brier/Log-Loss (scoreMatch), aggregate, aggregateWithCI bootstrap (seed-reproducible)
 - `shots-calibration.test.ts` — per-liga xG-per-shot mit MIN_SAMPLE + clamp [0.07, 0.15]
@@ -364,8 +383,20 @@ Coverage-Hotspots:
 - `elo-seeding.test.ts` — Liga-Tier-Defaults, Promotion-Penalty, Cache
 - `team-resolver.test.ts` — fuzzyTeamMatch (kritisch, 3 Call-Sites)
 - `goldilocks-engine.test.ts` — computeEngineProbs, classifyEdgeSource (11 cases)
+- `league-liquidity.test.ts` — alle 22 Ligen Tier-Mapping + Default-Fallback
+- `clv-feedback.test.ts` — Volumen-basierte CLV-Feedback Window-Logik
 - `lgbm-runtime.test.ts` + `poisson-regression.test.ts` — Model-Runtime
+- `dirichlet-calibration.test.ts` — Phase 2.1 ODIR 3-Cluster
+- `conformal-gate.test.ts` — Phase 2.5 Set-Size + Coverage
+- `footbayes-engine.test.ts` — Hierarchical Bayes Posteriors
+- `setpiece-xg.test.ts` — Phase 2.4 Set-Piece vs Open-Play
+- `game-state-xg.test.ts` — xG bei Lead/Trail/Level
+- `european-fatigue.test.ts` — Sandwich-Match Detection
+- `xg-history-resolver.test.ts` — Multi-Source Fallback-Chain
+- `overdispersion-loader.test.ts` — Phase 2.5 fitted-α Loader (8 cases)
+- `pipeline-integration.test.ts` — End-to-End Smoke
 - `schemas.test.ts` — Zod Matchday-JSON Validation
+- `anna-request-validation.test.ts` — Streaming SSE Input Guards
 
 **NICHT getestet**: React-Contexts (MatchdayContext, AppContext), Components (MatchDetail, BetHistoryShare, etc.), API-Routes, Hooks, Pages, Scripts.
 
@@ -409,12 +440,37 @@ team_metadata      — TheSportsDB-sourced: logos, colors, stadium, founded_year
                      Unique: (fodze_league, team_name). Mehrere Aliase pro
                      thesportsdb_id sind erlaubt (z.B. "RB Leipzig" + "RasenBallsport Leipzig").
 player_injuries    — api-sports-sourced current-season injuries.
-                     (player_id_apisports, fixture_id_apisports) unique. Fields:
-                     injury_type ("Missing Fixture"|"Suspended"|"Questionable"),
-                     reason, player_photo_url, fixture_date, team_id_apisports.
+                     ⚠ EMPTY (0 rows) — TM injuries werden direkt im matchday JSON
+                     embedded statt normalisiert. Schema bleibt für künftigen
+                     api-sports-Backfill (Key 2 ist suspendiert).
+odds_closing_history — Pinnacle closing odds. ~25k rows. Mehrere sources:
+                     "football-data.co.uk" — historisch + STALE seit 2026-01-14
+                       (Source publiziert PSCH/PSCD/PSCA nicht mehr)
+                     "live-odds-snapshot" — NEU 2026-04-26: snapshot-closing-odds.mjs
+                       Cron persistiert hier zusätzlich für Forward-CLV-Recovery
+                     UNIQUE (match_key). Cols: psch/pscd/psca/psc_over25/psc_under25/
+                       pscahh/pscaha/ah_line/ft_result/ft_goals_h/ft_goals_a
+pipeline_shadow_log — Per-Matchday Engine A/B/C predictions: ensemble + poisson-ml
+                     + poisson-ml-v2 (v3 fehlt aktuell — preview wird nicht geloggt).
+                     Cols: match_key, league, engine_variant, prob_h/d/a/o25,
+                     feature_version, predicted_at. Nutzt für post-hoc Brier-Vergleich
+                     wenn results joinable werden (via odds_closing_history.ft_result).
+referees           — ⚠ STUB DATA (354 rows). fouls_per_game alle NULL,
+                     yellows_per_game nur 13 distinct values, home_yellow_bias
+                     1 distinct value (alle "1"). NICHT als Feature verwerten.
+stadiums           — Lat/Lng/capacity per Heim-Stadion (278 rows, 30% join coverage,
+                     altitude_m 0% populiert). Marginal value, nicht als Feature gewired.
+player_xg_history  — Per-Player xG-per-90/xa/npxg/key_passes (2500 rows, Top-5 only).
+                     Wird für xGChain-Hydration in MatchdayContext.tsx bei TM-Injuries
+                     genutzt (Phase 2.3 wired).
+live_wp_snapshots  — ⚠ EMPTY (0 rows). Phase 3.3 dormant — braucht Betfair-API-Key.
+corners_odds_history — ⚠ EMPTY (0 rows). Phase 3.1 dormant — braucht UI-Tab.
+player_props_posteriors — ⚠ EMPTY (0 rows). Phase 3.2 dormant — braucht R-service.
 ```
 
 Standings werden client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`) ODER pipeline-side in `matchday-enrich.mjs::computeStandingsFromXG`. RLS aktiv — User lesen alles, schreiben nur eigene Rows (`bets`, `profiles`). `migration-rls-tighten.sql` hat das 2024 gepatched.
+
+**Live-State-View aller Tabellen:** `/health` Page zeigt rows + latest + status (ok/warn/stub/empty) für 14 tracked tables in einer Ansicht.
 
 ---
 
@@ -427,16 +483,57 @@ Standings werden client-side aus `team_xg_history` berechnet (`computeStandings(
 Poisson GLM (9 Features) → Dixon-Coles 15×15 Matrix → alle Märkte konsistent. Refuses to predict ohne per-Match xG-Historie (kein GIGO).
 
 ### @annafrick13 v2 (poisson-ml-v2)
-LightGBM Tweedie, **21 Features** (npxG diff/momentum/volatility, Elo, home factor, rest days, SoS, h2h, PPDA, deep completions, setpiece/late-game/losing-state xG shares), Monotonic Constraints auf 10/14 physisch-eindeutige Features, Optuna-tuned ρ=-0.094, Dual-Track Calibration (display roh vs. Kelly isotonisch). Declared OOS Brier: **0.5844** auf 1.752 Matches.
+LightGBM Tweedie, **21 Features** (npxG diff/momentum/volatility, Elo, home factor, rest days, SoS, h2h, PPDA, deep completions, setpiece/late-game/losing-state xG shares), Monotonic Constraints auf 10/14 physisch-eindeutige Features, Optuna-tuned ρ=-0.094, Dual-Track Calibration (display roh vs. Kelly isotonisch).
+
+**OOS Brier (n=6691, gemessen):**
+- Raw v2: 0.6102 (BSS +0.062, ECE 0.0146)
+- v2 + Dirichlet (PRODUCTION): **0.6083** (BSS +0.065, ECE **0.0049** = 3× besser)
 
 Guardrails:
 - Lambda Clamping [0.3, 4.5]
-- Goldilocks Edge Guard 2.5–7.5% (< = Rauschen, > = fehlende Info)
+- Goldilocks Edge Guard per-Liga 3-Tier (Sharp/Moderate/Soft)
 - Dual-Track Divergenz-Warnung
 - Feature-Dimension Guard
 - Kein LLM-Daten Fallback (ohne History → null)
 
-Retraining: `tools/retrain_v2.py` → `public/lgbm-model-v2.json` (~300 KB).
+Retraining: `tools/retrain_v2.py` → `public/lgbm-model-v2.json` (~742 KB).
+
+### @annafrick13 v3 (poisson-ml-v3) — Lean 20-Feature Architecture
+LightGBM Tweedie, **20 dense Features** (kein Dead Weight, alle mit Importance > 0):
+- **Core xG (5):** xg_diff_ewma, xga_diff_ewma, xg_momentum, xg_volatility, total_xg
+- **Elo + Context (5):** elo_diff, sos_strength, is_derby, h2h_xg_diff, rest_days_diff
+- **League constants (2):** home_factor, league_avg
+- **Physis (5):** shots_total/sot/accuracy/corners/possession diff_ewma
+- **Discipline (3):** fouls/yellow/red cards diff_ewma
+
+Optuna 50-trial tuning + 90-day recency-decay. Trainiert auf 76.611 FootyStats rows. Holdout n=6498 (chrono cutoff 2025-08-01).
+
+**Brier 0.6318** (drift home +1.2% / away -1.8% — time-drift fully contained), beats prior 0.6536 by -0.022.
+
+**Status: Preview-only.** Engine-Registry `preview: true`, routes intern zu v2 bis Schema-equivalent zu v2 erreicht. Gap zu v2_dirichlet (0.024) ist strukturell — v2 hat Understat-trained npxg/ppda/deep features die v3 wegen 0%-Coverage in current schema droppen musste. Hyperparameter-Tuning kann den Schema-Gap nicht überbrücken.
+
+Retraining: `DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v3.py --n-trials 50 --weight-half-life-days 90` → `public/lgbm-model-v3.json` (~11.7 MB).
+
+### Phase 2.x Calibration Layer (alle 4 LIVE seit 2026-04-26)
+
+| Layer | Source-File | Loader | Effekt |
+|---|---|---|---|
+| **Dirichlet 1X2 (Phase 2.1)** | `public/dirichlet-calibration.json` | `loadDirichletCalibration()` in `src/lib/calibration.ts` | 3-Cluster ODIR (top5/mid_european/lower) — gemessen -0.0019 Brier, ECE -67% |
+| **Benter Blend (Phase 1.3)** | `public/benter-weights.json` | `loadBenterWeights()` in `src/lib/benter-blend.ts` | Per-Liga β₁/β₂ aus n=5586 OOT — Modell schlägt Markt in 6/16 Ligen (super_lig β₂=1.31, EPL β₂=1.17) |
+| **Conformal Gate (Phase 2.5)** | `public/conformal-quantiles.json` | `loadConformalQuantiles()` in `src/lib/conformal-gate.ts` | mode=warn, 96.7% empirische Coverage @ α=0.05 |
+| **Per-Liga Overdispersion (Phase 2.5)** | `public/overdispersion.json` | `loadOverdispersionConfig()` in `src/lib/neg-binomial.ts` | Fitted α-Werte tighter als DEFAULT (serie_a -52%, la_liga -31%) → bessere O25/U25 PMF-Tails |
+
+Aktiviert via Environment-Variables (in `.env.local` + Vercel production):
+```bash
+NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet    # default
+NEXT_PUBLIC_BENTER_BLEND=on                 # off|shadow|on
+NEXT_PUBLIC_CONFORMAL_GATE=warn             # off|warn|dampen|enforce
+# overdispersion.json wird unconditional geladen, kein env-flag
+```
+
+Failure-safe: corrupte/fehlende JSONs throwen vom Loader → werden in `modelErrors` geflagged (UI warnt) → Engine fällt auf `DEFAULT_OVERDISPERSION` / `isotonic` / `mode=off` zurück. Zero production-risk.
+
+**Live System-State auf `/health`** Dashboard zeigt für jede Layer den Loaded-Status, env-Wert, und gemessenen Brier-Impact in Echtzeit.
 
 ---
 
