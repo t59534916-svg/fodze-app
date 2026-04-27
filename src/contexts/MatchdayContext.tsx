@@ -6,6 +6,7 @@ import { parseAbsences } from "@/lib/absence-parser";
 import { buildPlayerXgIndex, hydrateAbsencesWithXG, type PlayerXgRow } from "@/lib/player-impact";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import { resolveBucket as resolveXGBucket } from "@/lib/xg-history-resolver";
+import { canonicalizeTeamName } from "@/lib/team-resolver";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
@@ -163,7 +164,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         // hit, then longest-distinctive-token substring match).
         for (const match of matchdayData.matches) {
           if (match.home?.name && !match.home.xg_h_history?.length) {
-            const hist = resolveXGBucket(byTeamVenue, match.home.name, "home");
+            // Canonicalize matchday name → team_xg_history's canonical name
+            // before lookup. matchdays JSONB historically uses inconsistent
+            // conventions (ligue_1 short forms "Brest", bundesliga long forms
+            // "FC Bayern München"). Without this, ligue_1 lookups would fall
+            // through to fuzzy resolver tier-2 (slower, less deterministic).
+            const homeCanonical = canonicalizeTeamName(match.home.name, lg);
+            const hist = resolveXGBucket(byTeamVenue, homeCanonical, "home");
             if (hist.length > 0) {
               match.home.xg_h_history = toXGHistoryEntries(hist, `${match.home.name} H`);
               if (!match.home.xg_h8) {
@@ -178,7 +185,8 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
             }
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
-            const hist = resolveXGBucket(byTeamVenue, match.away.name, "away");
+            const awayCanonical = canonicalizeTeamName(match.away.name, lg);
+            const hist = resolveXGBucket(byTeamVenue, awayCanonical, "away");
             if (hist.length > 0) {
               match.away.xg_a_history = toXGHistoryEntries(hist, `${match.away.name} A`);
               if (!match.away.xg_a8) {

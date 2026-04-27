@@ -179,8 +179,11 @@ async function main() {
   let done = 0;
   for (let i = 0; i < outcomes.length; i += BATCH) {
     const chunk = outcomes.slice(i, i + BATCH);
+    // ON CONFLICT must match the new UNIQUE (match_key, match_date) constraint
+    // (migration applied 2026-04-27 — old UNIQUE on match_key alone collapsed
+    // double-round-robin fixtures in austria_bl + similar small leagues).
     const r = await fetch(
-      `${SUPA_URL}/rest/v1/match_outcomes?on_conflict=match_key`,
+      `${SUPA_URL}/rest/v1/match_outcomes?on_conflict=match_key,match_date`,
       {
         method: "POST",
         headers: { ...SUPA_HEADERS, Prefer: "resolution=merge-duplicates,return=minimal" },

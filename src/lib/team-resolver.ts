@@ -481,6 +481,111 @@ export function resolveTeam(name: string): TeamIdentity | null {
   return null;
 }
 
+// ─── EXTRA_ALIASES (mirrors scripts/_lib/canonical-team.mjs 2026-04-27) ──
+//
+// Lower-tier leagues + double-rotated teams (BL2/Liga3/La Liga 2/Serie B/
+// Greek SL/Primeira/Ligue 1+2/Jupiler Pro) where TEAM_REGISTRY's bundesliga-
+// section coverage doesn't extend. Kept inline (not a separate file) because
+// (a) data is small (<25 entries), (b) TS-only callers shouldn't need to
+// parse a runtime TEAM_REGISTRY, (c) parallel JS copy in scripts/_lib/
+// canonical-team.mjs handles ingest-time canonicalization.
+//
+// Sync rule: if you add a new alias HERE, also add it in canonical-team.mjs
+// EXTRA_ALIASES — they exist as a pair.
+type ExtraAliasEntry = { league: string; canonical: string; aliases: string[] };
+const EXTRA_LEAGUE_ALIASES: ExtraAliasEntry[] = [
+  // Bundesliga 2
+  { league: "bundesliga2", canonical: "Hertha BSC", aliases: ["Hertha Berlin", "Hertha"] },
+  { league: "bundesliga2", canonical: "SpVgg Greuther Fürth", aliases: ["Greuther Fürth", "Greuther Fuerth", "Greuther Furth"] },
+  { league: "bundesliga2", canonical: "SC Paderborn 07", aliases: ["SC Paderborn", "Paderborn"] },
+  { league: "bundesliga2", canonical: "DSC Arminia Bielefeld", aliases: ["Arminia Bielefeld", "Bielefeld"] },
+  { league: "bundesliga2", canonical: "SV 07 Elversberg", aliases: ["Elversberg", "SV Elversberg"] },
+  // Liga 3
+  { league: "liga3", canonical: "1. FC Schweinfurt 05", aliases: ["Schweinfurt", "FC Schweinfurt", "Schweinfurt 05"] },
+  { league: "liga3", canonical: "TSG 1899 Hoffenheim II", aliases: ["TSG Hoffenheim II", "Hoffenheim II"] },
+  { league: "liga3", canonical: "SV Wehen Wiesbaden", aliases: ["Wehen Wiesbaden", "Wehen"] },
+  { league: "liga3", canonical: "FC Viktoria Köln", aliases: ["Viktoria Köln", "Viktoria Koln", "Viktoria Cologne"] },
+  // Greek SL
+  { league: "greek_sl", canonical: "Larissa", aliases: ["Larisa", "AE Larissa"] },
+  { league: "greek_sl", canonical: "Panaitolikos", aliases: ["Panetolikos"] },
+  // Jupiler Pro
+  { league: "jupiler_pro", canonical: "OH Leuven", aliases: ["Leuven", "Oud-Heverlee Leuven"] },
+  // La Liga 2
+  { league: "la_liga2", canonical: "Cultural y Deportiva Leonesa", aliases: ["Cultural Leonesa", "Cultural Leonesa SAD"] },
+  { league: "la_liga2", canonical: "Real Sociedad II", aliases: ["Real Sociedad B", "Sociedad B"] },
+  { league: "la_liga2", canonical: "FC Andorra", aliases: ["Andorra CF", "Andorra"] },
+  // League Two
+  { league: "league_two", canonical: "Bristol Rovers", aliases: ["Bristol Rvs", "Bristol R"] },
+  // Ligue 1
+  { league: "ligue_1", canonical: "Paris Saint Germain", aliases: ["PSG", "Paris SG", "Paris S.G.", "Paris-SG"] },
+  // Ligue 2
+  { league: "ligue_2", canonical: "Saint Etienne", aliases: ["St Etienne", "St. Etienne", "AS Saint-Etienne"] },
+  // Primeira Liga
+  { league: "primeira_liga", canonical: "Moreirense FC", aliases: ["Moreirense"] },
+  { league: "primeira_liga", canonical: "Rio Ave FC", aliases: ["Rio Ave"] },
+  { league: "primeira_liga", canonical: "SC Braga", aliases: ["Braga", "Sporting Braga", "Sp Braga"] },
+  // Serie B
+  { league: "serie_b", canonical: "Bari 1908", aliases: ["Bari", "AS Bari", "FC Bari"] },
+];
+
+// Per-league extra-alias lookup map: league → norm(alias) → canonical
+const extraByLeague = new Map<string, Map<string, string>>();
+for (const e of EXTRA_LEAGUE_ALIASES) {
+  if (!extraByLeague.has(e.league)) extraByLeague.set(e.league, new Map());
+  const lm = extraByLeague.get(e.league)!;
+  // Self-mapping so canonicalize is idempotent
+  lm.set(normalizeForCanonical(e.canonical), e.canonical);
+  for (const a of e.aliases) lm.set(normalizeForCanonical(a), e.canonical);
+}
+
+function normalizeForCanonical(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/ue/g, "u")
+    .replace(/oe/g, "o")
+    .replace(/ae/g, "a")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Map any team-name to its canonical form for a specific league.
+ *
+ * Resolution order:
+ *   1. Exact FODZE / CSV / Understat / OddsApi match in TEAM_REGISTRY
+ *      (filtered to entries tagged with the requested league)
+ *   2. Per-league EXTRA_LEAGUE_ALIASES override (BL2, Liga3, La Liga 2,
+ *      Serie B, Greek SL, Primeira, Ligue 1+2, Jupiler Pro)
+ *   3. Returns input unchanged if no canonical is known
+ *
+ * Used by MatchdayContext.loadCached to resolve matchday team-names
+ * (which may use short forms like "Brest") against team_xg_history
+ * (which uses long forms like "Stade Brest") at engine read time.
+ *
+ * @example
+ *   canonicalizeTeamName("Brest", "ligue_1")        // → "Stade Brest"
+ *   canonicalizeTeamName("Hertha Berlin", "bundesliga2") // → "Hertha BSC"
+ *   canonicalizeTeamName("New Team", "bundesliga")  // → "New Team" (unchanged)
+ */
+export function canonicalizeTeamName(name: string, league: string): string {
+  if (!name || !league) return name;
+  // Tier 1: TEAM_REGISTRY exact match for this league
+  for (const t of TEAM_REGISTRY) {
+    if (t.league !== league) continue;
+    if (t.fodze === name || t.csv === name || t.understat === name || t.oddsApi === name) {
+      return t.fodze;
+    }
+  }
+  // Tier 2: EXTRA_LEAGUE_ALIASES per-league
+  const lm = extraByLeague.get(league);
+  if (lm) {
+    const norm = normalizeForCanonical(name);
+    if (lm.has(norm)) return lm.get(norm)!;
+  }
+  return name;
+}
+
 /**
  * Convert FODZE name to CSV name (for Elo lookup).
  * Returns input unchanged if no mapping found.
