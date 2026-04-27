@@ -4,9 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist FODZE?
 
-Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vier Prediction-Engines: Standard Ensemble, @annafrick13 v1 (Poisson-ML), v2 (LightGBM Tweedie, production), v3 (Lean 20-Feature LightGBM Tweedie, preview-only — Brier 0.6318). **Phase 2.x Calibration Layer LIVE in Production** seit 2026-04-26: Dirichlet 1X2 Kalibrierung, per-Liga Benter Market×Modell-Blend, Conformal Staking-Gate (warn-mode), per-Liga Negative-Binomial Overdispersion. Per-Liga Goldilocks 3-Tier (Sharp 1.5-5% / Moderate 2.5-7.5% / Soft 3.5-8.5%) mit getrennten Soft-Skip + Hard-Trap-Bannern. Kelly-Staking mit K/M/A Risk-Profilen + Variance-Haircut + Per-Liga CLV-Feedback-Dampening, automatisches Bet-Settlement + CLV-Forward-Cache.
+Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vier Prediction-Engines: Standard Ensemble, @annafrick13 v1 (Poisson-ML), v2 (LightGBM Tweedie, production), v3 (Lean 20-Feature LightGBM Tweedie, preview-only — internally delegates to v2). **Phase 2.x Calibration Layer LIVE** (mit Korrektur 2026-04-26 Abend): isotonic curves + per-Liga Benter Market×Modell-Blend + Conformal Staking-Gate (warn-mode) + per-Liga Negative-Binomial Overdispersion. Dirichlet wurde aktiviert + nach n=8306 current-season backtest gleichen Tag wieder REVERTED (drift +0.0075 Brier vs raw — frozen 2023-24 cluster overfittet). Per-Liga Goldilocks 3-Tier (Sharp 1.5-5% / Moderate 2.5-7.5% / Soft 3.5-8.5%). Kelly-Staking mit K/M/A Risk-Profilen + Variance-Haircut + Per-Liga CLV-Feedback-Dampening, automatisches Bet-Settlement + CLV-Forward-Cache.
 
-**Daten-Bestand**: 103.037 team-match rows in `team_xg_history`, davon ~95.000 mit echtem xG aus 4 Quellen (Understat Top-5 28k, FootyStats 22 Ligen 76.6k, api-sports historical, shots-model fallback). 24.681+ Closing-Odds rows in `odds_closing_history` (football-data.co.uk + live-odds-snapshot forward-cache). Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~398 Teams), MatchCard-Accent-Gradients (home→away team color), per-match referee + discipline features. **Live System-State auf `/health`** Dashboard (Calibration-Layer + Tabellen + Datenquellen-Freshness + Bet-Coverage in einer Ansicht).
+**Daten-Bestand (post 2026-04-27 cleanup)**: 86.007 team-match rows in `team_xg_history` (war 106k vor multi-source dedupe — 35k+ Aliase gemerged), ALLE 22 Ligen current season bei exakt-korrekter Team-Anzahl (drift=0). 24.686+ Closing-Odds rows in `odds_closing_history` (football-data.co.uk historical bis 2026-01-14 + live-odds-snapshot forward-cache going-forward). 2.548 match_outcomes (predictions×reality bridge), 1.509+ pipeline_shadow_log (4 engines), 27+ live_brier_snapshots. Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~398 Teams, deduped 2026-04-27), MatchCard-Accent-Gradients, per-match referee + discipline features. **Live System-State auf `/health`** Dashboard.
+
+**Team-Name Canonicalization (Architectural Invariant seit 2026-04-27)**:
+Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports / Understat) hatte zuvor verschiedene Schreibweisen für dasselbe Team in dieselbe Liga geschrieben — "Bayern München" / "FC Bayern München" / "Bayern Munich" als 3 separate rows. UNIQUE-constraint griff nicht weil `team` string-different. Standings + EWMA + Engine-Predictions silent verzerrt. **Fix in 2 Lagen:**
+1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — alle 5 active backfill-scripts mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (22 lower-tier overrides). Patches in `import-footystats-csv.mjs`, `backfill-liga3-openligadb.mjs`, `backfill-shots-xg.mjs`, `backfill-footystats.mjs`, `fetch-api-sports-stats.mjs`.
+2. **Read-Layer:** `src/lib/team-resolver.ts::canonicalizeTeamName(name, league)` (TS-mirror) wird in `MatchdayContext.loadCached` BEFORE `resolveXGBucket` aufgerufen — matchdays JSON darf inkonsistent sein, MatchdayContext löst über canonical auf. Fallback: `xg-history-resolver.ts` tier-2 substring.
 
 ---
 
@@ -219,6 +224,44 @@ Wenn neue Loader/Calibration-Layer hinzukommen: in `layers` array von `health/pa
 ---
 
 ## Daten-Pipelines
+
+### Team-Name Canonicalization (2026-04-27 architectural fix)
+
+**Critical invariant:** every write to `team_xg_history` and `team_metadata` MUST canonicalize team-names per league before INSERT. Otherwise multi-source ingestion (footystats short / openligadb long / shots-model variant) creates aliases that fragment the data:
+- "Bayern München" + "FC Bayern München" + "Bayern Munich" as 3 separate rows
+- 41 Bundesliga "teams" instead of 18 → Standings + EWMA-xG-history + Engine-predictions silent verzerrt
+
+**Two-layer architecture:**
+
+1. **Ingest-Layer** (Node.js scripts):
+   ```
+   scripts/_lib/canonical-team.mjs::canonicalize(team, league)
+   ```
+   Single source of truth = `src/lib/team-resolver.ts::TEAM_REGISTRY` (354 entries) parsed at runtime + `EXTRA_ALIASES` (22 lower-tier overrides for BL2/Liga3/La Liga 2/Serie B/Greek SL/Primeira/Ligue 1+2/Jupiler Pro). Handles ue/ae/oe → u/a/o normalization for German-alt-spellings.
+
+   **All 5 active backfill scripts patched (2026-04-27):**
+   - `scripts/import-footystats-csv.mjs` — FootyStats CSV import (manual, weekly)
+   - `scripts/backfill-liga3-openligadb.mjs` — OpenLigaDB BL1+BL2+Liga3 (daily cron)
+   - `scripts/backfill-shots-xg.mjs` — football-data.co.uk shots-model
+   - `scripts/backfill-footystats.mjs` — FootyStats API (daily cron Liga 3)
+   - `scripts/fetch-api-sports-stats.mjs` — api-sports (defensive, Key 2 suspended)
+
+   16 weitere scripts schreiben team_xg_history NICHT (read-only audits, exports, monitors) oder sind inaktiv (legacy odds-api proxy, manual Understat seed).
+
+2. **Read-Layer** (TS in MatchdayContext):
+   ```
+   src/lib/team-resolver.ts::canonicalizeTeamName(name, league)
+   ```
+   TS-mirror of canonical-team.mjs (TEAM_REGISTRY + EXTRA_LEAGUE_ALIASES inline). Called in `MatchdayContext.loadCached` BEFORE `resolveXGBucket`. Handles inkonsistent matchdays JSONB (z.B. ligue_1 verwendet teils "Brest" teils "Stade Brest"). Tier-2 fuzzy fallback in `xg-history-resolver.ts` als safety net.
+
+   **Sync rule:** EXTRA_ALIASES in scripts/_lib/canonical-team.mjs (JS) und EXTRA_LEAGUE_ALIASES in src/lib/team-resolver.ts (TS) MUSS in sync bleiben. Bei neuem Alias beide Files patchen.
+
+**Cleanup history:**
+- Initial dedupe (commit `6ce7162`): 35,180 rows merged in team_xg_history
+- Second pass with EXTRA_ALIASES (commit `bcc2e08`): +1524 rows merged → ALL 22 leagues at exact correct count, drift=0
+- team_metadata dedupe (commit `7457fdc`): 119 mutations (92 renames + 27 deletes)
+
+**Maintenance:** `scripts/dedupe-team-names.mjs` und `scripts/dedupe-team-metadata.mjs` sind idempotent re-runnable. Bei neuen Aliasen die im Cron auftauchen: erst EXTRA_ALIASES erweitern, dann re-run.
 
 ### xG-Coverage
 
@@ -450,11 +493,28 @@ odds_closing_history — Pinnacle closing odds. ~25k rows. Mehrere sources:
                        Cron persistiert hier zusätzlich für Forward-CLV-Recovery
                      UNIQUE (match_key). Cols: psch/pscd/psca/psc_over25/psc_under25/
                        pscahh/pscaha/ah_line/ft_result/ft_goals_h/ft_goals_a
-pipeline_shadow_log — Per-Matchday Engine A/B/C predictions: ensemble + poisson-ml
-                     + poisson-ml-v2 (v3 fehlt aktuell — preview wird nicht geloggt).
-                     Cols: match_key, league, engine_variant, prob_h/d/a/o25,
-                     feature_version, predicted_at. Nutzt für post-hoc Brier-Vergleich
-                     wenn results joinable werden (via odds_closing_history.ft_result).
+pipeline_shadow_log — Per-Matchday Engine A/B/C/D predictions: ensemble + poisson-ml
+                     + poisson-ml-v2 + poisson-ml-v3 + footbayes-hierarchical
+                     (alle 4-5 engines geloggt seit a264419). Cols: match_key,
+                     league, engine_variant, prob_h/d/a/o25, feature_version,
+                     predicted_at. Nutzt monitor-live-brier.mjs für post-hoc
+                     Brier-Vergleich gegen team_xg_history.goals_for/_against.
+                     UNIQUE (match_key, engine_variant, predicted_date).
+match_predictions  — Pre-match snapshot per engine (richer than shadow_log:
+                     lambdas, sharp odds, BTTS). Migration applied 2026-04-26
+                     (post_match_backtest_layer). UNIQUE (match_key, engine).
+                     Captured on /matchday page-load via savePredictionsBulk.
+match_outcomes     — Post-match reality (goals + xG + shots + corners + cards).
+                     UNIQUE (match_key, match_date) — schema migrated 2026-04-27
+                     (war match_key alone, brach für double-round-robin Ligen
+                     wie austria_bl). 2548 rows last 90 days. Generated cols:
+                     total_goals, over25, btts, outcome_1x2.
+                     Populated via scripts/populate-match-outcomes.mjs (cron
+                     daily) — joined team_xg_history home + away rows per match.
+live_brier_snapshots — Time-series per-engine + per-league Brier from
+                     monitor-live-brier.mjs (cron). UNIQUE (window_end_date,
+                     engine, league). league='__overall' = aggregate row.
+                     /health Section 5 zeigt latest snapshot.
 referees           — ⚠ STUB DATA (354 rows). fouls_per_game alle NULL,
                      yellows_per_game nur 13 distinct values, home_yellow_bias
                      1 distinct value (alle "1"). NICHT als Feature verwerten.
@@ -514,26 +574,59 @@ Optuna 50-trial tuning + 90-day recency-decay. Trainiert auf 76.611 FootyStats r
 
 Retraining: `DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v3.py --n-trials 50 --weight-half-life-days 90` → `public/lgbm-model-v3.json` (~11.7 MB).
 
-### Phase 2.x Calibration Layer (alle 4 LIVE seit 2026-04-26)
+### Phase 2.x Calibration Layer (Stand 2026-04-27 nach Dirichlet-Revert)
 
-| Layer | Source-File | Loader | Effekt |
+| Layer | Status | Source-File | Effekt |
 |---|---|---|---|
-| **Dirichlet 1X2 (Phase 2.1)** | `public/dirichlet-calibration.json` | `loadDirichletCalibration()` in `src/lib/calibration.ts` | 3-Cluster ODIR (top5/mid_european/lower) — gemessen -0.0019 Brier, ECE -67% |
-| **Benter Blend (Phase 1.3)** | `public/benter-weights.json` | `loadBenterWeights()` in `src/lib/benter-blend.ts` | Per-Liga β₁/β₂ aus n=5586 OOT — Modell schlägt Markt in 6/16 Ligen (super_lig β₂=1.31, EPL β₂=1.17) |
-| **Conformal Gate (Phase 2.5)** | `public/conformal-quantiles.json` | `loadConformalQuantiles()` in `src/lib/conformal-gate.ts` | mode=warn, 96.7% empirische Coverage @ α=0.05 |
-| **Per-Liga Overdispersion (Phase 2.5)** | `public/overdispersion.json` | `loadOverdispersionConfig()` in `src/lib/neg-binomial.ts` | Fitted α-Werte tighter als DEFAULT (serie_a -52%, la_liga -31%) → bessere O25/U25 PMF-Tails |
+| **Calibration Method** | **isotonic** (war kurz "dirichlet" am 2026-04-26 morgen, REVERTED Abend) | `public/calibration_curves.json` (legacy) + `public/dirichlet-calibration.json` (dormant aber loaded) | isotonic = pre-Dirichlet stable baseline |
+| **Benter Blend (Phase 1.3)** | **on** | `public/benter-weights.json` | Per-Liga β₁/β₂ aus n=5586 OOT — empirisch best in current-season backtest n=8306 (Brier 0.6120) |
+| **Conformal Gate (Phase 2.5)** | **warn** (observation only, no Kelly-Skaling) | `public/conformal-quantiles.json` | 96.7% empirische Coverage @ α=0.05 |
+| **Per-Liga Overdispersion (Phase 2.5)** | **on** | `public/overdispersion.json` | Fitted α-Werte tighter als DEFAULT (serie_a -52%, la_liga -31%) → bessere O25/U25 PMF-Tails |
+
+**⚠ Dirichlet-Revert (2026-04-27, datengetrieben):**
+- 2026-04-26 morgens: Dirichlet aktiviert basierend auf frozen-OOT-Numbers (n=6691, 2023-08 → 2024-06): Brier 0.6083 vs raw 0.6102
+- 2026-04-26 abends: nach `tools/backtest/score_current_season.py` Run auf n=8306 current-season matches (2025-08 → 2026-04-26):
+  ```
+  v2_benter      Brier 0.6120  ← BEST in current season
+  v2_raw         Brier 0.6146
+  v2_dirichlet   Brier 0.6158  ← drift +0.0075 vs old OOT, NET NEGATIVE
+  ```
+- Per-Liga: Dirichlet hilft in 9/18 Ligen, schadet in 9/18. bundesliga2 drift +0.0181 (catastrophic).
+- Reverted to isotonic. Memory note in `~/.claude/projects/.../memory/project_dirichlet_revert_2026-04-26.md`.
+- Lehre: training-time OOT ≠ current-season reality. score_current_season.py is now standard-tool VOR jeder neuen Calibration-Layer-Aktivierung.
 
 Aktiviert via Environment-Variables (in `.env.local` + Vercel production):
 ```bash
-NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet    # default
-NEXT_PUBLIC_BENTER_BLEND=on                 # off|shadow|on
-NEXT_PUBLIC_CONFORMAL_GATE=warn             # off|warn|dampen|enforce
+NEXT_PUBLIC_CALIBRATION_METHOD=isotonic     # was kurz "dirichlet" — reverted
+NEXT_PUBLIC_BENTER_BLEND=on                 # bleibt — empirisch best
+NEXT_PUBLIC_CONFORMAL_GATE=warn             # observation only
 # overdispersion.json wird unconditional geladen, kein env-flag
 ```
 
-Failure-safe: corrupte/fehlende JSONs throwen vom Loader → werden in `modelErrors` geflagged (UI warnt) → Engine fällt auf `DEFAULT_OVERDISPERSION` / `isotonic` / `mode=off` zurück. Zero production-risk.
+Failure-safe: corrupte/fehlende JSONs throwen vom Loader → werden in `modelErrors` geflagged → Engine fällt auf `DEFAULT_OVERDISPERSION` / `isotonic` / `mode=off` zurück. Zero production-risk.
 
 **Live System-State auf `/health`** Dashboard zeigt für jede Layer den Loaded-Status, env-Wert, und gemessenen Brier-Impact in Echtzeit.
+
+### Backtest Tooling (für jede neue Calibration-Decision)
+
+Vor jeder Aktivierung eines neuen Calibration-Layers MUSS der current-season Backtest laufen:
+
+```bash
+tools/venv/bin/python3 tools/backtest/score_current_season.py
+# Output: tools/backtest/cross-engine-current-metrics.json
+```
+
+Joined `v2-oot-predictions.parquet` (8979 leakage-safe predictions, 2025-08 → 2026-05) mit `team_xg_history` results + `odds_closing_history` closing odds. Pro variant + per-Liga Brier/LogLoss. Pflicht-Check vor jedem env-flip.
+
+### Live Brier Monitor (kontinuierlich)
+
+`scripts/monitor-live-brier.mjs` (Cron-ready):
+- Joined `pipeline_shadow_log` × `team_xg_history.goals_for/_against` für settled matches
+- Per-engine + per-league Brier
+- Persistierbar in `live_brier_snapshots` Tabelle (--persist flag)
+- `/health` Section 5 rendert latest snapshot
+
+Bei n ≥ 100 pro Engine (~3 Wochen) erste robuste Live-Engine-Vergleich möglich.
 
 ---
 
