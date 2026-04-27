@@ -45,6 +45,89 @@ export function normalize(name) {
     .replace(/[^a-z0-9]/g, "");
 }
 
+// ─── EXTRA_ALIASES — manual overrides for cases TEAM_REGISTRY misses ──
+//
+// The TEAM_REGISTRY in src/lib/team-resolver.ts is biased toward Top-5
+// leagues. Lower divisions (BL2, Liga3, La Liga 2, Serie B, Greek SL,
+// Primeira Liga, Ligue 2, Jupiler Pro) have many teams not yet in the
+// registry, and aliases between sources (FootyStats short / OpenLigaDB
+// long / shots-model variant) aren't auto-resolved.
+//
+// Each entry: { league, aliases: ["a", "b", ...], canonical: "X" }
+// The canonical name is the form that appears in matchdays JSONB (UI
+// source-of-truth, matches bets table convention).
+//
+// Add new entries here as we discover them. Effective immediately for
+// any backfill script using canonicalize() — no Python re-train needed.
+//
+// Curated 2026-04-27 from forensic audit of remaining duplicates after
+// initial dedupe run.
+const EXTRA_ALIASES = [
+  // ── Bundesliga 2 ──
+  { league: "bundesliga2", canonical: "Hertha BSC",
+    aliases: ["Hertha Berlin", "Hertha"] },
+  { league: "bundesliga2", canonical: "SpVgg Greuther Fürth",
+    aliases: ["Greuther Fürth", "Greuther Fuerth", "Greuther Furth"] },
+  { league: "bundesliga2", canonical: "SC Paderborn 07",
+    aliases: ["SC Paderborn", "Paderborn"] },
+  { league: "bundesliga2", canonical: "DSC Arminia Bielefeld",
+    aliases: ["Arminia Bielefeld", "Bielefeld"] },
+  { league: "bundesliga2", canonical: "SV 07 Elversberg",
+    aliases: ["Elversberg", "SV Elversberg"] },
+
+  // ── Liga 3 ──
+  { league: "liga3", canonical: "1. FC Schweinfurt 05",
+    aliases: ["Schweinfurt", "FC Schweinfurt", "Schweinfurt 05"] },
+  { league: "liga3", canonical: "TSG 1899 Hoffenheim II",
+    aliases: ["TSG Hoffenheim II", "Hoffenheim II"] },
+  { league: "liga3", canonical: "SV Wehen Wiesbaden",
+    aliases: ["Wehen Wiesbaden", "Wehen"] },
+  { league: "liga3", canonical: "FC Viktoria Köln",
+    aliases: ["Viktoria Köln", "Viktoria Koln", "Viktoria Cologne"] },
+
+  // ── Greek SL ──
+  { league: "greek_sl", canonical: "Larissa",
+    aliases: ["Larisa", "AE Larissa"] },
+  { league: "greek_sl", canonical: "Panaitolikos",
+    aliases: ["Panetolikos"] },
+
+  // ── Jupiler Pro ──
+  { league: "jupiler_pro", canonical: "OH Leuven",
+    aliases: ["Leuven", "Oud-Heverlee Leuven"] },
+
+  // ── La Liga 2 ──
+  { league: "la_liga2", canonical: "Cultural y Deportiva Leonesa",
+    aliases: ["Cultural Leonesa", "Cultural Leonesa SAD"] },
+  { league: "la_liga2", canonical: "Real Sociedad II",
+    aliases: ["Real Sociedad B", "Sociedad B"] },
+  { league: "la_liga2", canonical: "FC Andorra",
+    aliases: ["Andorra CF", "Andorra"] },
+
+  // ── League Two ──
+  { league: "league_two", canonical: "Bristol Rovers",
+    aliases: ["Bristol Rvs", "Bristol R"] },
+
+  // ── Ligue 1 ──
+  { league: "ligue_1", canonical: "Paris Saint Germain",
+    aliases: ["PSG", "Paris SG", "Paris S.G.", "Paris-SG"] },
+
+  // ── Ligue 2 ──
+  { league: "ligue_2", canonical: "Saint Etienne",
+    aliases: ["St Etienne", "St. Etienne", "AS Saint-Etienne"] },
+
+  // ── Primeira Liga ──
+  { league: "primeira_liga", canonical: "Moreirense FC",
+    aliases: ["Moreirense"] },
+  { league: "primeira_liga", canonical: "Rio Ave FC",
+    aliases: ["Rio Ave"] },
+  { league: "primeira_liga", canonical: "SC Braga",
+    aliases: ["Braga", "Sporting Braga", "Sp Braga"] },
+
+  // ── Serie B ──
+  { league: "serie_b", canonical: "Bari 1908",
+    aliases: ["Bari", "AS Bari", "FC Bari"] },
+];
+
 // ─── Registry loader (cached) ───────────────────────────────────────
 
 let _aliasMapCache = null;
@@ -77,6 +160,17 @@ function loadAliasMap() {
     lm.set(normalize(fodze), fodze);
     for (const alias of aliases) {
       lm.set(normalize(alias), fodze);
+    }
+  }
+
+  // Apply EXTRA_ALIASES — manual overrides for cases TEAM_REGISTRY missed.
+  // These take precedence (overwrite registry entries if same normAlias).
+  for (const e of EXTRA_ALIASES) {
+    if (!aliasMap.has(e.league)) aliasMap.set(e.league, new Map());
+    const lm = aliasMap.get(e.league);
+    lm.set(normalize(e.canonical), e.canonical);
+    for (const alias of e.aliases) {
+      lm.set(normalize(alias), e.canonical);
     }
   }
 

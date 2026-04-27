@@ -41,6 +41,11 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+// Use the shared canonical-team module instead of duplicating logic. The
+// 2026-04-27 EXTRA_ALIASES live in canonical-team.mjs and we want them
+// to fire here too — without this delegation, dedupe missed the manual
+// override aliases (Hertha Berlin → Hertha BSC, etc.).
+import { canonicalize as sharedCanonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
@@ -280,11 +285,15 @@ async function main() {
     const unmatched = [];
 
     for (const [team, n] of teamCounts.entries()) {
-      const canonical = findCanonical(team, league, aliasMap);
+      // Delegate to shared canonicalize (which knows EXTRA_ALIASES + registry).
+      // Returns the input unchanged when no canonical is known — we then
+      // fall back to local findCanonical for tier-2 substring matching.
+      const sharedCan = sharedCanonicalize(team, league);
+      const localCan = findCanonical(team, league, aliasMap);
+      const canonical = (sharedCan !== team) ? sharedCan : localCan;
       if (canonical === null) {
         unmatched.push({ team, n });
       } else if (canonical !== team) {
-        // Already-canonical names hit the alias map but resolve to themselves
         renames.set(team, { canonical, n });
       }
     }

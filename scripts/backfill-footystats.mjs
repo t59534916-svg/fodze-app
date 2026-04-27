@@ -25,6 +25,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
@@ -146,10 +147,15 @@ async function main() {
     const date = new Date((match.date_unix || 0) * 1000).toISOString().slice(0, 10);
     if (!date || date.startsWith("1970")) continue;
 
+    // Canonicalize team names BEFORE INSERT to prevent re-introducing
+    // alias-duplicates after the 2026-04-27 cleanup. Bug-history in 6ce7162.
+    const homeName = canonicalize(match.home_name, leagueArg);
+    const awayName = canonicalize(match.away_name, leagueArg);
+
     // Home-perspective row
     rows.push({
-      team: match.home_name,
-      opponent: match.away_name,
+      team: homeName,
+      opponent: awayName,
       league: leagueArg,
       venue: "home",
       match_date: date,
@@ -161,8 +167,8 @@ async function main() {
     });
     // Away-perspective row
     rows.push({
-      team: match.away_name,
-      opponent: match.home_name,
+      team: awayName,
+      opponent: homeName,
       league: leagueArg,
       venue: "away",
       match_date: date,

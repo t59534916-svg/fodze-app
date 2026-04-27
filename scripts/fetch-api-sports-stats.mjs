@@ -42,6 +42,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 import {
   createApiSportsClient,
   resolveApiSportsLeagueId,
@@ -320,11 +321,15 @@ async function main() {
       const xgH = home.stats.xg ?? null;
       const xgA = away.stats.xg ?? null;
 
+      // Canonicalize before insert — same fix as 6ce7162.
+      const homeCanonical = canonicalize(home.teamName, fodzeLeague);
+      const awayCanonical = canonicalize(away.teamName, fodzeLeague);
+
       // Home perspective
       supaBatch.push({
-        team: home.teamName,
+        team: homeCanonical,
         league: fodzeLeague,
-        opponent: away.teamName,
+        opponent: awayCanonical,
         venue: "home",
         match_date: date,
         xg: xgH,
@@ -351,9 +356,9 @@ async function main() {
       });
       // Away perspective
       supaBatch.push({
-        team: away.teamName,
+        team: awayCanonical,
         league: fodzeLeague,
-        opponent: home.teamName,
+        opponent: homeCanonical,
         venue: "away",
         match_date: date,
         xg: xgA,
