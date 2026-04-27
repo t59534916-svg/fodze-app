@@ -16,6 +16,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
 
@@ -146,9 +147,15 @@ for (const league of leagues) {
   const supaRows = [];
 
   for (const row of rows) {
-    const ht = row.HomeTeam || "";
-    const at = row.AwayTeam || "";
+    let ht = row.HomeTeam || "";
+    let at = row.AwayTeam || "";
     if (!ht || !at) continue;
+    // Canonicalize before insert. football-data.co.uk uses CSV conventions
+    // ("Bayern Munich") that differ from FootyStats ("Bayern München") and
+    // OpenLigaDB ("FC Bayern München") — without canonicalize, all three
+    // would coexist as separate rows. Bug fixed in 6ce7162.
+    ht = canonicalize(ht, league);
+    at = canonicalize(at, league);
 
     const dateStr = row.Date || "";
     let dateISO;

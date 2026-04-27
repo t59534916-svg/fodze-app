@@ -39,6 +39,7 @@
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { resolve, dirname, basename } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -307,9 +308,14 @@ async function processFile(filePath, leagueKey) {
     if (status && status !== "complete") { skipped_incomplete++; continue; }
 
     const date = toIsoDate(r[ci.date]);
-    const home = (r[ci.home_team] || "").trim();
-    const away = (r[ci.away_team] || "").trim();
+    let home = (r[ci.home_team] || "").trim();
+    let away = (r[ci.away_team] || "").trim();
     if (!date || !home || !away) continue;
+    // Canonicalize before insert. Without this, FootyStats' "Bayern München"
+    // would coexist with OpenLigaDB's "FC Bayern München" and shots-model's
+    // "Bayern Munich" as 3 separate rows. Bug fixed in 6ce7162.
+    home = canonicalize(home, leagueKey);
+    away = canonicalize(away, leagueKey);
 
     const hg = ci.home_goals >= 0 ? toInt(r[ci.home_goals]) : null;
     const ag = ci.away_goals >= 0 ? toInt(r[ci.away_goals]) : null;

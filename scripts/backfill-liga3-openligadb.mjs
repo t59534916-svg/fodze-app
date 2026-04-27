@@ -33,6 +33,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
@@ -129,9 +130,16 @@ function buildRows(matches, fodzeLeague) {
     if (!score || !Number.isFinite(score.home) || !Number.isFinite(score.away)) continue;
     const date = (m.matchDateTime || "").slice(0, 10);
     if (!date) continue;
-    const home = m.team1?.teamName;
-    const away = m.team2?.teamName;
+    let home = m.team1?.teamName;
+    let away = m.team2?.teamName;
     if (!home || !away) continue;
+
+    // Canonicalize team names BEFORE insert. Without this, OpenLigaDB's
+    // formal-DE conventions ("FC Bayern München") would coexist with
+    // FootyStats' shortened forms ("Bayern München") and shots-model's
+    // English ("Bayern Munich") as separate rows. Bug fixed in 6ce7162.
+    home = canonicalize(home, fodzeLeague);
+    away = canonicalize(away, fodzeLeague);
 
     // Home perspective
     rows.push({
