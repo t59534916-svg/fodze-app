@@ -122,3 +122,53 @@ COMMENT ON VIEW sofascore_team_chance_quality IS
   'Per-team-per-game chance quality. NOTE: Liga 3 has no assisted/fast-break tagging — fastbreak_xg = 0 there. La Liga 2 + Ligue 2 have NO xG — all xG-derived columns NULL. Use data_quality_tier to gate features.';
 COMMENT ON VIEW sofascore_team_rolling_8 IS
   'Per-team last-8-games chance quality. Engine input shape — JOIN by (league, season, team) to fixture team-name.';
+
+-- ── 5. Cumulative standings derived from match scores ──────────────
+-- Replaces the buggy team_xg_history-derived standings in
+-- generate-matchday.mjs (which silently truncated at PostgREST's
+-- 1000-row default page-limit, dropping 1-3 teams from active leagues).
+CREATE OR REPLACE VIEW sofascore_standings AS
+WITH per_team_per_match AS (
+  SELECT league, season, home_team AS team,
+         home_score AS gf, away_score AS ga,
+         CASE WHEN home_score > away_score THEN 3
+              WHEN home_score = away_score THEN 1 ELSE 0 END AS pts,
+         CASE WHEN home_score > away_score THEN 1 ELSE 0 END AS w,
+         CASE WHEN home_score = away_score THEN 1 ELSE 0 END AS d,
+         CASE WHEN home_score < away_score THEN 1 ELSE 0 END AS l
+  FROM sofascore_match
+  WHERE home_score IS NOT NULL AND away_score IS NOT NULL
+  UNION ALL
+  SELECT league, season, away_team,
+         away_score, home_score,
+         CASE WHEN away_score > home_score THEN 3
+              WHEN away_score = home_score THEN 1 ELSE 0 END,
+         CASE WHEN away_score > home_score THEN 1 ELSE 0 END,
+         CASE WHEN away_score = home_score THEN 1 ELSE 0 END,
+         CASE WHEN away_score < home_score THEN 1 ELSE 0 END
+  FROM sofascore_match
+  WHERE home_score IS NOT NULL AND away_score IS NOT NULL
+),
+agg AS (
+  SELECT league, season, team,
+         COUNT(*) AS played,
+         SUM(w) AS wins,
+         SUM(d) AS draws,
+         SUM(l) AS losses,
+         SUM(gf)::INT AS gf,
+         SUM(ga)::INT AS ga,
+         (SUM(gf) - SUM(ga))::INT AS gd,
+         SUM(pts)::INT AS points
+  FROM per_team_per_match
+  GROUP BY league, season, team
+)
+SELECT league, season, team,
+       ROW_NUMBER() OVER (
+         PARTITION BY league, season
+         ORDER BY points DESC, gd DESC, gf DESC, team ASC
+       )::INT AS position,
+       played, wins, draws, losses, gf, ga, gd, points
+FROM agg;
+
+COMMENT ON VIEW sofascore_standings IS
+  'Live league table from sofascore_match scores. generate-matchday.mjs reads this in preference to computeStandingsFromXG (which truncates at PostgREST 1000-row page).';

@@ -194,6 +194,39 @@ async function loadLeagueXGHistory(lg) {
   return resp.json();
 }
 
+// Sofascore-derived standings (live table from match scores). Prefer over
+// the team_xg_history-derived path — that one silently truncates at
+// PostgREST's 1000-row default page, losing 1-3 teams from active leagues
+// like EPL (Brighton was missing). Returns [] if the league isn't in
+// sofascore_match yet → caller falls back to computeStandingsFromXG.
+async function loadSofascoreStandings(lg, season = "25/26") {
+  const url = `${SUPA_URL}/rest/v1/sofascore_standings?` + new URLSearchParams({
+    league: `eq.${lg}`,
+    season: `eq.${season}`,
+    order: "position.asc",
+    select: "team,position,played,wins,draws,losses,gf,ga,gd,points",
+  });
+  try {
+    const resp = await fetch(url, {
+      headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
+    });
+    if (!resp.ok) return [];
+    const rows = await resp.json();
+    // Normalize "&" → "and" so the team-name matches the Odds-API
+    // fixture-spelling that drives currentTeams (Brighton & Hove Albion
+    // vs Brighton and Hove Albion was missing the standings join).
+    return rows.map((r) => ({
+      team: (r.team || "").replace(/ & /g, " and "),
+      pos: r.position,
+      points: r.points,
+      gd: r.gd,
+      played: r.played,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // Re-export with the same local name to keep the rest of this file stable.
 // Normalization (umlauts, FC/SC/VfB strip, alias map) lives in the shared
 // helper so backfill-enrich-matchdays.mjs gets the exact same logic.
@@ -491,20 +524,32 @@ async function main() {
     if (f.home_team) currentTeams.add(f.home_team);
     if (f.away_team) currentTeams.add(f.away_team);
   }
-  const standings = computeStandingsFromXG(currentSeasonXG);
-  // Position 1..N counting teams that matter for relegation/title context.
-  // Prune + renumber.
-  const activeStandings = standings.filter((s) => {
-    // Keep if the team name matches any current team (via fuzzy match).
-    // findStanding-style: exact → normalized → substring.
-    const candidates = Array.from(currentTeams);
-    const lookedUp = findStanding([s], candidates);
-    return !!lookedUp;
-  });
-  activeStandings.forEach((s, i) => { s.pos = i + 1; });
+  // Try Sofascore-derived standings first (proper league table from real
+  // scores, not affected by the 1000-row PostgREST page-limit). Fallback
+  // to the xG-history path for leagues we haven't backfilled yet.
+  let activeStandings;
+  let standingsSource;
+  const sofaStandings = await loadSofascoreStandings(league);
+  if (sofaStandings.length >= 10) {
+    // No filtering needed — sofascore_standings is already season-bound
+    // (filtered by season=25/26 in the view). The xG-history path needs
+    // filtering to drop relegated/promoted teams from older seasons; the
+    // Sofascore path doesn't have that drift. Position numbers are kept
+    // as-is from the view (1..N by points/gd/gf).
+    activeStandings = sofaStandings;
+    standingsSource = "sofascore";
+  } else {
+    const standings = computeStandingsFromXG(currentSeasonXG);
+    activeStandings = standings.filter((s) => {
+      const lookedUp = findStanding([s], Array.from(currentTeams));
+      return !!lookedUp;
+    });
+    activeStandings.forEach((s, i) => { s.pos = i + 1; });
+    standingsSource = "xg-history";
+  }
   const leagueSize = activeStandings.length || 18;
   if (activeStandings.length > 0) {
-    console.log(`   ${activeStandings.length} Teams in der aktuellen Saisontabelle (Liga-Size für Tags)`);
+    console.log(`   ${activeStandings.length} Teams in der aktuellen Saisontabelle (Liga-Size für Tags) [src=${standingsSource}]`);
   }
 
   // Optional: fetch injury + suspension data per team from Transfermarkt.

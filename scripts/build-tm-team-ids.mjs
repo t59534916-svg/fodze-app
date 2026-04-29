@@ -82,6 +82,22 @@ async function fetchLeaguePage(slug, code) {
 //   </a>
 // We dedupe by ID and take the first occurrence's alt-text (which is the
 // official display name in Transfermarkt's German portal).
+// HTML-entity decode for the alt= attribute. TM emits `&amp;` for `&`
+// (Brighton & Hove Albion was hitting this) plus the usual umlauts as
+// numeric refs like `&#252;`. Without this the name leaks "amp" into
+// the registry key and the lookup never matches the FODZE display name.
+function htmlDecode(s) {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
+}
+
 function extractTeams(html) {
   const rx = /href="\/([a-z0-9-]+)\/startseite\/verein\/(\d+)[^"]*"[^>]*>[^<]*<img[^>]+alt="([^"]+)"/g;
   const seen = new Map();
@@ -89,7 +105,7 @@ function extractTeams(html) {
   while ((m = rx.exec(html)) !== null) {
     const [, slug, id, name] = m;
     if (seen.has(id)) continue;
-    seen.set(id, { name: name.trim(), slug, id });
+    seen.set(id, { name: htmlDecode(name).trim(), slug, id });
   }
   return Array.from(seen.values());
 }

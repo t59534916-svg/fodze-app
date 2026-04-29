@@ -86,7 +86,7 @@ export const TRANSFERMARKT_IDS = {
   ["Aston Villa"                                     ]: { slug: "aston-villa"                                , id: 405 },
   ["Crystal Palace"                                  ]: { slug: "crystal-palace"                             , id: 873 },
   ["AFC Bournemouth"                                 ]: { slug: "afc-bournemouth"                            , id: 989 },
-  ["Brighton &amp; Hove Albion"                      ]: { slug: "brighton-amp-hove-albion"                   , id: 1237 },
+  ["Brighton & Hove Albion"                          ]: { slug: "brighton-and-hove-albion"                   , id: 1237 },
   ["FC Brentford"                                    ]: { slug: "fc-brentford"                               , id: 1148 },
   ["FC Everton"                                      ]: { slug: "fc-everton"                                 , id: 29 },
   ["FC Fulham"                                       ]: { slug: "fc-fulham"                                  , id: 931 },
