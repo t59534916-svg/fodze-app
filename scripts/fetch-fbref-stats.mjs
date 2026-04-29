@@ -38,6 +38,7 @@ import {
   parseMatchReport,
   FBREF_COMP_IDS,
 } from "./_lib/fbref.mjs";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -163,9 +164,13 @@ async function main() {
 
     scraped++;
     const date = parsed.matchDate;
+    // canonicalize-on-write: defensive against FBref naming variants
+    // (e.g. "Manchester City" vs "Man City") matched per-league registry.
+    const homeName = canonicalize(parsed.home.name, LEAGUE);
+    const awayName = canonicalize(parsed.away.name, LEAGUE);
     // Home row
     supaBatch.push({
-      team: parsed.home.name, league: LEAGUE, opponent: parsed.away.name,
+      team: homeName, league: LEAGUE, opponent: awayName,
       venue: "home", match_date: date,
       xg: parsed.home.xg ?? null, xga: parsed.away.xg ?? null,
       goals_for: parsed.home.goals ?? null,
@@ -187,7 +192,7 @@ async function main() {
     });
     // Away row — mirror
     supaBatch.push({
-      team: parsed.away.name, league: LEAGUE, opponent: parsed.home.name,
+      team: awayName, league: LEAGUE, opponent: homeName,
       venue: "away", match_date: date,
       xg: parsed.away.xg ?? null, xga: parsed.home.xg ?? null,
       goals_for: parsed.away.goals ?? null,

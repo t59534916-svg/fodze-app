@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 /**
+ * ⚠ DEPRECATED (2026-04-29) — R worldfootballR pipeline is dormant.
+ * The downstream scripts (scrape-referees.mjs) it orchestrates were moved
+ * to scripts/_archive/ on 2026-04-29 because referees-table is stub-data.
+ * Kept in-place only because `npm run wfr:import` still references it
+ * — calling this script will fail when the archived scripts are missing.
+ * Remove the `wfr:import` entry in package.json + delete this file once
+ * the R service is confirmed permanently retired.
+ *
  * FODZE worldfootballR CSV Importer
  * ═════════════════════════════════
  * Orchestrates the two-step import of the CSVs produced by

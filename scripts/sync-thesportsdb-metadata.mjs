@@ -35,6 +35,7 @@ import {
   THESPORTSDB_LEAGUES,
   parseTeamRecord,
 } from "./_lib/thesportsdb.mjs";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -149,7 +150,12 @@ async function main() {
 
     const rows = teams
       .map(t => parseTeamRecord(t, fodzeLeague))
-      .filter(Boolean);
+      .filter(Boolean)
+      // canonicalize-on-write: TheSportsDB returns names like "Bayern Munich"
+      // which the FODZE TEAM_REGISTRY canonicalizes to "Bayern München".
+      // Without this, sync creates an alias-row that dedupe-team-metadata
+      // would have to merge later — better to write canonical from the start.
+      .map(r => ({ ...r, team_name: canonicalize(r.team_name, fodzeLeague) }));
 
     console.log(`  ${rows.length} Teams geparsed`);
 

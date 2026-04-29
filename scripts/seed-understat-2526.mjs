@@ -20,6 +20,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -64,8 +65,10 @@ for (const [teamName, data] of Object.entries(json)) {
   for (const match of data.history) {
     if (!match.date || !match.opponent) continue;
     rows.push({
-      team: teamName,
-      opponent: match.opponent,
+      // canonicalize-on-write: Understat uses Anglicized names ("Bayern Munich")
+      // which canonicalize to the FODZE registry name ("Bayern München").
+      team: canonicalize(teamName, leagueArg),
+      opponent: canonicalize(match.opponent, leagueArg),
       league: leagueArg,
       venue: match.venue, // 'h' or 'a'
       match_date: match.date,

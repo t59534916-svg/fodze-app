@@ -21,6 +21,7 @@
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
@@ -134,21 +135,26 @@ async function main() {
     }
   }
 
-  // Transform CSV rows to Supabase rows
-  const supaRows = rows.map((r) => ({
-    team: r.team,
-    league: LEAGUE_MAP[r.league] || r.league,
-    opponent: opponentMap[`${r.league}|${r.date}|${r.team}`] || "",
-    venue: r.h_a === "h" ? "home" : "away",
-    match_date: r.date,
-    xg: parseFloat(r.xg) || 0,
-    xga: parseFloat(r.xga) || 0,
-    npxg: parseFloat(r.npxg) || null,
-    npxga: parseFloat(r.npxga) || null,
-    goals_for: parseInt(r.scored) || 0,
-    goals_against: parseInt(r.missed) || 0,
-    source: "understat",
-  }));
+  // Transform CSV rows to Supabase rows.
+  // canonicalize-on-write: Understat names ("Bayern Munich") canonicalize
+  // to FODZE registry names ("Bayern München") per resolved league key.
+  const supaRows = rows.map((r) => {
+    const lg = LEAGUE_MAP[r.league] || r.league;
+    return {
+      team: canonicalize(r.team, lg),
+      league: lg,
+      opponent: canonicalize(opponentMap[`${r.league}|${r.date}|${r.team}`] || "", lg),
+      venue: r.h_a === "h" ? "home" : "away",
+      match_date: r.date,
+      xg: parseFloat(r.xg) || 0,
+      xga: parseFloat(r.xga) || 0,
+      npxg: parseFloat(r.npxg) || null,
+      npxga: parseFloat(r.npxga) || null,
+      goals_for: parseInt(r.scored) || 0,
+      goals_against: parseInt(r.missed) || 0,
+      source: "understat",
+    };
+  });
 
   // Group by league for progress reporting
   const byLeague = {};

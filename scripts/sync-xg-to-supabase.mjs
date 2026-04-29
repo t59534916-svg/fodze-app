@@ -14,6 +14,7 @@
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "..");
@@ -43,10 +44,12 @@ async function upsertBatch(rows) {
     return;
   }
 
+  // canonicalize-on-write: CSV from Understat scrape uses Anglicized
+  // names which canonicalize to FODZE registry names per-league.
   const supaRows = rows.map((r) => ({
-    team: r.home,
+    team: canonicalize(r.home, r.league),
     league: r.league,
-    opponent: r.away,
+    opponent: canonicalize(r.away, r.league),
     venue: "home",
     match_date: r.date,
     xg: parseFloat(r.home_xg),
@@ -59,9 +62,9 @@ async function upsertBatch(rows) {
   // Also add away perspective
   rows.forEach((r) => {
     supaRows.push({
-      team: r.away,
+      team: canonicalize(r.away, r.league),
       league: r.league,
-      opponent: r.home,
+      opponent: canonicalize(r.home, r.league),
       venue: "away",
       match_date: r.date,
       xg: parseFloat(r.away_xg),

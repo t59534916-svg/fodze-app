@@ -34,6 +34,7 @@ import {
   aggregateXgByState,
   aggregateXgBySituation,
 } from "./_lib/game-state-xg.mjs";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
@@ -268,8 +269,14 @@ async function processMatch(matchId, league) {
   }
 
   try {
-    await patchTeamXgRow(summary.home_team, league, summary.match_date, "home", summary.home);
-    await patchTeamXgRow(summary.away_team, league, summary.match_date, "away", summary.away);
+    // canonicalize to match the row that seed-understat-2526.mjs created
+    // post-canonicalization (commit ddd0a51 et seq.) — without this
+    // PATCH-by-name would silently target an alias-row that's been
+    // dedupe-merged away.
+    const canonHome = canonicalize(summary.home_team, league);
+    const canonAway = canonicalize(summary.away_team, league);
+    await patchTeamXgRow(canonHome, league, summary.match_date, "home", summary.home);
+    await patchTeamXgRow(canonAway, league, summary.match_date, "away", summary.away);
     return { matchId, status: "ok", summary };
   } catch (e) {
     return { matchId, status: `patch-${e.message}` };

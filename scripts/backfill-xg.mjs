@@ -22,6 +22,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 import { createClient } from '@supabase/supabase-js';
+import { canonicalize } from './_lib/canonical-team.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -134,8 +135,10 @@ async function seedRows(league, rows) {
   let inserted = 0;
   for (let i = 0; i < valid.length; i += 500) {
     const batch = valid.slice(i, i + 500).map(r => ({
-      team: r.team,
-      opponent: r.opponent || "",
+      // canonicalize-on-write: prevents alias-pollution from browser-scripted
+      // Understat names (e.g. "Bayern Munich" vs "Bayern München" vs "FC Bayern München")
+      team: canonicalize(r.team, league),
+      opponent: canonicalize(r.opponent || "", league),
       league,
       venue: r.venue,
       match_date: r.match_date,

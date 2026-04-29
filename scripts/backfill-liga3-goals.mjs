@@ -27,6 +27,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
@@ -127,10 +128,16 @@ async function main() {
     const date = (match.commence_time || "").slice(0, 10);
     if (!date) { skipped++; continue; }
 
+    // canonicalize-on-write: defends against The-Odds-API team-name variations
+    // ("FC Saarbrucken" vs "1. FC Saarbrücken") which would otherwise create
+    // alias-rows alongside FootyStats canonical names.
+    const homeName = canonicalize(match.home_team, LEAGUE);
+    const awayName = canonicalize(match.away_team, LEAGUE);
+
     // Home-perspective row
     rows.push({
-      team: match.home_team,
-      opponent: match.away_team,
+      team: homeName,
+      opponent: awayName,
       league: LEAGUE,
       venue: "home",
       match_date: date,
@@ -142,8 +149,8 @@ async function main() {
     });
     // Away-perspective row
     rows.push({
-      team: match.away_team,
-      opponent: match.home_team,
+      team: awayName,
+      opponent: homeName,
       league: LEAGUE,
       venue: "away",
       match_date: date,
