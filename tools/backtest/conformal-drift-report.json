@@ -1,0 +1,518 @@
+{
+  "validated_at": "2026-04-29T19:16:08.352380Z",
+  "calibration_pipeline": "isotonic+benter",
+  "n_predictions_total": 8436,
+  "n_benter_applied": 2742,
+  "window": {
+    "from": "2025-08-01",
+    "to": "2026-04-29"
+  },
+  "trained_quantiles_source": {
+    "method": "mondrian_conformal_classification",
+    "alpha_default": 0.05,
+    "engines": [
+      "v2"
+    ],
+    "calibration": "dirichlet",
+    "trained_at": "2026-04-21T18:37:02.813931+00:00Z",
+    "source_library": "in-house"
+  },
+  "leagues": {
+    "bundesliga": {
+      "n": 352,
+      "alphas": {
+        "0.05": {
+          "q": 0.8315,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9829545454545454,
+          "drift": 0.03295454545454546,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7922,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9659090909090909,
+          "drift": 0.06590909090909092,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7457,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8892045454545454,
+          "drift": 0.08920454545454537,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "bundesliga2": {
+      "n": 360,
+      "alphas": {
+        "0.05": {
+          "q": 0.8066,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9944444444444445,
+          "drift": 0.04444444444444451,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7647,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9305555555555556,
+          "drift": 0.030555555555555558,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.744,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8638888888888889,
+          "drift": 0.06388888888888888,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "championship": {
+      "n": 856,
+      "alphas": {
+        "0.05": {
+          "q": 0.7736,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9602803738317757,
+          "drift": 0.010280373831775713,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7432,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9007009345794392,
+          "drift": 0.0007009345794392052,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7233,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8130841121495327,
+          "drift": 0.013084112149532645,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "epl": {
+      "n": 453,
+      "alphas": {
+        "0.05": {
+          "q": 0.8222,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9492273730684326,
+          "drift": -0.0007726269315673218,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7654,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8145695364238411,
+          "drift": -0.08543046357615891,
+          "flag": "catastrophic"
+        },
+        "0.20": {
+          "q": 0.7254,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.6997792494481236,
+          "drift": -0.1002207505518764,
+          "flag": "catastrophic"
+        }
+      },
+      "worst_flag": "catastrophic"
+    },
+    "eredivisie": {
+      "n": 332,
+      "alphas": {
+        "0.05": {
+          "q": 0.8224,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9518072289156626,
+          "drift": 0.0018072289156626509,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7868,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8975903614457831,
+          "drift": -0.002409638554216942,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7512,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.7891566265060241,
+          "drift": -0.010843373493975905,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "greek_sl": {
+      "n": 263,
+      "alphas": {
+        "0.05": {
+          "q": 0.8167,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.908745247148289,
+          "drift": -0.041254752851710985,
+          "flag": "drift"
+        },
+        "0.10": {
+          "q": 0.7824,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8517110266159695,
+          "drift": -0.04828897338403049,
+          "flag": "drift"
+        },
+        "0.20": {
+          "q": 0.7244,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.7718631178707225,
+          "drift": -0.028136882129277563,
+          "flag": "borderline"
+        }
+      },
+      "worst_flag": "drift"
+    },
+    "jupiler_pro": {
+      "n": 444,
+      "alphas": {
+        "0.05": {
+          "q": 0.7923,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9414414414414415,
+          "drift": -0.008558558558558471,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7711,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9166666666666666,
+          "drift": 0.016666666666666607,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7436,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8558558558558559,
+          "drift": 0.05585585585585584,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "la_liga": {
+      "n": 635,
+      "alphas": {
+        "0.05": {
+          "q": 0.7997,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.952755905511811,
+          "drift": 0.002755905511811041,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7465,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8881889763779528,
+          "drift": -0.011811023622047223,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7173,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.784251968503937,
+          "drift": -0.015748031496063075,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "la_liga2": {
+      "n": 723,
+      "alphas": {
+        "0.05": {
+          "q": 0.758,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.8561549100968188,
+          "drift": -0.09384508990318119,
+          "flag": "catastrophic"
+        },
+        "0.10": {
+          "q": 0.7323,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.7510373443983402,
+          "drift": -0.14896265560165978,
+          "flag": "catastrophic"
+        },
+        "0.20": {
+          "q": 0.7139,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.719225449515906,
+          "drift": -0.0807745504840941,
+          "flag": "catastrophic"
+        }
+      },
+      "worst_flag": "catastrophic"
+    },
+    "league_one": {
+      "n": 778,
+      "alphas": {
+        "0.05": {
+          "q": 0.7608,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9794344473007712,
+          "drift": 0.02943444730077127,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7415,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9447300771208226,
+          "drift": 0.04473007712082255,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7236,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.877892030848329,
+          "drift": 0.07789203084832896,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "league_two": {
+      "n": 886,
+      "alphas": {
+        "0.05": {
+          "q": 0.7574,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9943566591422122,
+          "drift": 0.04435665914221221,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7348,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9785553047404063,
+          "drift": 0.07855530474040628,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7231,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.9571106094808126,
+          "drift": 0.15711060948081257,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "ligue_1": {
+      "n": 303,
+      "alphas": {
+        "0.05": {
+          "q": 0.8278,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9735973597359736,
+          "drift": 0.023597359735973655,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.781,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9504950495049505,
+          "drift": 0.05049504950495043,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7376,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8547854785478548,
+          "drift": 0.05478547854785476,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "ligue_2": {
+      "n": 310,
+      "alphas": {
+        "0.05": {
+          "q": 0.7955,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9903225806451613,
+          "drift": 0.040322580645161366,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7747,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9548387096774194,
+          "drift": 0.05483870967741933,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7348,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8161290322580645,
+          "drift": 0.016129032258064502,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "primeira_liga": {
+      "n": 388,
+      "alphas": {
+        "0.05": {
+          "q": 0.7814,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9149484536082474,
+          "drift": -0.035051546391752564,
+          "flag": "drift"
+        },
+        "0.10": {
+          "q": 0.7458,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8479381443298969,
+          "drift": -0.05206185567010313,
+          "flag": "catastrophic"
+        },
+        "0.20": {
+          "q": 0.7204,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.7989690721649485,
+          "drift": -0.0010309278350515427,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "catastrophic"
+    },
+    "scottish_prem": {
+      "n": 223,
+      "alphas": {
+        "0.05": {
+          "q": 0.8146,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9461883408071748,
+          "drift": -0.003811659192825112,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7705,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9013452914798207,
+          "drift": 0.0013452914798206539,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7326,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8026905829596412,
+          "drift": 0.0026905829596411968,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "serie_a": {
+      "n": 367,
+      "alphas": {
+        "0.05": {
+          "q": 0.8443,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9591280653950953,
+          "drift": 0.009128065395095364,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7885,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9073569482288828,
+          "drift": 0.007356948228882776,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.7373,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8392370572207084,
+          "drift": 0.03923705722070836,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    },
+    "serie_b": {
+      "n": 425,
+      "alphas": {
+        "0.05": {
+          "q": 0.7699,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9270588235294117,
+          "drift": -0.022941176470588243,
+          "flag": "borderline"
+        },
+        "0.10": {
+          "q": 0.7459,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.8564705882352941,
+          "drift": -0.04352941176470593,
+          "flag": "drift"
+        },
+        "0.20": {
+          "q": 0.7213,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.7835294117647059,
+          "drift": -0.016470588235294126,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "drift"
+    },
+    "super_lig": {
+      "n": 338,
+      "alphas": {
+        "0.05": {
+          "q": 0.8234,
+          "expected_coverage": 0.95,
+          "empirical_coverage": 0.9704142011834319,
+          "drift": 0.020414201183431957,
+          "flag": "ok"
+        },
+        "0.10": {
+          "q": 0.7721,
+          "expected_coverage": 0.9,
+          "empirical_coverage": 0.9260355029585798,
+          "drift": 0.026035502958579815,
+          "flag": "ok"
+        },
+        "0.20": {
+          "q": 0.739,
+          "expected_coverage": 0.8,
+          "empirical_coverage": 0.8165680473372781,
+          "drift": 0.016568047337278013,
+          "flag": "ok"
+        }
+      },
+      "worst_flag": "ok"
+    }
+  },
+  "summary": {
+    "n_leagues_validated": 18,
+    "flag_counts": {
+      "ok": 13,
+      "borderline": 0,
+      "drift": 2,
+      "catastrophic": 3
+    },
+    "recommendation": "BLOCK enforce-mode flip; refit immediately"
+  }
+}
