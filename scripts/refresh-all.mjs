@@ -178,6 +178,14 @@ const phases = [
     abortOnFail: false,
   },
   {
+    name: "sync-sofascore",
+    emoji: "🎯",
+    description: "Sofascore Shot-Events (Tier-A) inkrementell sync",
+    skip: () => !existsSync(resolve(REPO_ROOT, "tools/venv/bin/python3")),
+    run: () => runScript("scripts/sync-sofascore-shotmap.mjs", [], "sync-sofascore"),
+    abortOnFail: false,  // experimental data-source, must not break the pipeline
+  },
+  {
     name: "referees",
     emoji: "🟨",
     description: "Referee-Stats per Liga von FBref ziehen",
