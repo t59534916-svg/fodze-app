@@ -104,60 +104,10 @@ function normalize(name) {
 }
 
 /**
- * Parse TEAM_REGISTRY from src/lib/team-resolver.ts at runtime. The TS
- * file is the authoritative source — we extract its entries via regex
- * to avoid duplicating ~330 team aliases across .ts/.mjs.
- *
- * Each TS entry looks like:
- *   { fodze: "FC Bayern München", csv: "Bayern Munich", understat: "Bayern Munich", oddsApi: "Bayern Munich", league: "bundesliga" },
- *
- * We extract fodze + csv + understat + oddsApi + league. The "fodze"
- * field is the canonical name. csv/understat/oddsApi/league give us
- * additional aliases.
- */
-function loadRegistry() {
-  const tsPath = resolve(REPO_ROOT, "src/lib/team-resolver.ts");
-  if (!existsSync(tsPath)) {
-    throw new Error(`team-resolver.ts not found at ${tsPath}`);
-  }
-  const src = readFileSync(tsPath, "utf-8");
-  // Match each registry-entry line. Tolerant of optional fields.
-  const re = /\{\s*fodze:\s*"([^"]+)",\s*csv:\s*"([^"]+)"(?:,\s*understat:\s*"([^"]*)")?(?:,\s*oddsApi:\s*"([^"]*)")?(?:,\s*league:\s*"([^"]+)")?\s*\},?/g;
-  const entries = [];
-  let m;
-  while ((m = re.exec(src)) !== null) {
-    entries.push({
-      fodze: m[1],
-      csv: m[2],
-      understat: m[3] || null,
-      oddsApi: m[4] || null,
-      league: m[5] || null,
-    });
-  }
-  return entries;
-}
-
-/**
- * Build aliasMap: per-league Map<normalized-alias, canonical-fodze-name>
- * Single match by EXACT normalized match.
- */
-function buildAliasMap(registry) {
-  const aliasMap = new Map(); // league → Map<normAlias, canonical>
-  for (const e of registry) {
-    if (!e.league) continue;
-    if (!aliasMap.has(e.league)) aliasMap.set(e.league, new Map());
-    const lm = aliasMap.get(e.league);
-    // Add fodze itself + all known aliases
-    for (const alias of [e.fodze, e.csv, e.understat, e.oddsApi]) {
-      if (alias) lm.set(normalize(alias), e.fodze);
-    }
-  }
-  return aliasMap;
-}
-
-/**
- * Tier-1: exact-normalized match against registry.
+ * Tier-1: exact-normalized match against the matchday-derived alias map.
  * Tier-2: substring containment fallback (length-guarded ≥ 5 chars).
+ * Only invoked after sharedCanonicalize has had its say — never against
+ * TEAM_REGISTRY (sharedCanonicalize already covers that).
  */
 function findCanonical(team, league, aliasMap) {
   const lm = aliasMap.get(league);
@@ -192,45 +142,47 @@ async function fetchAll(url) {
   return out;
 }
 
-// Build canonical team list per league from matchdays JSONB.
-// Used to confirm the registry's "fodze" name is the same as what the UI
-// uses. If a team is in matchdays but NOT in the registry, it's added as
-// canonical = matchdays name (registry-augmentation for new teams).
+// Build canonical team list per league from matchdays JSONB. Each raw
+// matchday name is pulled through sharedCanonicalize so the resulting
+// alias-map agrees with EXTRA_ALIASES — without this, a matchday carrying
+// "Arminia Bielefeld" would shadow the EXTRA_ALIASES canonical
+// "DSC Arminia Bielefeld" in bundesliga2 and the inverse-direction
+// disagreement triggered the dedupe false-positives.
 async function buildCanonicalMap(aliasMap) {
   console.log(`📚 Loading canonical team names from matchdays JSONB...`);
   const matchdays = await fetchAll(`${SUPA_URL}/rest/v1/matchdays?select=league,data`);
   console.log(`   ${matchdays.length} matchday rows fetched`);
 
-  const canonicalByLeague = new Map(); // league → Set<team_name>
+  const canonicalByLeague = new Map(); // league → Set<canonical_team_name>
+  let aliasEntries = 0;
   for (const m of matchdays) {
     const league = m.league;
     if (!league) continue;
     if (!canonicalByLeague.has(league)) canonicalByLeague.set(league, new Set());
+    if (!aliasMap.has(league)) aliasMap.set(league, new Map());
     const set = canonicalByLeague.get(league);
+    const lm = aliasMap.get(league);
     const matches = m.data?.matches || [];
     for (const match of matches) {
-      const h = match?.home?.name;
-      const a = match?.away?.name;
-      if (h) set.add(h);
-      if (a) set.add(a);
-    }
-  }
-
-  // Augment alias map with matchday teams that aren't in the registry yet.
-  // These become their own canonicals — UI is source-of-truth for team names.
-  let augmented = 0;
-  for (const [league, teams] of canonicalByLeague.entries()) {
-    if (!aliasMap.has(league)) aliasMap.set(league, new Map());
-    const lm = aliasMap.get(league);
-    for (const t of teams) {
-      const norm = normalize(t);
-      if (!lm.has(norm)) {
-        lm.set(norm, t);
-        augmented++;
+      for (const raw of [match?.home?.name, match?.away?.name]) {
+        if (!raw) continue;
+        const canonical = sharedCanonicalize(raw, league);
+        if (!set.has(canonical)) {
+          set.add(canonical);
+          lm.set(normalize(canonical), canonical);
+          aliasEntries++;
+        }
+        // Also map the raw matchday name to its canonical (lets findCanonical
+        // resolve common matchday spellings via tier-1 instead of tier-2).
+        const normRaw = normalize(raw);
+        if (!lm.has(normRaw)) {
+          lm.set(normRaw, canonical);
+          aliasEntries++;
+        }
       }
     }
   }
-  console.log(`   Augmented alias-map with ${augmented} matchday-team-names not in registry\n`);
+  console.log(`   ${aliasEntries} matchday-derived alias entries\n`);
 
   return canonicalByLeague;
 }
@@ -242,18 +194,14 @@ async function main() {
   console.log(`  FODZE Team Name Deduplication${DRY ? " (DRY)" : ""}`);
   console.log(`══════════════════════════════════════════════════════════════════\n`);
 
-  // 1) Load TEAM_REGISTRY from team-resolver.ts (single source of truth)
-  console.log(`🔍 Loading TEAM_REGISTRY from src/lib/team-resolver.ts...`);
-  const registry = loadRegistry();
-  console.log(`   ${registry.length} entries parsed\n`);
-
-  const aliasMap = buildAliasMap(registry);
-
-  // 2) Augment with matchday-derived canonicals (for new teams not yet in registry)
+  // Canonical-direction is owned by sharedCanonicalize (TEAM_REGISTRY +
+  // EXTRA_ALIASES). aliasMap here only collects matchday-derived names so
+  // findCanonical can resolve teams sharedCanonicalize doesn't recognize.
+  const aliasMap = new Map();
   const canonicalByLeague = await buildCanonicalMap(aliasMap);
 
   if (LEAGUE && !aliasMap.has(LEAGUE)) {
-    console.error(`❌ League "${LEAGUE}" has no canonical teams — neither registry nor matchdays.`);
+    console.error(`❌ League "${LEAGUE}" has no matchday rows — nothing to dedupe against.`);
     process.exit(1);
   }
 
@@ -285,16 +233,23 @@ async function main() {
     const unmatched = [];
 
     for (const [team, n] of teamCounts.entries()) {
-      // Delegate to shared canonicalize (which knows EXTRA_ALIASES + registry).
-      // Returns the input unchanged when no canonical is known — we then
-      // fall back to local findCanonical for tier-2 substring matching.
-      const sharedCan = sharedCanonicalize(team, league);
-      const localCan = findCanonical(team, league, aliasMap);
-      const canonical = (sharedCan !== team) ? sharedCan : localCan;
-      if (canonical === null) {
-        unmatched.push({ team, n });
-      } else if (canonical !== team) {
+      // sharedCanonicalize is the authoritative resolver: TEAM_REGISTRY +
+      // EXTRA_ALIASES (manual lower-tier overrides) with tier-2 substring
+      // fallback within the same league. It's queried first so EXTRA_ALIASES
+      // can't be inverted by a registry-only fallback.
+      const canonical = sharedCanonicalize(team, league);
+      if (canonical !== team) {
         renames.set(team, { canonical, n });
+        continue;
+      }
+      // No opinion from sharedCanonicalize. Fall back to matchdays-derived
+      // names — already canonicalized through sharedCanonicalize at load
+      // time, so this can only ever agree with EXTRA_ALIASES.
+      const matchdayCanonical = findCanonical(team, league, aliasMap);
+      if (matchdayCanonical === null) {
+        unmatched.push({ team, n });
+      } else if (matchdayCanonical !== team) {
+        renames.set(team, { canonical: matchdayCanonical, n });
       }
     }
 
@@ -304,7 +259,7 @@ async function main() {
     totalUnmatched += unmatched.length;
 
     console.log(`\n══ ${league} ══`);
-    console.log(`  Canonical teams (registry+matchdays): ${new Set(lm.values()).size}`);
+    console.log(`  Canonical teams (matchdays): ${canonicalByLeague.get(league)?.size ?? 0}`);
     console.log(`  Distinct team names (team_xg_history): ${teamCounts.size}`);
     console.log(`  → ${sortedRenames.length} aliases to merge (${totalRowsLeague} rows affected)`);
 
