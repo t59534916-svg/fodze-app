@@ -32,6 +32,7 @@ import {
   THESPORTSDB_LEAGUES,
   parseTeamRecord,
 } from "./_lib/thesportsdb.mjs";
+import { canonicalize } from "./_lib/canonical-team.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "..");
@@ -99,10 +100,15 @@ async function supaUpsert(rows) {
 async function collectTeamNames(fodzeLeague) {
   const names = new Set();
 
-  // 1. Aus matchdays.data.matches (zukünftig geplante Matches)
+  // 1. Aus matchdays.data.matches (zukünftig geplante Matches).
+  // BUG-FIX (2026-04-29): column is `match_date`, not `date` — old query
+  // silently 400'd via try/catch and contributed nothing. Without this
+  // step, only team_xg_history sourced names, which (paired with the
+  // limit=1000 PostgREST cap on history-heavy leagues) returned only
+  // 5/20 EPL teams.
   try {
     const mds = await supaGet(
-      `matchdays?select=data&league=eq.${encodeURIComponent(fodzeLeague)}&order=date.desc&limit=4`
+      `matchdays?select=data&league=eq.${encodeURIComponent(fodzeLeague)}&order=match_date.desc&limit=4`
     );
     for (const md of mds) {
       const matches = md?.data?.matches || [];
@@ -113,32 +119,82 @@ async function collectTeamNames(fodzeLeague) {
     }
   } catch { /* matchdays may be empty */ }
 
-  // 2. Aus team_xg_history (historische Teams der Liga)
+  // 2. Aus team_xg_history — restrict to current season AND paginate.
+  // BUG-FIX (2026-04-29): without match_date filter, PostgREST 1000-row
+  // cap returns the FIRST 1000 by insertion order — which for EPL is
+  // 2017-era data with only ~5 teams populated. With currentSeasonStart
+  // filter we get ~666 rows (well under 1000) covering all 20 active
+  // teams. Pagination loop is defensive against future high-volume leagues.
+  const SEASON_START = currentSeasonStart();
   try {
-    const rows = await supaGet(
-      `team_xg_history?select=team&league=eq.${encodeURIComponent(fodzeLeague)}&limit=1000`
-    );
-    for (const r of rows) if (r?.team) names.add(r.team);
+    const PAGE = 1000;
+    let offset = 0;
+    while (true) {
+      const rows = await supaGet(
+        `team_xg_history?select=team&league=eq.${encodeURIComponent(fodzeLeague)}&match_date=gte.${SEASON_START}&limit=${PAGE}&offset=${offset}`
+      );
+      if (!rows || rows.length === 0) break;
+      for (const r of rows) if (r?.team) names.add(r.team);
+      offset += PAGE;
+      if (rows.length < PAGE) break;
+    }
   } catch { /* ignore */ }
 
   return [...names];
 }
 
+// Aug 1 of the current European season — same convention as score_current_season.py.
+// Aug-Dec → current calendar year; Jan-Jul → previous calendar year.
+function currentSeasonStart() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-based: Aug=7
+  return m >= 7 ? `${y}-08-01` : `${y - 1}-08-01`;
+}
+
 // ─── Match search result to the right league ─────────────────
 
-function pickBestMatch(candidates, expectedLeagueName, teamQuery) {
+function pickBestMatch(candidates, expectedLeagueName, expectedLeagueId, teamQuery) {
   if (!candidates || candidates.length === 0) return null;
-  // Prefer exact league match on any strLeague/strLeague2..7
   const leagueFields = ["strLeague","strLeague2","strLeague3","strLeague4","strLeague5","strLeague6","strLeague7"];
+
+  // Tier 1: idLeague match — bulletproof, TheSportsDB returns idLeague
+  // consistently from searchteams.php (verified live: Tottenham → idLeague=4328
+  // for EPL). Avoids brittle string-matching of league-name variants.
+  if (expectedLeagueId != null) {
+    const wantId = Number(expectedLeagueId);
+    for (const c of candidates) {
+      if (c.idLeague && Number(c.idLeague) === wantId) return c;
+    }
+  }
+
+  // Tier 2: strict league-name equality (legacy path, preserved for
+  // candidates without idLeague populated)
   for (const c of candidates) {
     for (const f of leagueFields) {
       if (c[f] && c[f].toLowerCase() === expectedLeagueName.toLowerCase()) return c;
     }
   }
-  // Fallback: Soccer + country-matching name
+
+  // Tier 3: substring match on league-name — handles "Premier League" vs
+  // "English Premier League" or "La Liga" vs "Spanish La Liga" variants.
+  // Min length guard prevents "Premier" matching too eagerly into other comps.
+  const wantLower = expectedLeagueName.toLowerCase();
+  if (wantLower.length >= 8) {
+    for (const c of candidates) {
+      for (const f of leagueFields) {
+        const got = c[f]?.toLowerCase();
+        if (!got) continue;
+        if (got.includes(wantLower) || wantLower.includes(got)) return c;
+      }
+    }
+  }
+
+  // Tier 4: Soccer + single-result fallback
   const soccer = candidates.filter(c => (c.strSport || "").toLowerCase() === "soccer");
   if (soccer.length === 1) return soccer[0];
-  // Letzte Notlösung: exact name match
+
+  // Tier 5: exact team-name match within soccer results
   const exact = soccer.find(c => (c.strTeam || "").toLowerCase() === teamQuery.toLowerCase());
   return exact || null;
 }
@@ -225,7 +281,7 @@ async function main() {
         const res = await client.searchTeam(q);
         if (!res.ok) break;
         const hits = res.data?.teams || [];
-        best = pickBestMatch(hits, info.leagueName, name);
+        best = pickBestMatch(hits, info.leagueName, info.leagueId, name);
         if (best) {
           if (VERBOSE && q !== name) console.log(`    ↳ retry "${q}" hit ${best.strTeam}`);
           break;
@@ -238,7 +294,10 @@ async function main() {
       }
       const parsed = parseTeamRecord(best, fodzeLeague);
       if (parsed) {
-        parsed.team_name = name; // canonical FODZE key
+        // canonicalize-on-write: source `name` came from matchdays/team_xg_history
+        // which are post-2026-04-27 dedup-canonical, but defense-in-depth against
+        // future alias-input (new-season imports before dedupe-pass).
+        parsed.team_name = canonicalize(name, fodzeLeague);
         batch.push(parsed);
         grandTotalMatched++;
         if (VERBOSE) console.log(`    ✓ ${name} → ${best.strTeam} (id=${best.idTeam})`);
