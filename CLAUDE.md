@@ -8,10 +8,12 @@ Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vie
 
 **Daten-Bestand (post 2026-04-27 cleanup)**: 86.007 team-match rows in `team_xg_history` (war 106k vor multi-source dedupe — 35k+ Aliase gemerged), ALLE 22 Ligen current season bei exakt-korrekter Team-Anzahl (drift=0). 24.686+ Closing-Odds rows in `odds_closing_history` (football-data.co.uk historical bis 2026-01-14 + live-odds-snapshot forward-cache going-forward). 2.548 match_outcomes (predictions×reality bridge), 1.509+ pipeline_shadow_log (4 engines), 27+ live_brier_snapshots. Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~398 Teams, deduped 2026-04-27), MatchCard-Accent-Gradients, per-match referee + discipline features. **Live System-State auf `/health`** Dashboard.
 
-**Team-Name Canonicalization (Architectural Invariant seit 2026-04-27)**:
-Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports / Understat) hatte zuvor verschiedene Schreibweisen für dasselbe Team in dieselbe Liga geschrieben — "Bayern München" / "FC Bayern München" / "Bayern Munich" als 3 separate rows. UNIQUE-constraint griff nicht weil `team` string-different. Standings + EWMA + Engine-Predictions silent verzerrt. **Fix in 2 Lagen:**
-1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — alle 5 active backfill-scripts mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (22 lower-tier overrides). Patches in `import-footystats-csv.mjs`, `backfill-liga3-openligadb.mjs`, `backfill-shots-xg.mjs`, `backfill-footystats.mjs`, `fetch-api-sports-stats.mjs`.
+**Team-Name Canonicalization (Architectural Invariant seit 2026-04-27, härter seit 2026-04-29)**:
+Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports / Understat / TheSportsDB) hatte zuvor verschiedene Schreibweisen für dasselbe Team in dieselbe Liga geschrieben — "Bayern München" / "FC Bayern München" / "Bayern Munich" als 3 separate rows. UNIQUE-constraint griff nicht weil `team` string-different. Standings + EWMA + Engine-Predictions silent verzerrt. **Fix in 2 Lagen:**
+1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — **alle 14 active write-scripts** (5 Top-Tier backfills + 4 MEDIUM-RISK syncs + 3 metadata writers + 2 follow-up importers) mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (22 lower-tier overrides). 2026-04-29 erweitert: `backfill-xg.mjs` (HIGH), `seed-understat-2526.mjs` (HIGH), `backfill-liga3-goals.mjs` (HIGH disabled-but-callable), `sync-xg-to-supabase.mjs`, `sync-npxg-to-supabase.mjs`, `fetch-fbref-stats.mjs`, `backfill-xg-by-state.mjs`, `sync-thesportsdb-metadata.mjs`, `fill-thesportsdb-missing.mjs`. 4 dormant scripts archived to `scripts/_archive/`.
 2. **Read-Layer:** `src/lib/team-resolver.ts::canonicalizeTeamName(name, league)` (TS-mirror) wird in `MatchdayContext.loadCached` BEFORE `resolveXGBucket` aufgerufen — matchdays JSON darf inkonsistent sein, MatchdayContext löst über canonical auf. Fallback: `xg-history-resolver.ts` tier-2 substring.
+
+**Known JS↔TS canonical inconsistency (2026-04-29):** `dedupe-team-names.mjs::buildAliasMap` baut alias-map nur aus TEAM_REGISTRY und ignoriert EXTRA_ALIASES. Bei Konflikt-Cases (z.B. bundesliga2 "DSC Arminia Bielefeld" via EXTRA_ALIASES vs "Arminia Bielefeld" via TEAM_REGISTRY) flaggt der dedupe-dry false-positives. DB-state ist konsistent mit `canonicalize()` (canonical-team.mjs), nicht mit `findCanonical()` (lokal in dedupe-team-names.mjs). Fix: `dedupe-team-names.mjs` muss `sharedCanonicalize` als single source of truth verwenden, ohne TEAM_REGISTRY-fallback. **Out-of-scope für 2026-04-29** — separate task, low-risk weil cron nicht auto-runned wird.
 
 ---
 
@@ -21,7 +23,7 @@ Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports /
 ```bash
 npm install
 npm run dev         # http://localhost:3000
-npm run test        # 550 Tests (vitest)
+npm run test        # 565 Tests (vitest)
 npm run test:watch
 npm run build       # Production Build (läuft auch in CI)
 npm run lint        # Next lint (warnings nur, non-blocking)
@@ -405,7 +407,7 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ---
 
-## Tests (550 total, 36 files)
+## Tests (565 total, 37 files)
 
 ```bash
 npm run test              # alle Tests
@@ -442,6 +444,22 @@ Coverage-Hotspots:
 - `anna-request-validation.test.ts` — Streaming SSE Input Guards
 
 **NICHT getestet**: React-Contexts (MatchdayContext, AppContext), Components (MatchDetail, BetHistoryShare, etc.), API-Routes, Hooks, Pages, Scripts.
+
+---
+
+## Areas to Watch (Stand 2026-04-29)
+
+| Area | Status | Notes |
+|---|---|---|
+| Engine math | ✅ clean | isotonic + Benter empirisch best (current-season Brier 0.6120 vs 0.6146 raw vs 0.6158 dirichlet) |
+| `team_xg_history` canonicalization | ✅ clean | All 22 leagues drift=0; ingest-layer canonicalize-on-write across 14 active scripts |
+| TS↔JS canonicalize alignment | ✅ clean | Regression tests in `tests/canonicalize-team-name.test.ts` (15 cases lock down EXTRA_LEAGUE_ALIASES sync) |
+| `match_outcomes` schema | ✅ clean | UNIQUE (match_key, match_date) — supports double-round-robin (austria_bl etc.) |
+| `team_metadata` cross-league sync | 🟢 best-effort | EPL closed (Tottenham + Leeds + West Ham gefüllt 2026-04-29). Cross-league gap reduziert von 111 → 54. Verbleibende 54 sind TheSportsDB-Coverage-Limits (Reserve-Teams + austria_bl/swiss_sl/greek_sl regional clubs nicht in TheSportsDB Free-Tier indexiert). |
+| `fill-thesportsdb-missing.mjs` | ✅ clean | 2026-04-29 hardened: idLeague-deterministic match (Tier-1) + substring fallback (Tier-3) + canonicalize-on-write. Plus `collectTeamNames()` Bug-Fix: matchdays-column war `match_date` nicht `date`, team_xg_history brauchte current-season-filter + pagination (vorher: nur 5 EPL-Teams gefunden statt 20). |
+| Conformal Gate drift | 🟡 audited (2026-04-29) | **Validated empirisch:** 13/18 ok, 2 drift, **3 catastrophic (epl/la_liga2/primeira_liga)**. EPL α=0.10 under-covers by 8.5pp. **Flip zu enforce-mode BLOCKED** bis Re-fit. Artifact: `tools/backtest/conformal-drift-report.json`. Tool: `tools/backtest/validate_conformal_drift.py`. Mode bleibt `warn` (zero production-risk). |
+| Inactive scripts | ✅ tracked | 14 active write-scripts now patched with canonicalize() (5 originally + 9 added 2026-04-29). 4 truly dormant moved to `scripts/_archive/` with README. 1 deprecated in-place (`import-wfr-csvs.mjs` — npm script ref). |
+| **JS↔TS dedupe-team-names alignment** | 🟡 known issue | `dedupe-team-names.mjs::buildAliasMap` baut alias-map nur aus TEAM_REGISTRY ohne EXTRA_ALIASES. Bei Konflikt-Cases (z.B. bundesliga2 "DSC Arminia Bielefeld" canonical per EXTRA vs "Arminia Bielefeld" per registry) flaggt false-positives. DB-state ist konsistent mit production canonicalize(). Fix: dedupe-team-names.mjs muss `sharedCanonicalize` als single source-of-truth verwenden, ohne TEAM_REGISTRY-fallback. **Out-of-scope** weil cron-only-callable. |
 
 ---
 
@@ -580,7 +598,7 @@ Retraining: `DYLD_FALLBACK_LIBRARY_PATH="$HOME/lib" python3 tools/retrain_v3.py 
 |---|---|---|---|
 | **Calibration Method** | **isotonic** (war kurz "dirichlet" am 2026-04-26 morgen, REVERTED Abend) | `public/calibration_curves.json` (legacy) + `public/dirichlet-calibration.json` (dormant aber loaded) | isotonic = pre-Dirichlet stable baseline |
 | **Benter Blend (Phase 1.3)** | **on** | `public/benter-weights.json` | Per-Liga β₁/β₂ aus n=5586 OOT — empirisch best in current-season backtest n=8306 (Brier 0.6120) |
-| **Conformal Gate (Phase 2.5)** | **warn** (observation only, no Kelly-Skaling) | `public/conformal-quantiles.json` | 96.7% empirische Coverage @ α=0.05 |
+| **Conformal Gate (Phase 2.5)** | **warn** (observation only, no Kelly-Skaling) — **DRIFT VERIFIED 2026-04-29 → flip-to-enforce BLOCKED** | `public/conformal-quantiles.json` (trained 2026-04-21 on 2023-24 OOT) | Empirische Coverage 13/18 ok, 2 drift (greek_sl, serie_b), **3 catastrophic (epl, la_liga2, primeira_liga)**. EPL α=0.10 under-covers by 8.5pp. Re-fit recommended before any enforce-mode flip. Audit: `tools/backtest/conformal-drift-report.json` |
 | **Per-Liga Overdispersion (Phase 2.5)** | **on** | `public/overdispersion.json` | Fitted α-Werte tighter als DEFAULT (serie_a -52%, la_liga -31%) → bessere O25/U25 PMF-Tails |
 
 **⚠ Dirichlet-Revert (2026-04-27, datengetrieben):**
