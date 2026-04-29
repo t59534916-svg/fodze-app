@@ -36,7 +36,6 @@ const JSON_OUT = args.includes("--json");
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
-const ODDS_KEY = process.env.ODDS_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
 // ─── Checks ────────────────────────────────────────────────────────
@@ -66,18 +65,30 @@ const checks = [
   {
     name: "The-Odds-API",
     fn: () => timed(async () => {
-      if (!ODDS_KEY) return { ok: false, msg: "ODDS_API_KEY missing" };
-      // cheap call: list sports. Returns credits headers.
-      const r = await fetch(`https://api.the-odds-api.com/v4/sports?apiKey=${ODDS_KEY}`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      const remaining = r.headers.get("x-requests-remaining");
-      const used = r.headers.get("x-requests-used");
-      if (!r.ok) return { ok: false, msg: `HTTP ${r.status}` };
+      // Probe each configured key with a free `/sports` call (0 credits)
+      // so the health check reports per-key budget — useful when one key
+      // is exhausted but a second is fresh.
+      const keys = [process.env.ODDS_API_KEY, process.env.ODDS_API_KEY_2, process.env.ODDS_API_KEY_3]
+        .filter(Boolean);
+      if (keys.length === 0) return { ok: false, msg: "ODDS_API_KEY missing" };
+      const perKey = [];
+      for (let i = 0; i < keys.length; i++) {
+        const r = await fetch(`https://api.the-odds-api.com/v4/sports?apiKey=${keys[i]}`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        const remaining = parseInt(r.headers.get("x-requests-remaining") ?? "", 10);
+        const used = parseInt(r.headers.get("x-requests-used") ?? "", 10);
+        perKey.push({ ok: r.ok, status: r.status, remaining, used });
+      }
+      const totalRemaining = perKey.reduce((s, k) => s + (Number.isFinite(k.remaining) ? k.remaining : 0), 0);
+      const anyOk = perKey.some((k) => k.ok);
+      const summary = perKey
+        .map((k, i) => k.ok ? `K${i + 1}=${k.remaining}` : `K${i + 1}=HTTP${k.status}`)
+        .join(" · ");
       return {
-        ok: true,
-        msg: `${remaining} credits left / ${used} used this month`,
-        detail: { remaining: Number(remaining), used: Number(used) },
+        ok: anyOk && totalRemaining > 0,
+        msg: `${totalRemaining} credits across ${keys.length} key${keys.length > 1 ? "s" : ""} (${summary})`,
+        detail: { perKey, totalRemaining },
       };
     }),
   },

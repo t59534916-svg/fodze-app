@@ -19,7 +19,7 @@
  *              12 credits total for 6 leagues
  */
 
-const ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports";
+import { fetchOddsApi, oddsKeyState } from "./_lib/odds-api.mjs";
 
 // Map FODZE league keys → The-Odds-API sport keys
 const LEAGUE_MAP = {
@@ -62,33 +62,24 @@ const args = process.argv.slice(2);
 const DRY = args.includes("--dry");
 const singleLeague = args.find((a, i) => args[i - 1] === "--league");
 
-const API_KEY = process.env.ODDS_API_KEY;
 const SUPA_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.FODZE_SERVICE_KEY;
 
-if (!API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
+if (!process.env.ODDS_API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
 if (!SUPA_URL && !DRY) { console.error("❌ Missing SUPABASE_URL"); process.exit(1); }
 if (!SUPA_KEY && !DRY) { console.error("❌ Missing SUPABASE_SERVICE_KEY"); process.exit(1); }
 
 async function fetchOdds(sportKey) {
-  const url = `${ODDS_API_BASE}/${sportKey}/odds?` + new URLSearchParams({
-    apiKey: API_KEY,
-    regions: "eu",
-    markets: "h2h,totals",
-    oddsFormat: "decimal",
-    dateFormat: "iso",
+  const { resp, keyIndex, remaining, used } = await fetchOddsApi(`/sports/${sportKey}/odds`, {
+    params: {
+      regions: "eu",
+      markets: "h2h,totals",
+      oddsFormat: "decimal",
+      dateFormat: "iso",
+    },
   });
 
-  const resp = await fetch(url);
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`API ${resp.status}: ${txt}`);
-  }
-
-  const remaining = resp.headers.get("x-requests-remaining");
-  const used = resp.headers.get("x-requests-used");
-  console.log(`  Credits: ${used} used, ${remaining} remaining`);
-
+  console.log(`  Credits (K${keyIndex + 1}): ${used} used, ${remaining} remaining`);
   return resp.json();
 }
 

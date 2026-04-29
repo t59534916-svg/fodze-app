@@ -42,11 +42,12 @@ if (existsSync(envPath)) {
   }
 }
 
-const API_KEY = process.env.ODDS_API_KEY;
+import { fetchOddsApi } from "./_lib/odds-api.mjs";
+
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-if (!API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
+if (!process.env.ODDS_API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
 if (!SUPA_URL || !SUPA_KEY) { console.error("❌ Missing SUPABASE env"); process.exit(1); }
 
 const args = process.argv.slice(2);
@@ -60,9 +61,9 @@ const SPORT_KEY = "soccer_germany_liga3";
 // ─── Fetch completed matches ─────────────────────────────────────
 
 async function fetchCompleted() {
-  const url = `https://api.the-odds-api.com/v4/sports/${SPORT_KEY}/scores?apiKey=${API_KEY}&daysFrom=${DAYS_FROM}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`API ${resp.status}: ${await resp.text()}`);
+  const { resp } = await fetchOddsApi(`/sports/${SPORT_KEY}/scores`, {
+    params: { daysFrom: String(DAYS_FROM) },
+  });
   const data = await resp.json();
   return data.filter((e) => e.completed);
 }

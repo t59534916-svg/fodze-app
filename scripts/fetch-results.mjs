@@ -33,11 +33,12 @@ if (existsSync(envPath)) {
   }
 }
 
-const API_KEY = process.env.ODDS_API_KEY;
+import { fetchOddsApi } from "./_lib/odds-api.mjs";
+
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
 
-if (!API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
+if (!process.env.ODDS_API_KEY) { console.error("❌ Missing ODDS_API_KEY"); process.exit(1); }
 if (!SUPA_URL || !SUPA_KEY) { console.error("❌ Missing SUPABASE env"); process.exit(1); }
 
 const args = process.argv.slice(2);
@@ -226,9 +227,9 @@ async function settleBet(bet, result) {
 
 // ─── Odds API fetch ──────────────────────────────────────────────
 async function fetchScores(sportKey, daysFrom) {
-  const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/scores?apiKey=${API_KEY}&daysFrom=${daysFrom}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`${sportKey}: HTTP ${resp.status}`);
+  const { resp } = await fetchOddsApi(`/sports/${sportKey}/scores`, {
+    params: { daysFrom: String(daysFrom) },
+  });
   return resp.json();
 }
 
