@@ -552,11 +552,15 @@ function normalizeForCanonical(name: string): string {
 /**
  * Map any team-name to its canonical form for a specific league.
  *
- * Resolution order:
- *   1. Exact FODZE / CSV / Understat / OddsApi match in TEAM_REGISTRY
+ * Resolution order (MIRRORS scripts/_lib/canonical-team.mjs — extras win):
+ *   1. Per-league EXTRA_LEAGUE_ALIASES override (BL2, Liga3, La Liga 2,
+ *      Serie B, Greek SL, Primeira, Ligue 1+2, Jupiler Pro). EXTRAS take
+ *      precedence because TEAM_REGISTRY has cross-league inconsistencies
+ *      (e.g. fodze="Hertha BSC" for bundesliga but fodze="Hertha Berlin"
+ *      for bundesliga2 — the dedupe scripts already chose "Hertha BSC"
+ *      via EXTRAS, so the database state expects EXTRAS to win).
+ *   2. Exact FODZE / CSV / Understat / OddsApi match in TEAM_REGISTRY
  *      (filtered to entries tagged with the requested league)
- *   2. Per-league EXTRA_LEAGUE_ALIASES override (BL2, Liga3, La Liga 2,
- *      Serie B, Greek SL, Primeira, Ligue 1+2, Jupiler Pro)
  *   3. Returns input unchanged if no canonical is known
  *
  * Used by MatchdayContext.loadCached to resolve matchday team-names
@@ -570,18 +574,18 @@ function normalizeForCanonical(name: string): string {
  */
 export function canonicalizeTeamName(name: string, league: string): string {
   if (!name || !league) return name;
-  // Tier 1: TEAM_REGISTRY exact match for this league
+  // Tier 1: EXTRA_LEAGUE_ALIASES per-league (extras-first to mirror JS-side)
+  const lm = extraByLeague.get(league);
+  if (lm) {
+    const norm = normalizeForCanonical(name);
+    if (lm.has(norm)) return lm.get(norm)!;
+  }
+  // Tier 2: TEAM_REGISTRY exact match for this league
   for (const t of TEAM_REGISTRY) {
     if (t.league !== league) continue;
     if (t.fodze === name || t.csv === name || t.understat === name || t.oddsApi === name) {
       return t.fodze;
     }
-  }
-  // Tier 2: EXTRA_LEAGUE_ALIASES per-league
-  const lm = extraByLeague.get(league);
-  if (lm) {
-    const norm = normalizeForCanonical(name);
-    if (lm.has(norm)) return lm.get(norm)!;
   }
   return name;
 }
