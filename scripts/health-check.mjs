@@ -19,6 +19,7 @@
 import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { USER_AGENT as TM_USER_AGENT } from "./_lib/transfermarkt-scrape.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
@@ -107,7 +108,7 @@ const checks = [
     name: "Transfermarkt",
     fn: () => timed(async () => {
       const r = await fetch("https://www.transfermarkt.de/fc-bayern-munchen/sperrenundverletzungen/verein/27", {
-        headers: { "User-Agent": "Mozilla/5.0" },
+        headers: { "User-Agent": TM_USER_AGENT },
         signal: AbortSignal.timeout(8000),
       });
       if (!r.ok) return { ok: false, msg: `HTTP ${r.status}` };

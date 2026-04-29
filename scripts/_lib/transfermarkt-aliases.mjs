@@ -75,6 +75,7 @@ export const TRANSFERMARKT_ALIASES = {
   "Istanbul Basaksehir":       "Basaksehir FK",
   "Besiktas":                  "Besiktas JK",
   "Gaziantep":                 "Gaziantep FK",
+  "Gazişehir Gaziantep":       "Gaziantep FK",
   "Rizespor":                  "Caykur Rizespor",
 
   // ─── Greek Super League ─────────────────────────────────────────────
@@ -131,6 +132,7 @@ export const TRANSFERMARKT_ALIASES = {
   "Union SG":                  "Union Saint-Gilloise",
   "Zulte Waregem":             "Zulte Waregem",
   "SV Zulte Waregem":          "Zulte Waregem",
+  "SV Zulte-Waregem":          "Zulte Waregem",
   "La Louviere":               "RAAL La Louvière",
 
   // ─── Primeira Liga ──────────────────────────────────────────────────
@@ -190,6 +192,7 @@ export const TRANSFERMARKT_ALIASES = {
   "Castellón":                 "CD Castellón",
   "Ceuta":                     "AD Ceuta FC",
   "Racing de Santander":       "Racing Santander",
+  "Real Racing Club de Santander": "Racing Santander",
   "Albacete":                  "Albacete Balompié",
   "Burgos":                    "Burgos CF",
 
@@ -243,4 +246,8 @@ export const TRANSFERMARKT_ALIASES = {
   "Newcastle":                 "Newcastle United",
   "Brighton":                  "Brighton & Hove Albion",
   "West Ham":                  "West Ham United",
+
+  // ─── Bundesliga 2 / Scottish Prem (recurring no-mappings from missing-tm-aliases.log) ──
+  "Hertha Berlin":             "Hertha BSC",
+  "Hearts":                    "Heart of Midlothian FC",
 };

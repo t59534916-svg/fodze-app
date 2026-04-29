@@ -28,7 +28,10 @@
 
 import { resolveTransfermarktRef } from "./transfermarkt-ids.mjs";
 
-const USER_AGENT =
+// Exported so health-check.mjs can probe TM with the SAME UA — TM blocks
+// generic "Mozilla/5.0" as bot traffic, which caused false-positive
+// "TM items table missing" alerts when health-check used the short form.
+export const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const TM_BASE = "https://www.transfermarkt.de";
 
