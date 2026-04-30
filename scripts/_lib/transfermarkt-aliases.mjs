@@ -250,4 +250,8 @@ export const TRANSFERMARKT_ALIASES = {
   // ─── Bundesliga 2 / Scottish Prem (recurring no-mappings from missing-tm-aliases.log) ──
   "Hertha Berlin":             "Hertha BSC",
   "Hearts":                    "Heart of Midlothian FC",
+
+  // ─── Swiss Super League (Odds-API uses Anglicized names without diacritics) ──
+  "FC Zurich":                 "FC Zürich",
+  "FC St Gallen":              "FC St. Gallen 1879",
 };

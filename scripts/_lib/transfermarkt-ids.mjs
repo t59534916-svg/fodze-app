@@ -42,8 +42,8 @@ export const TRANSFERMARKT_IDS = {
   ["Karlsruher SC"                                   ]: { slug: "karlsruher-sc"                              , id: 48 },
   ["Fortuna Düsseldorf"                              ]: { slug: "fortuna-dusseldorf"                         , id: 38 },
   ["SV Darmstadt 98"                                 ]: { slug: "sv-darmstadt-98"                            , id: 105 },
-  ["Holstein Kiel"                                   ]: { slug: "holstein-kiel"                              , id: 269 },
   ["1.FC Kaiserslautern"                             ]: { slug: "1-fc-kaiserslautern"                        , id: 2 },
+  ["Holstein Kiel"                                   ]: { slug: "holstein-kiel"                              , id: 269 },
   ["SV 07 Elversberg"                                ]: { slug: "sv-07-elversberg"                           , id: 64 },
   ["SpVgg Greuther Fürth"                            ]: { slug: "spvgg-greuther-furth"                       , id: 65 },
   ["1.FC Magdeburg"                                  ]: { slug: "1-fc-magdeburg"                             , id: 187 },
@@ -86,7 +86,7 @@ export const TRANSFERMARKT_IDS = {
   ["Aston Villa"                                     ]: { slug: "aston-villa"                                , id: 405 },
   ["Crystal Palace"                                  ]: { slug: "crystal-palace"                             , id: 873 },
   ["AFC Bournemouth"                                 ]: { slug: "afc-bournemouth"                            , id: 989 },
-  ["Brighton & Hove Albion"                          ]: { slug: "brighton-and-hove-albion"                   , id: 1237 },
+  ["Brighton & Hove Albion"                          ]: { slug: "brighton-amp-hove-albion"                   , id: 1237 },
   ["FC Brentford"                                    ]: { slug: "fc-brentford"                               , id: 1148 },
   ["FC Everton"                                      ]: { slug: "fc-everton"                                 , id: 29 },
   ["FC Fulham"                                       ]: { slug: "fc-fulham"                                  , id: 931 },
@@ -355,8 +355,8 @@ export const TRANSFERMARKT_IDS = {
   ["Levadiakos"                                      ]: { slug: "apo-levadiakos"                             , id: 2672 },
   ["AE Kifisia"                                      ]: { slug: "ae-kifisias"                                , id: 30120 },
   ["Atromitos Athen"                                 ]: { slug: "atromitos-athen"                            , id: 3060 },
-  ["AE Larisa"                                       ]: { slug: "ae-larisa"                                  , id: 4603 },
   ["Asteras Tripolis Aktor"                          ]: { slug: "asteras-tripolis"                           , id: 6676 },
+  ["AE Larisa"                                       ]: { slug: "ae-larisa"                                  , id: 4603 },
   ["Panserraikos"                                    ]: { slug: "panserraikos"                               , id: 3385 },
   ["Volos NFC"                                       ]: { slug: "volos-nps"                                  , id: 60949 },
 
@@ -375,8 +375,8 @@ export const TRANSFERMARKT_IDS = {
   ["FC Port Vale"                                    ]: { slug: "fc-port-vale"                               , id: 1211 },
   ["Wigan Athletic"                                  ]: { slug: "wigan-athletic"                             , id: 1071 },
   ["Bradford City"                                   ]: { slug: "bradford-city"                              , id: 1027 },
-  ["FC Stevenage"                                    ]: { slug: "fc-stevenage"                               , id: 3684 },
   ["Mansfield Town"                                  ]: { slug: "mansfield-town"                             , id: 3820 },
+  ["FC Stevenage"                                    ]: { slug: "fc-stevenage"                               , id: 3684 },
   ["FC Barnsley"                                     ]: { slug: "fc-barnsley"                                , id: 349 },
   ["Burton Albion"                                   ]: { slug: "burton-albion"                              , id: 2963 },
   ["Lincoln City"                                    ]: { slug: "lincoln-city"                               , id: 1198 },
@@ -412,85 +412,86 @@ export const TRANSFERMARKT_IDS = {
   ["Oldham Athletic"                                 ]: { slug: "oldham-athletic"                            , id: 1078 },
   ["Accrington Stanley"                              ]: { slug: "accrington-stanley"                         , id: 3688 },
 
+  // ─── austria_bl (12 teams) ───
+  ["FC Red Bull Salzburg"                            ]: { slug: "red-bull-salzburg"                          , id: 409 },
+  ["SK Rapid Wien"                                   ]: { slug: "sk-rapid-wien"                              , id: 170 },
+  ["SK Sturm Graz"                                   ]: { slug: "sk-sturm-graz"                              , id: 122 },
+  ["LASK"                                            ]: { slug: "lask"                                       , id: 413 },
+  ["FK Austria Wien"                                 ]: { slug: "fk-austria-wien"                            , id: 14 },
+  ["Wolfsberger AC"                                  ]: { slug: "wolfsberger-ac"                             , id: 4441 },
+  ["TSV Hartberg"                                    ]: { slug: "tsv-hartberg"                               , id: 4467 },
+  ["FC Blau-Weiß Linz"                               ]: { slug: "fc-blau-weiss-linz"                         , id: 2157 },
+  ["WSG Tirol"                                       ]: { slug: "wsg-tirol"                                  , id: 2446 },
+  ["Grazer AK"                                       ]: { slug: "grazer-ak-1902"                             , id: 316 },
+  ["SCR Altach"                                      ]: { slug: "scr-altach"                                 , id: 3551 },
+  ["SV Ried"                                         ]: { slug: "sv-ried"                                    , id: 266 },
+
+  // ─── swiss_sl (12 teams) ───
+  ["BSC Young Boys"                                  ]: { slug: "bsc-young-boys"                             , id: 452 },
+  ["FC Basel 1893"                                   ]: { slug: "fc-basel-1893"                              , id: 26 },
+  ["FC Lugano"                                       ]: { slug: "fc-lugano"                                  , id: 2790 },
+  ["FC St. Gallen 1879"                              ]: { slug: "fc-st-gallen-1879"                          , id: 257 },
+  ["FC Lausanne-Sport"                               ]: { slug: "fc-lausanne-sport"                          , id: 527 },
+  ["FC Luzern"                                       ]: { slug: "fc-luzern"                                  , id: 434 },
+  ["FC Zürich"                                       ]: { slug: "fc-zurich"                                  , id: 260 },
+  ["FC Thun"                                         ]: { slug: "fc-thun"                                    , id: 938 },
+  ["Grasshopper Club Zürich"                         ]: { slug: "grasshopper-club-zurich"                    , id: 504 },
+  ["Servette FC"                                     ]: { slug: "servette-fc"                                , id: 61 },
+  ["FC Sion"                                         ]: { slug: "fc-sion"                                    , id: 321 },
+  ["FC Winterthur"                                   ]: { slug: "fc-winterthur"                              , id: 242 },
+
+  // ─── eerste_divisie (20 teams) ───
+  ["AZ Alkmaar II"                                   ]: { slug: "az-alkmaar-ii"                              , id: 11368 },
+  ["Willem II Tilburg"                               ]: { slug: "willem-ii-tilburg"                          , id: 403 },
+  ["SC Cambuur Leeuwarden"                           ]: { slug: "sc-cambuur-leeuwarden"                      , id: 133 },
+  ["Ajax Amsterdam II"                               ]: { slug: "ajax-amsterdam-ii"                          , id: 8817 },
+  ["ADO Den Haag"                                    ]: { slug: "ado-den-haag"                               , id: 1268 },
+  ["PSV Eindhoven II"                                ]: { slug: "psv-eindhoven-ii"                           , id: 9715 },
+  ["FC Dordrecht"                                    ]: { slug: "fc-dordrecht"                               , id: 1455 },
+  ["RKC Waalwijk"                                    ]: { slug: "rkc-waalwijk"                               , id: 235 },
+  ["Almere City FC"                                  ]: { slug: "almere-city-fc"                             , id: 723 },
+  ["Roda JC Kerkrade"                                ]: { slug: "roda-jc-kerkrade"                           , id: 192 },
+  ["FC Emmen"                                        ]: { slug: "fc-emmen"                                   , id: 1283 },
+  ["FC Den Bosch"                                    ]: { slug: "fc-den-bosch"                               , id: 404 },
+  ["FC Eindhoven"                                    ]: { slug: "fc-eindhoven"                               , id: 3892 },
+  ["De Graafschap Doetinchem"                        ]: { slug: "de-graafschap-doetinchem"                   , id: 642 },
+  ["Helmond Sport"                                   ]: { slug: "helmond-sport"                              , id: 500 },
+  ["MVV Maastricht"                                  ]: { slug: "mvv-maastricht"                             , id: 384 },
+  ["VVV-Venlo"                                       ]: { slug: "vvv-venlo"                                  , id: 1426 },
+  ["FC Utrecht II"                                   ]: { slug: "fc-utrecht-ii"                              , id: 17596 },
+  ["TOP Oss"                                         ]: { slug: "top-oss"                                    , id: 1228 },
+  ["Vitesse Arnheim"                                 ]: { slug: "vitesse-arnheim"                            , id: 499 },
+
 };
 
 import { TRANSFERMARKT_ALIASES } from "./transfermarkt-aliases.mjs";
 
 /**
- * Normalise a team name for comparison: lowercase, strip accents/umlauts
- * (ö→o, ü→u, ß→ss), drop punctuation, remove common club prefixes
- * (FC, SC, VfB, …). This handles the typical drift between data sources
- * that use German, English, or local naming variants.
- */
-function norm(name) {
-  return String(name || "")
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/ß/g, "ss")
-    .replace(/[.,'"´`]/g, "")
-    .replace(/\b(fc|sc|sv|ss|afc|cf|cd|ud|ca|ad|rcd|sd|rc|ec|kf|ogc|as|og|nk|tsg|tsv|vfb|vfl|rb|1)\b/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Normalise a FODZE team name to match this map's keys.
- * Tiered lookup:
- *   1. Exact match in TRANSFERMARKT_IDS
- *   2. TRANSFERMARKT_ALIASES bridge (FODZE/Odds-API → TM canonical)
- *   3. Case-insensitive exact (for IDS + aliases)
- *   4. Normalised equality (umlauts, prefixes stripped)
- *   5. Normalised substring (both directions, length-guarded, longest wins)
+ * Normalise a FODZE team name to match this map's keys. Light touch —
+ * strips common prefixes that drift ("TSG 1899 Hoffenheim" vs "TSG
+ * Hoffenheim") and does case-insensitive + substring fallback. The
+ * TRANSFERMARKT_ALIASES bridge handles the cases substring can't (e.g.
+ * "Hertha Berlin" → "Hertha BSC", "FC Zurich" → "FC Zürich").
  */
 export function resolveTransfermarktRef(teamName) {
   if (!teamName) return null;
-
-  // 1. Exact match in the generated ID map
   if (TRANSFERMARKT_IDS[teamName]) return TRANSFERMARKT_IDS[teamName];
-
-  // 2. Alias table bridges common name drift (Sporting Lisbon → Sporting
-  //    Lissabon, Nice → OGC Nizza, Zaragoza → Real Saragossa, etc.).
-  //    Aliases are maintained manually in transfermarkt-aliases.mjs so
-  //    regenerating the ID map doesn't blow them away.
+  // Alias bridge — explicit FODZE/Odds-API → TM canonical mapping
   const aliased = TRANSFERMARKT_ALIASES[teamName];
   if (aliased && TRANSFERMARKT_IDS[aliased]) return TRANSFERMARKT_IDS[aliased];
-
-  // 3. Case-insensitive exact
   const lower = teamName.toLowerCase();
   for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
     if (k.toLowerCase() === lower) return v;
   }
-  for (const [k, v] of Object.entries(TRANSFERMARKT_ALIASES)) {
-    if (k.toLowerCase() === lower && TRANSFERMARKT_IDS[v]) return TRANSFERMARKT_IDS[v];
-  }
-
-  // 4. Normalised equality — strips umlauts + common club prefixes
-  const nIn = norm(teamName);
-  if (nIn.length >= 3) {
+  // Substring match after stripping common club prefixes
+  const cleaned = teamName.replace(/\b(FC|SC|SV|TSG|VfB|VfL|RB|1\.)\b\s*/g, "").trim().toLowerCase();
+  if (cleaned.length >= 4) {
     for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
-      if (norm(k) === nIn) return v;
-    }
-    for (const [k, v] of Object.entries(TRANSFERMARKT_ALIASES)) {
-      if (norm(k) === nIn && TRANSFERMARKT_IDS[v]) return TRANSFERMARKT_IDS[v];
-    }
-  }
-
-  // 5. Normalised substring — both directions, length-guarded to ≥4
-  //    chars so "fc" / "sc" don't match every team. Longest-overlap wins
-  //    so "Nice" doesn't accidentally pick up "Venice".
-  if (nIn.length >= 4) {
-    let best = null;
-    let bestLen = 0;
-    for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
-      const nK = norm(k);
-      if (nK.length < 4) continue;
-      if (nK === nIn || nK.includes(nIn) || nIn.includes(nK)) {
-        const overlap = Math.min(nK.length, nIn.length);
-        if (overlap > bestLen) { best = v; bestLen = overlap; }
+      const kc = k.replace(/\b(FC|SC|SV|TSG|VfB|VfL|RB|1\.)\b\s*/g, "").trim().toLowerCase();
+      if (kc === cleaned || (kc.length >= 4 && (kc.includes(cleaned) || cleaned.includes(kc)))) {
+        return v;
       }
     }
-    if (best) return best;
   }
-
   return null;
 }

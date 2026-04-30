@@ -59,6 +59,9 @@ const LEAGUES = {
   greek_sl:       { slug: "super-league-1",         code: "GR1" },
   league_one:     { slug: "league-one",             code: "GB3" },
   league_two:     { slug: "league-two",             code: "GB4" },
+  austria_bl:     { slug: "admiral-bundesliga",     code: "A1"  },
+  swiss_sl:       { slug: "super-league",           code: "C1"  },
+  eerste_divisie: { slug: "keuken-kampioen-divisie", code: "NL2" },
 };
 
 // ─── Scraper ─────────────────────────────────────────────────────────
@@ -144,14 +147,21 @@ export const TRANSFERMARKT_IDS = {
 
   const footer = `};
 
+import { TRANSFERMARKT_ALIASES } from "./transfermarkt-aliases.mjs";
+
 /**
  * Normalise a FODZE team name to match this map's keys. Light touch —
  * strips common prefixes that drift ("TSG 1899 Hoffenheim" vs "TSG
- * Hoffenheim") and does case-insensitive + substring fallback.
+ * Hoffenheim") and does case-insensitive + substring fallback. The
+ * TRANSFERMARKT_ALIASES bridge handles the cases substring can't (e.g.
+ * "Hertha Berlin" → "Hertha BSC", "FC Zurich" → "FC Zürich").
  */
 export function resolveTransfermarktRef(teamName) {
   if (!teamName) return null;
   if (TRANSFERMARKT_IDS[teamName]) return TRANSFERMARKT_IDS[teamName];
+  // Alias bridge — explicit FODZE/Odds-API → TM canonical mapping
+  const aliased = TRANSFERMARKT_ALIASES[teamName];
+  if (aliased && TRANSFERMARKT_IDS[aliased]) return TRANSFERMARKT_IDS[aliased];
   const lower = teamName.toLowerCase();
   for (const [k, v] of Object.entries(TRANSFERMARKT_IDS)) {
     if (k.toLowerCase() === lower) return v;
