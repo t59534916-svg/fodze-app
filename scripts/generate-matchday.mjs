@@ -38,6 +38,7 @@ import {
   flagShortRestEuropean,
 } from './_lib/matchday-enrich.mjs';
 import { fetchMultipleTeamInjuries } from './_lib/transfermarkt-scrape.mjs';
+import { canonicalize as sharedCanonicalize } from './_lib/canonical-team.mjs';
 
 // ─── Load .env.local ──────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -294,20 +295,27 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       const awayApi = f.away_team;
       const homeFodze = resolveName(homeApi);
       const awayFodze = resolveName(awayApi);
+      // sharedCanonicalize knows EXTRA_ALIASES (canonical-team.mjs) on top
+      // of TEAM_REGISTRY — needed for cases where the Odds-API spelling
+      // ("Hertha Berlin") and the team_xg_history canonical ("Hertha BSC")
+      // share NO substring, so the fuzzy-match in lookupTeamXG fails.
+      // Adding it as a third lookup candidate fixes ~7 stale teams per refresh.
+      const homeCanon = league ? sharedCanonicalize(homeApi, league) : homeApi;
+      const awayCanon = league ? sharedCanonicalize(awayApi, league) : awayApi;
+      const homeNames = Array.from(new Set([homeApi, homeFodze, homeCanon].filter(Boolean)));
+      const awayNames = Array.from(new Set([awayApi, awayFodze, awayCanon].filter(Boolean)));
 
       // Format kickoff as "YYYY-MM-DD HH:MM"
       const ko = new Date(f.commence_time);
       const kickoff = `${ko.getFullYear()}-${String(ko.getMonth() + 1).padStart(2, '0')}-${String(ko.getDate()).padStart(2, '0')} ${String(ko.getHours()).padStart(2, '0')}:${String(ko.getMinutes()).padStart(2, '0')}`;
 
-      // Look up last 8 venue-specific entries for each team. Try both the
-      // Odds-API name (matches live_odds + goals-proxy rows) AND the FODZE
-      // name (matches Understat-scraped rows) so we catch the team regardless
-      // of which source populated their history.
+      // Look up last 8 venue-specific entries for each team using all 3
+      // candidate names (Odds-API + FODZE-registry + EXTRA_ALIASES-canonical).
       const homeEntries = xgHistory.length > 0
-        ? lookupTeamXG(xgHistory, [homeApi, homeFodze], "home", 8)
+        ? lookupTeamXG(xgHistory, homeNames, "home", 8)
         : [];
       const awayEntries = xgHistory.length > 0
-        ? lookupTeamXG(xgHistory, [awayApi, awayFodze], "away", 8)
+        ? lookupTeamXG(xgHistory, awayNames, "away", 8)
         : [];
       const homeXG = summarizeXG(homeEntries);
       const awayXG = summarizeXG(awayEntries);
@@ -317,15 +325,15 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       // Derive form (W D L string over last 5 matches, venue-agnostic).
       // Feeds formMultiplier in the engine — was always "" before, so the
       // form multiplier was identically 1.0 for every match.
-      const homeForm = xgHistory.length > 0 ? deriveForm(xgHistory, [homeApi, homeFodze]) : "";
-      const awayForm = xgHistory.length > 0 ? deriveForm(xgHistory, [awayApi, awayFodze]) : "";
+      const homeForm = xgHistory.length > 0 ? deriveForm(xgHistory, homeNames) : "";
+      const awayForm = xgHistory.length > 0 ? deriveForm(xgHistory, awayNames) : "";
       if (homeForm) formHome++;
       if (awayForm) formAway++;
 
       // Standings positions — used for MEISTERKAMPF / ABSTIEGSKAMPF tags
       // (real λ-multipliers per TAG_MAP in dixon-coles.ts) and for display.
-      const homeStanding = findStanding(standings, [homeApi, homeFodze]);
-      const awayStanding = findStanding(standings, [awayApi, awayFodze]);
+      const homeStanding = findStanding(standings, homeNames);
+      const awayStanding = findStanding(standings, awayNames);
       if (homeStanding && awayStanding) standingsMatched++;
       const standingsTags = deriveStandingsTags(
         homeStanding?.pos, awayStanding?.pos, leagueSize,
@@ -334,7 +342,7 @@ function buildMatchdayJSON(fixtures, xgHistory, ctx = {}) {
       // Head-to-Head — last 5 direct meetings, newest-first. Engine doesn't
       // use it yet but /matchday UI shows it and users rely on it.
       const h2h = xgHistory.length > 0
-        ? deriveH2H(xgHistory, [homeApi, homeFodze], [awayApi, awayFodze], 5)
+        ? deriveH2H(xgHistory, homeNames, awayNames, 5)
         : [];
       if (h2h.length > 0) h2hFound++;
 

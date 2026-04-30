@@ -122,10 +122,16 @@ const EXTRA_ALIASES = [
     aliases: ["Rio Ave"] },
   { league: "primeira_liga", canonical: "SC Braga",
     aliases: ["Braga", "Sporting Braga", "Sp Braga"] },
+  { league: "primeira_liga", canonical: "Sporting CP",
+    aliases: ["Sporting Lisbon", "Sporting", "Sporting Lissabon"] },
 
   // ── Serie B ──
   { league: "serie_b", canonical: "Bari 1908",
     aliases: ["Bari", "AS Bari", "FC Bari"] },
+
+  // ── Austria Bundesliga ──
+  { league: "austria_bl", canonical: "Wattens",
+    aliases: ["WSG Tirol", "WSG Wattens"] },
 ];
 
 // ─── Registry loader (cached) ───────────────────────────────────────
