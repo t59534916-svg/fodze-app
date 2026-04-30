@@ -90,6 +90,8 @@ const EXTRA_ALIASES = [
     aliases: ["Larisa", "AE Larissa"] },
   { league: "greek_sl", canonical: "Panaitolikos",
     aliases: ["Panetolikos"] },
+  { league: "greek_sl", canonical: "OFI Kreta",
+    aliases: ["OFI Crete", "OFI"] },
 
   // ── Jupiler Pro ──
   { league: "jupiler_pro", canonical: "OH Leuven",
@@ -106,10 +108,14 @@ const EXTRA_ALIASES = [
   // ── League Two ──
   { league: "league_two", canonical: "Bristol Rovers",
     aliases: ["Bristol Rvs", "Bristol R"] },
+  { league: "league_two", canonical: "MK Dons",
+    aliases: ["Milton Keynes Dons", "Milton Keynes"] },
 
   // ── Ligue 1 ──
   { league: "ligue_1", canonical: "Paris Saint Germain",
     aliases: ["PSG", "Paris SG", "Paris S.G.", "Paris-SG"] },
+  { league: "ligue_1", canonical: "Stade Rennes",
+    aliases: ["Rennes", "Stade Rennais"] },
 
   // ── Ligue 2 ──
   { league: "ligue_2", canonical: "Saint Etienne",

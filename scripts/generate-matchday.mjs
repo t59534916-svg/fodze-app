@@ -213,11 +213,14 @@ async function loadSofascoreStandings(lg, season = "25/26") {
     });
     if (!resp.ok) return [];
     const rows = await resp.json();
-    // Normalize "&" → "and" so the team-name matches the Odds-API
-    // fixture-spelling that drives currentTeams (Brighton & Hove Albion
-    // vs Brighton and Hove Albion was missing the standings join).
+    // Two-step normalization so Sofascore's spelling matches the matchday-
+    // fixture spelling that drives findStanding lookups:
+    //   1. "& " → "and "  (Brighton & Hove Albion → ...and...)
+    //   2. sharedCanonicalize via EXTRA_ALIASES (Stade Rennais → Stade Rennes)
+    // sharedCanonicalize is a no-op when no alias is known, so additions
+    // here are purely additive — no risk to leagues without overrides.
     return rows.map((r) => ({
-      team: (r.team || "").replace(/ & /g, " and "),
+      team: sharedCanonicalize((r.team || "").replace(/ & /g, " and "), lg),
       pos: r.position,
       points: r.points,
       gd: r.gd,
@@ -547,12 +550,16 @@ async function main() {
     activeStandings = sofaStandings;
     standingsSource = "sofascore";
   } else {
-    const standings = computeStandingsFromXG(currentSeasonXG);
-    activeStandings = standings.filter((s) => {
-      const lookedUp = findStanding([s], Array.from(currentTeams));
-      return !!lookedUp;
-    });
-    activeStandings.forEach((s, i) => { s.pos = i + 1; });
+    // currentSeasonXG is already filtered to season-start ≥ 2025-07-01,
+    // so computeStandingsFromXG returns only this-season teams. The
+    // previously-applied currentTeams fuzzy-filter dropped legitimate
+    // standings rows whenever the matchday-fixture spelling and the
+    // team_xg_history spelling diverged with no substring overlap
+    // (e.g. "Sporting CP" vs "Sporting Lisbon", "OFI Kreta" vs "OFI Crete",
+    // "Stade Rennes" vs "Rennes") — losing 6 standings_pos lookups across
+    // 6 leagues. Skip the filter; downstream findStanding now handles the
+    // 3-candidate (api/fodze/canonical) lookup correctly per fixture.
+    activeStandings = computeStandingsFromXG(currentSeasonXG);
     standingsSource = "xg-history";
   }
   const leagueSize = activeStandings.length || 18;
