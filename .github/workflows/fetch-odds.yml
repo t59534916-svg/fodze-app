@@ -16,6 +16,12 @@ jobs:
   fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # `secrets` cannot be referenced in step-level `if:` directly. Hoist
+    # the Telegram-token presence check to a job-level env var so the
+    # value-alerts step can gate on it without breaking the workflow's
+    # YAML validation (which previously made every run fail at 0s).
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +36,9 @@ jobs:
       - name: Fetch odds from The-Odds-API
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ODDS_API_KEY_2: ${{ secrets.ODDS_API_KEY_2 }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           if [ -n "${{ github.event.inputs.league }}" ]; then
@@ -50,7 +58,7 @@ jobs:
         run: node scripts/snapshot-closing-odds.mjs --window 2h
 
       - name: Send Value Alerts to Telegram
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+        if: env.HAS_TELEGRAM == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
