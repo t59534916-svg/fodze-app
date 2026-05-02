@@ -8,6 +8,8 @@ Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vie
 
 **Daten-Bestand (post 2026-04-27 cleanup)**: 86.007 team-match rows in `team_xg_history` (war 106k vor multi-source dedupe — 35k+ Aliase gemerged), ALLE 22 Ligen current season bei exakt-korrekter Team-Anzahl (drift=0). 24.686+ Closing-Odds rows in `odds_closing_history` (football-data.co.uk historical bis 2026-01-14 + live-odds-snapshot forward-cache going-forward). 2.548 match_outcomes (predictions×reality bridge), 1.509+ pipeline_shadow_log (4 engines), 27+ live_brier_snapshots. Drei UI-Enhancement-Layer: Team-Logos + Colors via TheSportsDB (~398 Teams, deduped 2026-04-27), MatchCard-Accent-Gradients, per-match referee + discipline features. **Live System-State auf `/health`** Dashboard.
 
+**Sofascore Shot-Event Pipeline (NEU 2026-04-29)**: 92.898 per-shot events in `sofascore_shotmap` × 3.736 matches in `sofascore_match` (Tier-A 11 Ligen × Saison 25/26). Datenquelle: [`datafc`](https://pypi.org/project/datafc/) (curl_cffi mit Chrome 124 TLS-Fingerprint, kein Browser nötig). Pro Shot: xG, xGOT, body_part, situation (assisted/corner/fast-break/penalty/...), shooter coords, outcome. Drei Views: `sofascore_team_chance_quality` (per-game chance-quality), `sofascore_team_rolling_8` (last-8-games per team — engine-input shape), `sofascore_standings` (live league table). `sofascore_data_quality_tier(league)` SQL-Funktion klassifiziert in `premium`/`partial`/`volume` — 8 Ligen voll xG, Liga 3 nur regular-bucket-Annotation, La Liga 2 + Ligue 2 ohne xG. Sync läuft als Phase 4 in `refresh-all.mjs` via `scripts/sync-sofascore-shotmap.mjs`.
+
 **Team-Name Canonicalization (Architectural Invariant seit 2026-04-27, härter seit 2026-04-29)**:
 Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports / Understat / TheSportsDB) hatte zuvor verschiedene Schreibweisen für dasselbe Team in dieselbe Liga geschrieben — "Bayern München" / "FC Bayern München" / "Bayern Munich" als 3 separate rows. UNIQUE-constraint griff nicht weil `team` string-different. Standings + EWMA + Engine-Predictions silent verzerrt. **Fix in 2 Lagen:**
 1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — **alle 14 active write-scripts** (5 Top-Tier backfills + 4 MEDIUM-RISK syncs + 3 metadata writers + 2 follow-up importers) mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (22 lower-tier overrides). 2026-04-29 erweitert: `backfill-xg.mjs` (HIGH), `seed-understat-2526.mjs` (HIGH), `backfill-liga3-goals.mjs` (HIGH disabled-but-callable), `sync-xg-to-supabase.mjs`, `sync-npxg-to-supabase.mjs`, `fetch-fbref-stats.mjs`, `backfill-xg-by-state.mjs`, `sync-thesportsdb-metadata.mjs`, `fill-thesportsdb-missing.mjs`. 4 dormant scripts archived to `scripts/_archive/`.
@@ -88,11 +90,13 @@ Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo app
 | File | Zweck |
 |---|---|
 | `matchday-enrich.mjs` | `deriveForm`, `deriveTags`, `deriveStandingsTags`, `deriveH2H`, `computeStandingsFromXG`, `findStanding`, `loadOpenLigaDBSeason`, `inferMatchdayLabel`, Normalisierungshelfer |
-| `transfermarkt-ids.mjs` | GENERIERTE 362-Team-ID-Map + 5-Tier fuzzy resolver |
-| `transfermarkt-aliases.mjs` | 146 manual aliases (Odds-API name → TM name). DE↔EN↔Local Varianten |
-| `transfermarkt-scrape.mjs` | fetchTeamInjuries mit rate-limit + Groq HTML→JSON normalisation + quota detection |
+| `transfermarkt-ids.mjs` | GENERIERTE 406-Team-ID-Map (22 Ligen incl. austria_bl/swiss_sl/eerste_divisie seit 2026-05-01) + 5-Tier fuzzy resolver. **Bridge zu `transfermarkt-aliases.mjs` ist jetzt aktiv** (war bis 2026-05-01 dead-code → Aliases hatten keinen Effekt) |
+| `transfermarkt-aliases.mjs` | 153 manual aliases (Odds-API name → TM name). DE↔EN↔Local Varianten |
+| `transfermarkt-scrape.mjs` | fetchTeamInjuries mit rate-limit + Groq HTML→JSON normalisation + quota detection. `USER_AGENT` exportiert (Chrome/120 für TM-friendly access — `Mozilla/5.0` löst sonst Bot-Detection aus) |
 | `api-sports.mjs` | api-sports v3 Client mit daily+per-minute Rate-Limit-Guards; League-ID-Map; parseFixtureStatistics Helper |
 | `thesportsdb.mjs` | TheSportsDB v1 Client + Liga-ID/Name-Map (19 Ligen) + parseTeamRecord Helper (liefert `api_sports_id` als Cross-Source-Bridge) |
+| `odds-api.mjs` | The-Odds-API client mit Multi-Key Rotation. Liest `ODDS_API_KEY` + optional `ODDS_API_KEY_2..._10`; rotiert bei 401/429 oder remaining < minRemaining. Effektives Monatsbudget = N Keys × 500. Genutzt von fetch-odds, fetch-results, backfill-liga3-goals, health-check (seit 2026-04-29) |
+| `canonical-team.mjs` | `canonicalize(team, league)` — single source of truth für ingest-side. TEAM_REGISTRY (354 entries from team-resolver.ts) + EXTRA_ALIASES (24 lower-tier overrides). Mirror in `src/lib/team-resolver.ts::canonicalizeTeamName` für read-side |
 
 ### Python Tools (nur für Model-Retraining)
 ```bash
@@ -447,19 +451,22 @@ Coverage-Hotspots:
 
 ---
 
-## Areas to Watch (Stand 2026-04-29)
+## Areas to Watch (Stand 2026-05-02)
 
 | Area | Status | Notes |
 |---|---|---|
 | Engine math | ✅ clean | isotonic + Benter empirisch best (current-season Brier 0.6120 vs 0.6146 raw vs 0.6158 dirichlet) |
 | `team_xg_history` canonicalization | ✅ clean | All 22 leagues drift=0; ingest-layer canonicalize-on-write across 14 active scripts |
 | TS↔JS canonicalize alignment | ✅ clean | Regression tests in `tests/canonicalize-team-name.test.ts` (15 cases lock down EXTRA_LEAGUE_ALIASES sync) |
+| Read-side canonicalize gap | ✅ closed (2026-05-01) | `generate-matchday.mjs` + `goldilocks/page.tsx` riefen team_xg_history-lookups mit Odds-API-spelling auf — verlor Top-5 engine-coverage auf 20-50%. Beide jetzt mit `sharedCanonicalize`/`canonicalizeTeamName`. |
 | `match_outcomes` schema | ✅ clean | UNIQUE (match_key, match_date) — supports double-round-robin (austria_bl etc.) |
-| `team_metadata` cross-league sync | 🟢 best-effort | EPL closed (Tottenham + Leeds + West Ham gefüllt 2026-04-29). Cross-league gap reduziert von 111 → 54. Verbleibende 54 sind TheSportsDB-Coverage-Limits (Reserve-Teams + austria_bl/swiss_sl/greek_sl regional clubs nicht in TheSportsDB Free-Tier indexiert). |
-| `fill-thesportsdb-missing.mjs` | ✅ clean | 2026-04-29 hardened: idLeague-deterministic match (Tier-1) + substring fallback (Tier-3) + canonicalize-on-write. Plus `collectTeamNames()` Bug-Fix: matchdays-column war `match_date` nicht `date`, team_xg_history brauchte current-season-filter + pagination (vorher: nur 5 EPL-Teams gefunden statt 20). |
+| **Sofascore standings (NEU)** | ✅ live (2026-05-01) | `sofascore_standings` View ersetzt `computeStandingsFromXG` für 10 covered leagues — bypass des PostgREST 1000-row default page-limits, der vorher 1-3 Teams aus EPL/BL/Ligue 1 verlor (Brighton missing-Bug). |
+| **TM injuries für 22 Ligen** | ✅ extended (2026-05-01) | `build-tm-team-ids.mjs` LEAGUES-config jetzt 22 statt 19 Ligen (austria_bl/swiss_sl/eerste_divisie ergänzt). Plus `TRANSFERMARKT_ALIASES`-bridge in resolver wired (war silent dead-code) → 5 alte aliases live + html_decode in scraper verhindert `&amp;`-key-bugs. |
 | Conformal Gate drift | 🟡 audited (2026-04-29) | **Validated empirisch:** 13/18 ok, 2 drift, **3 catastrophic (epl/la_liga2/primeira_liga)**. EPL α=0.10 under-covers by 8.5pp. **Flip zu enforce-mode BLOCKED** bis Re-fit. Artifact: `tools/backtest/conformal-drift-report.json`. Tool: `tools/backtest/validate_conformal_drift.py`. Mode bleibt `warn` (zero production-risk). |
-| Inactive scripts | ✅ tracked | 14 active write-scripts now patched with canonicalize() (5 originally + 9 added 2026-04-29). 4 truly dormant moved to `scripts/_archive/` with README. 1 deprecated in-place (`import-wfr-csvs.mjs` — npm script ref). |
-| **JS↔TS dedupe-team-names alignment** | 🟡 known issue | `dedupe-team-names.mjs::buildAliasMap` baut alias-map nur aus TEAM_REGISTRY ohne EXTRA_ALIASES. Bei Konflikt-Cases (z.B. bundesliga2 "DSC Arminia Bielefeld" canonical per EXTRA vs "Arminia Bielefeld" per registry) flaggt false-positives. DB-state ist konsistent mit production canonicalize(). Fix: dedupe-team-names.mjs muss `sharedCanonicalize` als single source-of-truth verwenden, ohne TEAM_REGISTRY-fallback. **Out-of-scope** weil cron-only-callable. |
+| GitHub Actions cron | ✅ repaired (2026-05-02) | `fetch-odds.yml` failte 41 Tage am Stück (alle runs 0s) wegen YAML-validation: `secrets.X` ist nicht in step-level `if:` erlaubt. Fix: hoist zu job-level env. Plus `ODDS_API_KEY_2` aufgenommen für Multi-Key. settle-bets.yml lief immer durch. |
+| **Engine consumes Sofascore features** | 🟡 pending | Sofascore-shotmap (92k events) + chance-quality views sind live, aber v2 retraining mit `setpiece_xg_share` aus Sofascore (statt Default 0.15) noch nicht durchgeführt. `tools/sofascore/engine_features.py` + README dokumentieren den Hookpunkt. |
+| **Tier-B Sofascore backfill** | 🟡 pending | 11 Tier-B leagues (super_lig/scottish_prem/league_one/eredivisie/jupiler_pro/primeira_liga/etc.) noch nicht in `sofascore_match`. Cloudflare hat IP nach Tier-A backfill (~365 calls) blocked. Re-try `node scripts/sync-sofascore-shotmap.mjs --tier B` nach IP-cooldown. |
+| `team_metadata` cross-league sync | 🟢 best-effort | 54 verbleibende cross-league gaps (Reserve-Teams + austria_bl/swiss_sl/greek_sl regional clubs nicht in TheSportsDB Free-Tier indexiert) — nicht critical. |
 
 ---
 
@@ -469,11 +476,11 @@ Coverage-Hotspots:
 - **Standalone-Seiten** (`/simulator`, `/sgp`, `/season-sim`) haben Inline-Engines die nicht `dixon-coles.ts` nutzen
 - **`fuck-betting/page.tsx` (~1500 LOC)** — eigene Engine-Selection-Logik, nicht über MatchdayContext
 - **Champions/Europa League**: Placeholder (wechselnde Teams, keine konsistente Kalibrierung) — deshalb nicht in `refresh-all.mjs` LEAGUE-Liste
-- **Lineup-aware Predictions**: Design-doc in `docs/LINEUP-INTEGRATION.md`, nicht implementiert (Sofascore blockt 403, freie Sources zu brittle)
+- **Lineup-aware Predictions**: Design-doc in `docs/LINEUP-INTEGRATION.md`, nicht implementiert. (Sofascore-shotmap ist seit 2026-04-29 via curl_cffi durchgängig erreichbar — der frühere "blockt 403"-Eintrag ist obsolet. Lineup-Daten via Sofascore wäre ein nächster Backfill-Schritt.)
 - **Team-Resolver**: Teams mit Auf-/Abstieg haben den letzten Eintrag als Default-Liga — ok für xG, Elo wird über League-Hint aufgelöst
 - **Groq Daily-Quota**: 500K Tokens/day (8b model) — ein `refresh:full` ≈ 350K. Zweimal am Tag bricht mittendrin ab (sticky flag verhindert endlose Retries)
 - **Transfermarkt-Scrape**: Empfindlich gegen 5+ parallele Prozesse → Prozess-Kill + sequenzieller Re-run hilft
-- **GitHub Actions Cron**: Kann inactive-Repo-Pause treffen. Workaround: `scripts/launchd/install.sh` für lokale macOS-Cron
+- **GitHub Actions Cron**: 2026-05-02 repariert. fetch-odds.yml YAML-validation failure (`secrets` in step-level `if:`) blockierte 194 runs am Stück, alle 0s. Job-level `env.HAS_TELEGRAM` jetzt korrekter pattern. Fallback weiterhin `scripts/launchd/install.sh` für lokale macOS-Cron.
 
 ---
 

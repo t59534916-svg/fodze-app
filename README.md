@@ -82,13 +82,25 @@ bash scripts/launchd/install.sh   # täglich 07:30 + Di/Fr 19:00
 | Source | Zweck | Abdeckung |
 |---|---|---|
 | TheSportsDB v1 | Team-Logos, Colors, Stadium, cross-source IDs | 398 Teams · idAPIfootball bridge |
-| Transfermarkt + Groq | Injuries + Sperren + Yellow-Risk | 362 IDs · 146 Aliase |
-| The-Odds-API | Live-Odds + Fixtures | 500 free Credits/Monat |
+| Transfermarkt + Groq | Injuries + Sperren + Yellow-Risk | 406 IDs (22 Ligen) · 153 Aliase |
+| The-Odds-API | Live-Odds + Fixtures | 500 free Credits/Monat — **Multi-Key Rotation** (`ODDS_API_KEY` + `ODDS_API_KEY_2..._10`), effektives Budget = N × 500 |
 | OpenLigaDB | DE-Liga "30. Spieltag" Labels + Liga 3 goals-proxy | DE-only |
+| **Sofascore (datafc lib)** | **Per-Shot xG / Coords / Body-part / Situation** | **92.898 shots × 3.736 matches Saison 25/26 (Tier-A 11 Ligen)** |
 | StatsBomb Open Data | Event-level Training-Rohstoff (1431 Events, 2862 aggregates) | WM/EM/CL + La Liga 18 Saisons |
 | player_xg_history | Per-Player xG-per-90 für xGChain-Hydration | 2500 rows, Top-5 Ligen only |
 | referees | Per-Referee Foul/Yellow-Bias-Profile | 354 rows ⚠ STUB-Daten (fouls NULL, 1 distinct bias-value) |
 | stadiums | Lat/Lng/Capacity per Heim-Stadion | 278 rows, altitude 0%, capacity 30% Join-Coverage |
+
+**Sofascore Pipeline (NEU 2026-04-29):**
+- **Library:** [`datafc`](https://pypi.org/project/datafc/) (curl_cffi mit Chrome 124 TLS-Fingerprint, kein Headless-Browser)
+- **Tabellen:** `sofascore_match` (3.736 rows) + `sofascore_shotmap` (92.898 rows)
+- **Views:** `sofascore_team_chance_quality` (per-game) + `sofascore_team_rolling_8` (engine-input shape) + `sofascore_standings` (live league table — bypass für PostgREST 1000-row default page-limit)
+- **Tier-Klassifikation** via `sofascore_data_quality_tier(league)`:
+  - `premium` (8 Ligen): full xG + assisted/fast-break tags
+  - `partial` (Liga 3): full xG, nur "regular" für open-play
+  - `volume` (la_liga2 + ligue_2): shot events ohne xG-model
+- **Cron:** Phase 4 in `refresh-all.mjs` via `node scripts/sync-sofascore-shotmap.mjs --tier A`
+- **Engine-Hookpunkt:** `tools/sofascore/engine_features.py` exportiert `load_team_features()` + `feature_with_fallback()` für v2/v3 retraining
 
 ## Prediction Engines
 
@@ -190,15 +202,17 @@ NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 SUPABASE_SERVICE_KEY=eyJ...
 
-# Live odds (required für refresh)
+# Live odds (required für refresh) — Multi-Key Rotation seit 2026-04-29
 ODDS_API_KEY=...                    # https://the-odds-api.com (500 free/mo)
+ODDS_API_KEY_2=...                  # Optional 2nd account → 1000/mo effective. Rotiert auto bei 401/429
+# ODDS_API_KEY_3, _4, ..._10        # Bis zu 10 Keys via _lib/odds-api.mjs
 
 # AI (required für Anna + Injury-Parsing)
 GROQ_API_KEY=gsk_...                # FREE — https://console.groq.com (500K tokens/day)
 # CLAUDE_API_KEY=sk-ant-...         # PAID — alternative zu Groq
 
 # Calibration Layer (Phase 2.x — defaults below match production setup)
-NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet    # dirichlet | platt | isotonic — Dirichlet ist default
+NEXT_PUBLIC_CALIBRATION_METHOD=isotonic     # isotonic (default seit 2026-04-26 revert) | dirichlet | platt
 NEXT_PUBLIC_BENTER_BLEND=on                 # on | shadow | off — per-Liga β-Blend
 NEXT_PUBLIC_CONFORMAL_GATE=warn             # off | warn | dampen | enforce
 
