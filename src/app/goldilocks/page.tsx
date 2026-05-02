@@ -5,7 +5,7 @@ import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { LEAGUES, vigAdjustBest } from "@/lib/dixon-coles";
 import { computeEngineProbs, classifyEdgeSource, type EdgeSource } from "@/lib/goldilocks-engine";
-import { fuzzyTeamMatch, resolveTeam } from "@/lib/team-resolver";
+import { fuzzyTeamMatch, resolveTeam, canonicalizeTeamName } from "@/lib/team-resolver";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { card, badge } from "@/styles/components";
 import { getLeagueLiquidityTier } from "@/lib/league-liquidity";
@@ -211,14 +211,20 @@ export default function GoldilocksPage() {
             uniqueHome.add(o.home_team);
             uniqueAway.add(o.away_team);
           }
-          const toUnderstat = (n: string) => resolveTeam(n)?.understat || n;
+          // Bridge Odds-API spellings ("Bayern Munich") to team_xg_history
+          // canonicals ("FC Bayern München") via canonicalizeTeamName, which
+          // knows EXTRA_LEAGUE_ALIASES on top of the registry's understat
+          // field. Pure-understat lookup misses the post-2026-04 EXTRA
+          // canonicals, leaving Top-5 leagues at 20–50% engine-coverage
+          // and the Konsens-filter empty as a result.
+          const toCanonical = (n: string) => canonicalizeTeamName(n, league);
           const historyEntries = await Promise.all([
             ...Array.from(uniqueHome).map(async (team) => {
-              const hist = await loadTeamXGHistory(supabase, toUnderstat(team), league, "home", 8);
+              const hist = await loadTeamXGHistory(supabase, toCanonical(team), league, "home", 8);
               return { key: `H:${team}`, hist };
             }),
             ...Array.from(uniqueAway).map(async (team) => {
-              const hist = await loadTeamXGHistory(supabase, toUnderstat(team), league, "away", 8);
+              const hist = await loadTeamXGHistory(supabase, toCanonical(team), league, "away", 8);
               return { key: `A:${team}`, hist };
             }),
           ]);
