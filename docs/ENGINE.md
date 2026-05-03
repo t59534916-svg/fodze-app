@@ -408,3 +408,62 @@ Konvergiert in ~50 Iterationen via Binary Search. Korrekte implizite Wahrscheinl
 | Player Impact | Heuristisch, nicht validiert | xG-Share basiert, konservative Bounds |
 | Overdispersion α | Konstant pro Liga (nicht per Match) | Liga-Fit ist hinreichend genau |
 | Form | DEAKTIVIERT — widerspricht xG-Philosophie | xG-Trend Decay statt W/D/L |
+
+---
+
+## Live Tracking & Hit-Rate (Stand 2026-05-03)
+
+Seit 2026-04-21 läuft Cross-Engine-Tracking via `pipeline_shadow_log` × `match_outcomes`.
+Erste belastbare Auswertung mit n=104 Spielen:
+
+### Cross-League 1X2 Hit-Rate
+
+| Engine | App-Name | Sample | Hit-Rate | Brier | O25 Hit |
+|---|---|---|---|---|---|
+| **poisson-ml** | **@annafrick13 v1** | 104 | **49.0%** 🥇 | 0.6745 | 55.8% |
+| **ensemble** | **Standard** | 104 | 42.3% | **0.6293** 🥇 | **63.5%** 🥇 |
+| poisson-ml-v2 | @annafrick13 v2 | 104 | 42.3% | 0.7012 | 56.7% |
+| poisson-ml-v3 | @annafrick13 v3 | 13 | 38.5% | 0.6826 | 53.8% |
+
+### Konfidenz-Band-Kalibration
+
+Wann ist eine Engine bei welchem Confidence-Level verlässlich? "Claimed" = Engine's
+Top-Wahrscheinlichkeit, "Hit" = tatsächliche Trefferquote.
+
+| Engine | Band | n | Claimed | Hit | Verdict |
+|---|---|---|---|---|---|
+| @annafrick13 v1 | **60-70%** | 19 | 64% | **68%** | 🟢 **Gold-Zone** — perfekt kalibriert |
+| @annafrick13 v1 | **70%+** | 17 | 80% | **47%** | 🔴 **Trap-Zone** — Over-Confidence |
+| @annafrick13 v1 | 50-60% | 23 | 55% | 30% | ⚠ unter-performt |
+| Standard | 60-70% | 18 | 65% | 61% | 🟢 solide |
+| Standard | 50-60% | 17 | 56% | **65%** | 🟢 schlägt eigene Erwartung |
+| Standard | 40-50% | 54 | 45% | 33% | ⚠ untertrifft |
+| @annafrick13 v2 | **60-70%** | 26 | 65% | **42%** | 🔴 **Trap-Zone** — Over-Confidence |
+| @annafrick13 v2 | 50-60% | 30 | 55% | 23% | 🔴 sehr schlecht |
+
+**Praktische Implikation:**
+- **@annafrick13 v1 in 60-70% Conf-Band = robustestes Single-Signal** über alle Engines hinweg.
+- v1 >70% Claimed Confidence → vorsichtig (47% Hit, 53% Trap-Rate).
+- v2 cross-league im 50-70% Band über-confident. **Aber** in Bundesliga-only (specialist domain)
+  v2 stark — Exact-Score-Audit `ExakterTag/`: 16.2% Exact-Score-Hit (n=376), klar best.
+- Multi-Engine-Konsens (alle 4 stimmen überein) = stärkstes operationalisierbares Signal,
+  realisiert im Goldilocks-Konsens-Filter (`src/app/goldilocks/page.tsx`).
+
+### Per-Liga Hit-Rate (n≥10)
+
+| Liga | n | Standard | @anna v1 | @anna v2 |
+|---|---|---|---|---|
+| **bundesliga** | 62 | 42% | **50%** 🥇 | 42% |
+| bundesliga2 | 10 | 60% | 60% | 60% |
+| austria_bl | 12 | 33% | 33% | 33% |
+
+### Tracking-Pipeline (automatisch)
+
+- `pipeline_shadow_log` write per `/matchday` page-load via `savePredictionsBulk`
+- `match_outcomes` populated daily via `scripts/populate-match-outcomes.mjs` (settle-bets cron)
+- `live_brier_snapshots` aggregated by `scripts/monitor-live-brier.mjs` (cron-ready, --persist)
+- `/health` Section 5 zeigt latest snapshot per engine + league
+
+n=104 ist mager (±5pp Differenzen statistisch noch nicht hart abgesichert — würde n>300 brauchen).
+Jeder Spieltag fügt ~20-30 settled matches hinzu — nach weiteren 4 Wochen (geschätzt n≈250)
+sind Trends robust evaluierbar.

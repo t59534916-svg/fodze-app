@@ -130,6 +130,23 @@ v1 (ensemble-v1)    4-Modell Ensemble: Dixon-Coles (6%) + Elo (22%) + Logistic (
 | Conformal Staking-Gate | Prediction-Set Coverage 96.7% @ α=0.05 | mode=warn — set-size logging, kein Kelly-Skaling |
 | Per-Liga Overdispersion α | Fitted alphas statt konservative Defaults | tighter O25/U25 PMFs (serie_a -52%, la_liga -31%) |
 
+**Live Engine Hit-Rate** (n=104 settled matches, Stand 2026-05-03 — first 2 weeks of cross-engine tracking):
+
+| Engine | 1X2 Hit-Rate | Brier | High-Conf (>60%) Hit | Bundesliga only (n=62) |
+|---|---|---|---|---|
+| **@annafrick13 v1** | **49.0%** 🥇 | 0.6745 | 58.3% | **50%** 🥇 |
+| Standard (ensemble-v1) | 42.3% | **0.6293** 🥇 | **61.1%** | 42% |
+| @annafrick13 v2 | 42.3% | 0.7012 | 44.4% ⚠ over-confident | 42% |
+| @annafrick13 v3 | 38.5% (n=13) | 0.6826 | — | 33% |
+
+**Confidence-Band findings**:
+- 🟢 **Gold-Zone**: @annafrick13 v1 in 60-70% Confidence-Band → **68% Hit-Rate** (perfekt kalibriert)
+- 🔴 **Trap-Zone**: @annafrick13 v1 mit >70% Claim → nur 47% Hit (Over-Confidence)
+- 🔴 **Trap-Zone**: @annafrick13 v2 in 60-70% Band → 42% Hit vs 65% Claim
+- Standard ist überraschend solide bei 50-70% Conf-Band (61-65% Hit)
+
+→ Best practical filter: **Multi-Engine-Konsens** (alle 4 zeigen gleiche Richtung) — operationalisiert in `/goldilocks` Konsens-Filter.
+
 ## Tech Stack
 
 | Layer | Technologie |

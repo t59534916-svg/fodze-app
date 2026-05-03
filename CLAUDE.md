@@ -653,6 +653,39 @@ Joined `v2-oot-predictions.parquet` (8979 leakage-safe predictions, 2025-08 → 
 
 Bei n ≥ 100 pro Engine (~3 Wochen) erste robuste Live-Engine-Vergleich möglich.
 
+### Live Engine Performance (Stand 2026-05-03, n=104 Spiele)
+
+Erste belastbare cross-league Auswertung seit Live-Tracking startete (2026-04-21):
+
+| Engine | App-Name | 1X2 Hit | Brier | High-Conf (>60%) Hit | O25 Hit |
+|---|---|---|---|---|---|
+| **poisson-ml** | **@annafrick13 v1** | **49.0%** 🥇 | 0.6745 | 58.3% (n=36) | 55.8% |
+| **ensemble** | **Standard** | 42.3% | **0.6293** 🥇 | **61.1%** (n=18) | **63.5%** 🥇 |
+| poisson-ml-v2 | @annafrick13 v2 | 42.3% | 0.7012 | 44.4% (n=27) ⚠ | 56.7% |
+| poisson-ml-v3 | @annafrick13 v3 | 38.5% (n=13) | 0.6826 | — | 53.8% |
+
+**Pro-Liga Sieger (best-covered Liga = Bundesliga, n=62):**
+- @annafrick13 v1 → **50%** Hit-Rate ← klar Sieger
+- Standard, v2: je 42%
+- v3: 33% (preview-only, kleine sample)
+
+**Konfidenz-Band-Kalibration (entscheidet wann Engine vertrauenswürdig ist):**
+
+| Band | Engine | Hit-Rate vs Claim | Empfehlung |
+|---|---|---|---|
+| **60-70%** | @anna v1 | **68% Hit** vs 64% claimed | 🟢 **Gold-Zone** — perfekt kalibriert |
+| **70%+** | @anna v1 | **47% Hit** vs 80% claimed | 🔴 **Trap-Zone** — Over-Confidence |
+| 60-70% | Standard | 61% Hit vs 65% claimed | 🟢 solide |
+| **60-70%** | @anna v2 | **42% Hit** vs 65% claimed | 🔴 Trap-Zone — Over-Confidence |
+| 50-60% | Standard | 65% Hit vs 56% claimed | 🟢 schlägt eigene Erwartung |
+
+**Implikation für Goldilocks-Filter:**
+- Live-data bestätigt: **@annafrick13 v1 in 60-70% Conf-Band ist das robusteste Single-Signal**
+- Multi-Engine-Konsens (alle 4 in gleicher Richtung) wäre das stärkste Signal — der Konsens-Filter in `/goldilocks` (commit `bfef197` 2026-05-02 fix) operationalisiert das
+- v2 wirkt cross-league über-confident — speziell im 50-70% Band 23-42% Hit gegen 55-65% Claim. Nur in BL (specialist league) ist v2 stark (siehe `ExakterTag/` exact-score Audit: 16.2% exact-score = best)
+
+Sample n=104 ist mager. ±5pp Differenzen statistisch noch nicht hart abgesichert (würde n>300 brauchen). **Trends sind directional aber nicht final.**
+
 ---
 
 ## Admin Workflow — Weekly Update

@@ -118,6 +118,30 @@ Oben rechts im Spieltag-Screen kannst du die Engine wechseln:
 
 **Engine-Vergleich auf Match-Detail**: Wenn alle 3 Engines ähnlich (≤8pp Spread) = Einigkeit = verlässlich. Wenn uneinig = eine Engine kennt einen Faktor den die anderen nicht sehen. **Im Zweifel: nicht wetten.**
 
+### Live Hit-Rate (Stand 2026-05-03, n=104 settled matches)
+
+Erste belastbare cross-league Auswertung seit Live-Tracking startete:
+
+| Engine | 1X2 Hit-Rate | High-Conf (>60%) Hit | Bundesliga only |
+|---|---|---|---|
+| **@annafrick13 v1** | **49%** 🥇 | 58% | **50%** 🥇 |
+| Standard | 42% | **61%** | 42% |
+| @annafrick13 v2 | 42% | 44% ⚠ | 42% |
+
+**Welcher Engine sollst du folgen? Kontext-abhängig:**
+- **Bundesliga**: @annafrick13 v1 (50% Hit-Rate, klar best in der best-covered Liga)
+- **Cross-League "wer-tippt-am-meisten-richtig"**: @annafrick13 v1 (49%)
+- **Wenn Engine "60-70% Confident" sagt**: @annafrick13 v1 ist hier **Gold-Zone** (68% Hit, perfekt kalibriert)
+- **Vorsicht — Trap-Zonen** (Engine over-confident, low Hit):
+  - @annafrick13 v1 mit >70% Claim → nur 47% Hit (Over-Confidence)
+  - @annafrick13 v2 mit 60-70% Claim → nur 42% Hit (cross-league)
+
+**🥇 Beste Strategie bleibt Multi-Engine-Konsens**: wenn ALLE 4 Engines (Standard + v1 + v2 + v3) in
+gleicher Richtung tippen, ist das das stärkste Signal — der **Konsens-Filter auf Goldilocks** macht
+genau das. Nutze ihn als Haupt-Filter für Wetten mit echter Confidence.
+
+n=104 ist klein — diese Trends werden mit jedem Spieltag belastbarer.
+
 ---
 
 ## 💰 Value Betting Basics
