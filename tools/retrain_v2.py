@@ -110,6 +110,10 @@ FEATURE_NAMES = [
     "losing_state_xg_diff",  # 16: xG when losing - xGA when losing (season-level)
     "top3_xgchain_share_diff", # 17: Top-3 player xG_chain share diff (season-level)
     "squad_rotation_rate_diff", # 18: EWMA rotation rate diff (per-match)
+    # Feature 19 source priority (when --use-sofascore-chance-quality is set):
+    #   Sofascore mean_shot_xg (real per-team avg, 11 premium leagues, 25/26 only)
+    #   → Understat shots CSV avg_xg_per_shot (5 Top-5 leagues, 17/18-24/25)
+    #   → 0.12 default
     "shot_quality_diff",        # 19: avg xGoals per shot diff (season-level, dominance)
     "high_value_shot_share_diff", # 20: % of shots with xGoals >= 0.15 diff (season-level)
 ]
@@ -468,7 +472,8 @@ def motivation_index(team, points_table, n_teams=18):
 # ═══════════════════════════════════════════════════════════════════
 
 def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_npxg=False,
-                     tactics_data=None, players_data=None, roster_data=None, shots_data=None):
+                     tactics_data=None, players_data=None, roster_data=None, shots_data=None,
+                     sofa_chance_quality=None):
     """Compute 14-feature vectors chronologically with strict shift(1)."""
     team_ewma = {}       # team -> {gf, ga}
     team_last_date = {}  # team -> last match date
@@ -601,6 +606,31 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
         a_rotation = team_rotation_ewma.get(at, 0.0)
         rotation_diff = h_rotation - a_rotation
 
+        # Feature 19 (shot_quality_diff) — Sofascore-preferred source if loader
+        # provided data for both teams in this league/season.
+        # Falls back to Understat shots CSV (h_shots/a_shots from --use-shots),
+        # and finally to 0.12 default.
+        #
+        # EPL EXCLUDED: empirical EPL audit (2026-05-03) showed the Brentford-
+        # effect — high-mean_shot_xg teams in EPL don't convert volume → λH was
+        # systematically overpredicted by +0.023 / λA underpredicted by -0.033.
+        # mean_shot_xg ↔ goals/game correlation is 0.375 in EPL vs 0.5-0.8 in
+        # all other premium leagues. CSV/0.12-default produces less harm than
+        # the misleading Sofascore signal in this specific league.
+        SOFA_F19_BLACKLIST = {"epl"}
+
+        h_sofa = sofa_chance_quality.get((lg, season_str, ht), {}) if sofa_chance_quality else {}
+        a_sofa = sofa_chance_quality.get((lg, season_str, at), {}) if sofa_chance_quality else {}
+        h_msx = h_sofa.get("mean_shot_xg")
+        a_msx = a_sofa.get("mean_shot_xg")
+        if h_msx is not None and a_msx is not None and lg not in SOFA_F19_BLACKLIST:
+            shot_quality_diff_val = h_msx - a_msx
+        else:
+            shot_quality_diff_val = (
+                h_shots.get("shot_quality_avg", 0.12)
+                - a_shots.get("shot_quality_avg", 0.12)
+            )
+
         features = [
             npxg_diff_ewma,       # 0
             npxga_diff_ewma,      # 1
@@ -621,7 +651,7 @@ def compute_features(csv_all, elo_ratings, npxg_lookup, full_lookup=None, use_np
             losing_state_diff,    # 16
             top3_chain_diff,      # 17
             rotation_diff,        # 18
-            h_shots.get("shot_quality_avg", 0.12) - a_shots.get("shot_quality_avg", 0.12),  # 19
+            shot_quality_diff_val, # 19 — Sofascore-preferred
             h_shots.get("high_value_shot_share", 0.16) - a_shots.get("high_value_shot_share", 0.16),  # 20
         ]
 
@@ -846,6 +876,25 @@ def main():
     parser.add_argument("--use-npxg-csv", action="store_true", help="Use npxG CSV data")
     parser.add_argument("--use-full-csv", action="store_true", help="Use full Understat CSV (npxG + PPDA + deep)")
     parser.add_argument("--use-tactics", action="store_true", help="Use tactics CSV (setpiece, timing, gameState)")
+    parser.add_argument("--use-sofascore-tactics", action="store_true",
+                        help="Augment tactics-data with measured Sofascore "
+                             "setpiece_xg_share for season 2025/26 (11 premium "
+                             "leagues). Replaces 0.15 default for in-coverage "
+                             "matches. Implies --use-tactics for the merge.")
+    parser.add_argument("--use-sofascore-chance-quality", action="store_true",
+                        help="Replace feature 19 (shot_quality_diff) with "
+                             "measured Sofascore mean_shot_xg for matches in "
+                             "the 11 premium leagues × 25/26 (where Sofascore "
+                             "has real data). Falls back to existing CSV/0.12 "
+                             "default for matches without Sofascore coverage. "
+                             "Schema unchanged at 21 features — replaces "
+                             "source, doesn't add columns.")
+    parser.add_argument("--oot-cutoff", default=None,
+                        help="Override OOT cutoff date (YYYY-MM-DD). Default: "
+                             "2025-08-01 in --use-supabase mode. Use a later "
+                             "date (e.g. 2026-01-01) to put part of 25/26 in "
+                             "the training set so Sofascore features can "
+                             "actually train the model.")
     parser.add_argument("--use-players", action="store_true", help="Use players CSV (xG chain)")
     parser.add_argument("--use-roster", action="store_true", help="Use roster CSV (rotation rate)")
     parser.add_argument("--use-shots", action="store_true", help="Use shots CSV (shot quality + dominance)")
@@ -873,6 +922,9 @@ def main():
         print("  Source: Historie/*.csv (football-data.co.uk)")
         csv_all = load_csv_data()
         cutoff = OOT_CUTOFF
+    if args.oot_cutoff:
+        cutoff = pd.Timestamp(args.oot_cutoff)
+        print(f"  Cutoff overridden via --oot-cutoff: {cutoff.strftime('%Y-%m-%d')}")
     train_df = csv_all[csv_all["date_parsed"] < cutoff]
     test_df = csv_all[csv_all["date_parsed"] >= cutoff]
     print(f"  Cutoff: {cutoff.strftime('%Y-%m-%d')}")
@@ -893,9 +945,41 @@ def main():
     tactics_data = {}
     players_data = {}
     roster_data = {}
-    if args.use_tactics:
-        tactics_data = load_tactics_data(TACTICS_CSV)
-        print(f"  Tactics data: {len(tactics_data)} team-season entries")
+    if args.use_tactics or args.use_sofascore_tactics:
+        tactics_data = load_tactics_data(TACTICS_CSV) if args.use_tactics else {}
+        print(f"  Tactics data (CSV): {len(tactics_data)} team-season entries")
+        if args.use_sofascore_tactics:
+            # Build corpus_team_names_per_league from csv_all so Sofascore
+            # entries get keyed under the spelling the training corpus uses.
+            corpus_names = {}
+            for lg, grp in csv_all.groupby("league"):
+                names = set(grp["HomeTeam"].dropna().astype(str)) | set(grp["AwayTeam"].dropna().astype(str))
+                corpus_names[str(lg)] = names
+            sys.path.insert(0, os.path.join(PROJECT_ROOT, "tools"))
+            from sofascore.engine_features import load_sofascore_tactics_features
+            sofa_features = load_sofascore_tactics_features(
+                corpus_team_names_per_league=corpus_names,
+                season_label_in_csv="2025/26",
+                sofascore_season="25/26",
+            )
+            # Merge — additive (Sofascore 25/26 doesn't conflict with CSV 17/18-24/25)
+            before = len(tactics_data)
+            tactics_data.update(sofa_features)
+            print(f"  Tactics data (after Sofascore merge): {before} → {len(tactics_data)} (+{len(sofa_features)} Sofascore-25/26 entries)")
+
+    sofa_chance_quality = {}
+    if args.use_sofascore_chance_quality:
+        corpus_names = {}
+        for lg, grp in csv_all.groupby("league"):
+            names = set(grp["HomeTeam"].dropna().astype(str)) | set(grp["AwayTeam"].dropna().astype(str))
+            corpus_names[str(lg)] = names
+        sys.path.insert(0, os.path.join(PROJECT_ROOT, "tools"))
+        from sofascore.engine_features import load_sofascore_chance_quality_features
+        sofa_chance_quality = load_sofascore_chance_quality_features(
+            corpus_team_names_per_league=corpus_names,
+            season_label_in_csv="2025/26",
+        )
+        print(f"  Sofascore chance-quality: {len(sofa_chance_quality)} team-season entries")
     if args.use_players:
         players_data = load_players_data(PLAYERS_CSV)
         print(f"  Players data: {len(players_data)} team-season entries")
@@ -917,7 +1001,7 @@ def main():
     use_npxg = args.use_npxg_csv or args.use_full_csv
     all_features = compute_features(csv_all, elo, npxg_lookup, full_lookup=full_lookup, use_npxg=use_npxg,
                                     tactics_data=tactics_data, players_data=players_data, roster_data=roster_data,
-                                    shots_data=shots_data)
+                                    shots_data=shots_data, sofa_chance_quality=sofa_chance_quality)
     train_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] < cutoff]
     test_features = [f for f in all_features if pd.notna(f["date"]) and f["date"] >= cutoff]
     print(f"  Train: {len(train_features)}, Test: {len(test_features)}")
@@ -1196,6 +1280,9 @@ def main():
             "npxg_used": args.use_npxg_csv or args.use_full_csv,
             "full_understat_data": args.use_full_csv,
             "tactics_used": args.use_tactics,
+            "sofascore_tactics_used": args.use_sofascore_tactics,
+            "sofascore_chance_quality_used": args.use_sofascore_chance_quality,
+            "oot_cutoff_override": args.oot_cutoff,
             "players_used": args.use_players,
             "roster_used": args.use_roster,
             "shots_used": args.use_shots,
