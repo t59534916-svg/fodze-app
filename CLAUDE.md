@@ -741,6 +741,7 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 
 ## Zusätzliche Docs
 
+- `docs/DATA-INVENTORY.md` — **Vollständiges Inventar aller Datenquellen** (Sofascore, FootyStats, Understat, football-data.co.uk, OpenLigaDB, Transfermarkt, TheSportsDB, api-sports). Per-Liga × Saison Coverage-Matrix für alle 22 Ligen mit row counts, date ranges, source breakdowns, sofascore-tier (premium/partial/volume/none), closing-odds gaps, engine-tracking-coverage. **Lese ZUERST vor jedem xG/odds/feature-bezogenen Task** — Verhindert die "ich kannte Sofascore nicht"-Falle.
 - `docs/ALPHA-ATLAS-IMPLEMENTATION.md` — **Master-Runbook der 13 Research-Phasen** (Referee / Benter / Dirichlet / footBayes / Conformal / Corners / Player-Props / Live-WP). Enthält Bootstrap-Reihenfolge, per-Phase Ops-Anweisungen, Feature-Flags, File-Inventory und Known Gaps. **Einstiegspunkt für alle Post-Baseline-Features.**
 - `docs/ARCHITECTURE.md` — tiefer Architektur-Überblick
 - `docs/DEBUGGING.md` — Operationaler Runbook (Symptom → Diagnose → Fix)
