@@ -1,8 +1,10 @@
 # DATA-INVENTORY.md
 
-**Stand:** 2026-05-03 · **Quelle:** Live-query gegen Supabase project `oddsmind` (resdrxgfcpaxosiwnxiu)
+**Stand:** 2026-05-03 (mit Update-Note 2026-05-05 unten) · **Quelle:** Live-query gegen Supabase project `oddsmind` (resdrxgfcpaxosiwnxiu)
 
 Vollständiges Inventar aller Datenquellen, deren Coverage pro Liga × Saison, und Quality-Status. Diese Datei ist von Hand kuratiert basierend auf Live-DB-counts — bei Diskrepanzen mit der Realität ist die DB-Live-Query autoritativ. Zum Refresh: `node scripts/audit-data-quality.mjs` (für Hauptmetriken) bzw. die in dieser Doku unten verlinkten ad-hoc Audit-Scripts.
+
+> **Update 2026-05-05:** Cloudflare hat die 5 vorher geblockten Tier-B-Ligen freigegeben — austria_bl, swiss_sl, scottish_prem, jupiler_pro, super_lig wurden mit `--pace 4.0` sequenziell nachgezogen (181/218/222/315/240 matches respectively, alle 99%+ xG-fill, alle premium-tier). Damit haben jetzt **alle 22 FODZE-Ligen** eine Sofascore-Tier-Klassifikation (16 premium, 1 partial, 5 volume). Plus: neues Skript `scripts/bridge-sofascore-to-team-xg.mjs` propagiert sofascore_team_chance_quality → team_xg_history mit `source='sofascore'` (~10k rows × 17 ligen). Konkrete Auswirkung: per-Liga-Zahlen in Sektion 4 sind nicht mehr aktuell (austria_bl/swiss_sl/scottish_prem/jupiler_pro/super_lig hatten "0 matches" Sofa, jetzt 4-7k shots each); die 5.2 "Bekannte Gaps" Tabelle weiter unten reflektiert den neuen State.
 
 ---
 
