@@ -90,10 +90,9 @@ if (existsSync(envPath)) {
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
-if (!SUPA_URL || !SUPA_KEY) {
-  console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_KEY");
-  process.exit(1);
-}
+// Note: env validation moved inside main() so this module can be imported
+// for unit testing (tests/bridge-sofascore.test.ts) without triggering
+// process.exit(1) when SUPABASE_SERVICE_KEY isn't set in the test runner.
 
 // ─── CLI ───────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -251,6 +250,12 @@ export function buildTeamXgRows(cqRows, canonicalizeFn = canonicalize) {
 
 // ─── main ──────────────────────────────────────────────────────────
 async function main() {
+  // Env validation only when the script is actually run (not on import)
+  if (!SUPA_URL || !SUPA_KEY) {
+    console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_KEY");
+    process.exit(1);
+  }
+
   console.log(`🔗 Sofascore → team_xg_history Bridge${DRY ? " (DRY RUN)" : ""}`);
   if (SINCE) console.log(`   Since filter: match_date >= ${SINCE}`);
   console.log("");
@@ -304,7 +309,16 @@ async function main() {
   console.log(`\n✅ Done — ${upserted} rows upserted.`);
 }
 
-main().catch((e) => {
-  console.error("❌", e);
-  process.exit(1);
-});
+// Only invoke main() when this file is run directly (node scripts/bridge-...).
+// When imported by tests, the import resolves but main() is NOT called —
+// keeping the module side-effect-free for vitest.
+const isEntryPoint =
+  import.meta.url === `file://${process.argv[1]}` ||
+  (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop()));
+
+if (isEntryPoint) {
+  main().catch((e) => {
+    console.error("❌", e);
+    process.exit(1);
+  });
+}
