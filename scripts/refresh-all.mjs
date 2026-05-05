@@ -193,9 +193,27 @@ const phases = [
   {
     name: "bridge-sofascore",
     emoji: "🔗",
-    description: "Sofascore-xG → team_xg_history bridge (premium+partial tier)",
+    description: "Sofascore-xG → team_xg_history bridge (last 30d window, premium+partial tier)",
     skip: () => SKIP_BRIDGE,
-    run: () => runScript("scripts/bridge-sofascore-to-team-xg.mjs", [], "bridge-sofascore"),
+    run: () => {
+      // Pass --since (today - 30d) so the daily cron only churns recent
+      // matches. Why this matters:
+      //   1. Cloudflare hiccup risk: if sync-sofascore partially fails,
+      //      chance_quality might have slightly-stale data. Limiting to
+      //      30d means at most the last 30d of matches get the (possibly
+      //      slightly-old) Sofascore values upserted; older months stay
+      //      pinned to whatever source last wrote them.
+      //   2. footystats overwrite resilience: if you import a fresh
+      //      FootyStats CSV with corrected xG for an older match, the
+      //      next bridge run won't re-overwrite that with stale Sofa
+      //      data — the older match is outside the --since window.
+      //   3. Performance: ~600 rows vs ~10k for full-corpus bridge.
+      //
+      // For backfill / one-off full bridge, run the script directly
+      // without --since.
+      const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+      return runScript("scripts/bridge-sofascore-to-team-xg.mjs", ["--since", since], "bridge-sofascore");
+    },
     // Idempotent upsert. Failure here just means engine reads run on
     // pre-bridge xG (still functional, just slightly more stale for
     // non-DE leagues between FootyStats CSV imports).
