@@ -12,11 +12,14 @@
  *   1. fetch-odds                    — live_odds + upcoming_fixtures × 19 leagues
  *   2. settle completed bets         — fetch-results for any pending bets
  *   3. Liga 3 OpenLigaDB backfill    — catches last matchday's results
- *   4. generate-matchday × 19        — enriched + seeded matchdays
- *   5. retro-enrich latest matchdays — fills any remaining form/tag gaps
- *   6. audit-data-quality            — final green/red summary
+ *   4. sync-sofascore                — Tier-A shot events (incl. xG)
+ *   5. bridge-sofascore              — propagate sofascore → team_xg_history
+ *   6. referees (opt-in)             — FBref scrape per league
+ *   7. generate-matchday × 19        — enriched + seeded matchdays
+ *   8. retro-enrich latest matchdays — fills any remaining form/tag gaps
+ *   9. audit-data-quality            — final green/red summary
  *
- * Expected runtime: ~2–3 minutes (dominated by fetch-odds credits + enrichment).
+ * Expected runtime: ~3–5 minutes (dominated by sync-sofascore + matchday gen).
  *
  * Behavior:
  *   - Step 1 is MANDATORY. If it fails, the whole pipeline aborts — later
@@ -31,6 +34,7 @@
  *   node scripts/refresh-all.mjs
  *   node scripts/refresh-all.mjs --skip-odds     # assume odds already fresh
  *   node scripts/refresh-all.mjs --skip-matchday # don't regenerate matchdays
+ *   node scripts/refresh-all.mjs --skip-bridge   # don't propagate sofa→team_xg_history
  *   node scripts/refresh-all.mjs --quiet         # just phase headers, no per-step output
  *   node scripts/refresh-all.mjs --resume        # skip leagues already matchday-
  *                                                # seeded by an earlier crashed run
@@ -76,6 +80,7 @@ const LEAGUES = [
 const args = process.argv.slice(2);
 const SKIP_ODDS = args.includes("--skip-odds");
 const SKIP_MATCHDAY = args.includes("--skip-matchday");
+const SKIP_BRIDGE = args.includes("--skip-bridge");
 const QUIET = args.includes("--quiet");
 const SKIP_AUDIT = args.includes("--skip-audit");
 const RESUME = args.includes("--resume");
@@ -184,6 +189,17 @@ const phases = [
     skip: () => !existsSync(resolve(REPO_ROOT, "tools/venv/bin/python3")),
     run: () => runScript("scripts/sync-sofascore-shotmap.mjs", [], "sync-sofascore"),
     abortOnFail: false,  // experimental data-source, must not break the pipeline
+  },
+  {
+    name: "bridge-sofascore",
+    emoji: "🔗",
+    description: "Sofascore-xG → team_xg_history bridge (premium+partial tier)",
+    skip: () => SKIP_BRIDGE,
+    run: () => runScript("scripts/bridge-sofascore-to-team-xg.mjs", [], "bridge-sofascore"),
+    // Idempotent upsert. Failure here just means engine reads run on
+    // pre-bridge xG (still functional, just slightly more stale for
+    // non-DE leagues between FootyStats CSV imports).
+    abortOnFail: false,
   },
   {
     name: "referees",
