@@ -1,3 +1,17 @@
+-- ⚠ DEPRECATED 2026-05-05 — superseded by
+--   scripts/migration-sofascore-tier-extend-2026-05-05.sql
+--
+-- This migration classified 11 leagues as premium. The successor adds 5
+-- more (austria_bl, swiss_sl, scottish_prem, jupiler_pro, super_lig) for
+-- a total of 16 premium leagues. Both are CREATE OR REPLACE FUNCTION,
+-- so running them sequentially is idempotent — but on a fresh DB you
+-- only need to run the SUCCESSOR (it is fully self-contained).
+--
+-- Kept for git history / audit trail only. Do NOT run alone on fresh
+-- DB unless you specifically want the 11-premium intermediate state.
+--
+-- ─────────────────────────────────────────────────────────────────────
+--
 -- Migration: extend sofascore_data_quality_tier() with 6 new Tier-B leagues
 -- Applied 2026-05-03. Depends on migration-sofascore-views.sql.
 --

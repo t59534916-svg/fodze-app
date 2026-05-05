@@ -45,6 +45,22 @@
  *   node scripts/bridge-sofascore-to-team-xg.mjs            # live upsert
  *   node scripts/bridge-sofascore-to-team-xg.mjs --since 2026-04-25  # only matches >= date
  *
+ * Window choice (when called with --since by refresh-all.mjs):
+ *   The default daily-cron window is 30 days (refresh-all hardcodes it).
+ *   That covers ~6-8 most-recent matches per team for typical 18-team
+ *   leagues with 1 match/week, which is enough to keep xg_h8 (Engine's
+ *   8-game rolling sum) up-to-date as long as the cron actually runs
+ *   daily. For:
+ *     - Backfill scenarios after a tier-function migration adds new
+ *       leagues:  --since 2025-08-01 (full 25/26 season)
+ *     - Catching up after >30d cron outage: same — full backfill
+ *     - Sub-30d-cadence leagues (e.g. liga3 with mid-week games): 30d
+ *       still covers >8 matches — fine
+ *     - Slow-cadence leagues (scottish_prem ~1 match/week, sometimes
+ *       breaks for cup): 30d covers ~4-6 matches — TIGHT. If you skipped
+ *       a week of cron, gap might exceed 8-match window. In practice
+ *       OK because team_xg_history KEEPS old rows; bridge just adds new.
+ *
  * Idempotent — safe to re-run. Counts in summary print what was new vs
  * what already existed (changed = source/value differed from existing).
  *
@@ -132,37 +148,27 @@ async function upsertBatch(rows) {
   return rows.length;
 }
 
-// ─── main ──────────────────────────────────────────────────────────
-async function main() {
-  console.log(`🔗 Sofascore → team_xg_history Bridge${DRY ? " (DRY RUN)" : ""}`);
-  if (SINCE) console.log(`   Since filter: match_date >= ${SINCE}`);
-  console.log("");
-
-  // 1. Fetch chance_quality rows (premium + partial tier with xG)
-  let qs = `select=*&data_quality_tier=in.(premium,partial)&sum_xg=not.is.null`;
-  if (SINCE) {
-    const sinceTs = Math.floor(new Date(SINCE).getTime() / 1000);
-    qs += `&start_timestamp=gte.${sinceTs}`;
-  }
-  console.log("📥 Fetching sofascore_team_chance_quality rows...");
-  const cq = await fetchAll("sofascore_team_chance_quality", qs);
-  console.log(`   ${cq.length} rows fetched`);
-
-  // 2. Group by game_id (1 game = 2 rows = 1 home + 1 away)
+// ─── pure transformation (exported for unit tests) ────────────────
+//
+// Takes sofascore_team_chance_quality rows (1 per team-game), groups by
+// game_id, and emits team_xg_history rows (2 per game — home + away).
+// No I/O. canonicalizeFn is injected so tests can mock it.
+//
+// Returns: { rows, perLeague, skippedNoOpponent, skippedCanonicalize }
+export function buildTeamXgRows(cqRows, canonicalizeFn = canonicalize) {
+  // Group by game_id (1 game = 2 rows = 1 home + 1 away)
   const byGame = new Map();
-  for (const r of cq) {
+  for (const r of cqRows) {
     if (!byGame.has(r.game_id)) byGame.set(r.game_id, {});
     byGame.get(r.game_id)[r.is_home ? "home" : "away"] = r;
   }
-  console.log(`   ${byGame.size} unique games\n`);
 
-  // 3. Build team_xg_history rows
-  const xghRows = [];
+  const rows = [];
   let skippedNoOpponent = 0;
   let skippedCanonicalize = 0;
   const perLeague = {};
 
-  for (const [gameId, game] of byGame.entries()) {
+  for (const [, game] of byGame.entries()) {
     if (!game.home || !game.away) {
       skippedNoOpponent++;
       continue;
@@ -175,8 +181,8 @@ async function main() {
     // Canonicalize team names — must match what other ingestion scripts use.
     let homeTeam, awayTeam;
     try {
-      homeTeam = canonicalize(game.home.team, lg);
-      awayTeam = canonicalize(game.away.team, lg);
+      homeTeam = canonicalizeFn(game.home.team, lg);
+      awayTeam = canonicalizeFn(game.away.team, lg);
     } catch (e) {
       skippedCanonicalize++;
       continue;
@@ -195,7 +201,7 @@ async function main() {
       : null;
 
     // Home-side row
-    xghRows.push({
+    rows.push({
       team: homeTeam,
       opponent: awayTeam,
       league: lg,
@@ -216,7 +222,7 @@ async function main() {
       source: "sofascore",
     });
     // Away-side row (mirrored)
-    xghRows.push({
+    rows.push({
       team: awayTeam,
       opponent: homeTeam,
       league: lg,
@@ -239,6 +245,30 @@ async function main() {
 
     perLeague[lg] = (perLeague[lg] || 0) + 2;
   }
+
+  return { rows, perLeague, skippedNoOpponent, skippedCanonicalize };
+}
+
+// ─── main ──────────────────────────────────────────────────────────
+async function main() {
+  console.log(`🔗 Sofascore → team_xg_history Bridge${DRY ? " (DRY RUN)" : ""}`);
+  if (SINCE) console.log(`   Since filter: match_date >= ${SINCE}`);
+  console.log("");
+
+  // 1. Fetch chance_quality rows (premium + partial tier with xG)
+  let qs = `select=*&data_quality_tier=in.(premium,partial)&sum_xg=not.is.null`;
+  if (SINCE) {
+    const sinceTs = Math.floor(new Date(SINCE).getTime() / 1000);
+    qs += `&start_timestamp=gte.${sinceTs}`;
+  }
+  console.log("📥 Fetching sofascore_team_chance_quality rows...");
+  const cq = await fetchAll("sofascore_team_chance_quality", qs);
+  console.log(`   ${cq.length} rows fetched`);
+
+  // 2-3. Translate via pure function (extracted for unit tests)
+  const { rows: xghRows, perLeague, skippedNoOpponent, skippedCanonicalize } =
+    buildTeamXgRows(cq);
+  console.log(`   ${new Set(cq.map(r => r.game_id)).size} unique games\n`);
 
   console.log(`📊 Translation summary:`);
   console.log(`   ${xghRows.length} team_xg_history rows ready (${xghRows.length/2} match-pairs)`);

@@ -581,7 +581,7 @@ Spalten:
 - **xGH-Range:** 2021-07-23 → 2026-04-24
 - **xGH-Sources:** footystats 2.236, shots-model-pooled 480
 - **Per-Saison:** 21/22:552, 22/23:552, 23/24:550, 24/25:505, 25/26:557
-- **Sofa:** ⚠ **0 matches** (Cloudflare blocked 2026-05-03, season-list HTTP 403, tid=38)
+- **Sofa:** ✅ **premium** · 315 matches, 7.484 shots (99.7% xG-fill), 25/26 — fetched 2026-05-05 nach Cloudflare-unblock; 572 chance_quality view rows; 572 team_xg_history rows mit `source=sofascore` via Bridge
 - **Closing-Odds:** 1.335 (2020-08-08→2026-05-03)
 - **Live:** 11 · 11
 - **match_outcomes:** 105
@@ -596,7 +596,7 @@ Spalten:
 - **xGH-Range:** 2021-08-13 → 2026-04-24
 - **xGH-Sources:** footystats 2.820, shots-model-pooled 482, shots-model 27
 - **Per-Saison:** 21/22:722, 22/23:648, 23/24:722, 24/25:648, 25/26:589
-- **Sofa:** ⚠ **0 matches** (Cloudflare blocked, tid=52)
+- **Sofa:** ✅ **premium** · 240 matches, 6.033 shots (99.7% xG-fill), 25/26 (range 2025-08-08→2026-03-15 — Cloudflare-blocked rounds 30-38; Bridge added 468 rows mit source=sofascore)
 - **Closing-Odds:** 1.597 (2020-09-11→2026-05-03)
 - **Live:** 13 · 13
 - **match_outcomes:** 93
@@ -611,7 +611,7 @@ Spalten:
 - **xGH-Range:** 2021-07-31 → 2026-04-12
 - **xGH-Sources:** footystats 1.725, shots-model-pooled 372
 - **Per-Saison:** 21/22:418, 22/23:418, 23/24:418, 24/25:418, 25/26:425
-- **Sofa:** ⚠ **0 matches** (Cloudflare blocked, tid=36)
+- **Sofa:** ✅ **premium** · 222 matches, 5.384 shots (99.6% xG-fill), 25/26 (incl. Top-6 Splitt-Round-Spiele); Bridge added 420 team_xg_history rows
 - **Closing-Odds:** ⚠ 966 (2020-08-01→**2025-10-26 only — STALE 6 Monate**) · football-data.co.uk only
 - **Live:** 10 · 10
 - **match_outcomes:** 29
@@ -626,7 +626,7 @@ Spalten:
 - **xGH-Range:** 2021-07-23 → 2026-04-24
 - **xGH-Sources:** footystats 1.898 (sole source)
 - **Per-Saison:** 21/22:390, 22/23:390, 23/24:390, 24/25:390, 25/26:338
-- **Sofa:** ⚠ **0 matches** (Cloudflare blocked, tid=45)
+- **Sofa:** ✅ **premium** · 181 matches, 4.413 shots (99.2% xG-fill), 25/26 (incl. Meistergruppe + Qualigruppe); Bridge added 358 team_xg_history rows
 - **Closing-Odds:** ⚠ **1** (2026-05-03 only, live-snap) — football-data.co.uk hat austria_bl nie
 - **Live:** 7 · 7
 - **match_outcomes:** 76
@@ -641,7 +641,7 @@ Spalten:
 - **xGH-Range:** 2021-07-24 → 2026-04-18
 - **xGH-Sources:** footystats 2.028 (sole source)
 - **Per-Saison:** 21/22:360, 22/23:360, 23/24:456, 24/25:456, 25/26:396
-- **Sofa:** ⚠ **0 matches** (Cloudflare blocked, tid=215)
+- **Sofa:** ✅ **premium** · 218 matches, 5.990 shots (99.5% xG-fill), 25/26 (incl. Championship Group); Bridge added 420 team_xg_history rows
 - **Closing-Odds:** ⚠ **3** (2026-05-02→05-03 only, live-snap) — football-data.co.uk hat swiss_sl nie
 - **Live:** 8 · 8
 - **match_outcomes:** 85
@@ -668,8 +668,9 @@ Spalten:
 
 | Gap | Impact | Mitigation |
 |---|---|---|
-| **5 Sofascore-Ligen pending** (jupiler_pro, super_lig, scottish_prem, austria_bl, swiss_sl) | Diese Ligen haben keine Sofascore-features für Engine-input | Cloudflare-IP-Cooldown abwarten + sequential `--league X --pace 4.0` retry |
+| ~~**5 Sofascore-Ligen pending**~~ | ✅ **CLOSED 2026-05-05** | Cloudflare-unblock-Retry erfolgreich für alle 5 (jupiler_pro/super_lig/scottish_prem/austria_bl/swiss_sl). Alle jetzt premium-tier mit 99.2-99.7% xG-fill |
 | **3 Sofascore-Ligen ohne xG** (league_one/two, eerste_divisie) | Tier=volume — shots-only, kein xG-feature | Sofascore-upstream-limit; nicht behebbar |
+| **super_lig Sofa partial-coverage** | Cloudflare blockierte rounds 30-38 → letzte erfasste Saison-data 2026-03-15. Footystats-CSV-Import 2026-05-04 hat aktuelle Daten via team_xg_history 2026-05-03 erfasst | Bei nächstem refresh-all kann super_lig single-league retry probiert werden |
 | **football-data.co.uk closing-odds STALE** seit 2026-01-14 | Backtest beyond Jan 2026 fehlt closing-odds-Spalten | live-odds-snapshot füllt forward-cache going-forward |
 | **football-data.co.uk closing-odds für 7 Ligen STALE seit Sommer/Herbst 2025** | serie_b (-okt 2025), ligue_2 (-nov), scottish_prem (-okt) — keine recent closing odds | live-snap füllt going-forward, aber backtest-gap bleibt |
 | **football-data.co.uk closing-odds für 5 Ligen NIE existent** | liga3, league_one, league_two, eerste_divisie, austria_bl, swiss_sl — football-data.co.uk hat sie nie geliefert | Nur live-snap forward-cache (~6 rows total für diese 5 Ligen) |
@@ -697,8 +698,8 @@ Spalten:
 **Reduzierte Engine-Coverage (Sofascore Tier=volume oder n/a):**
 - liga3 (partial — kein assisted/fast-break), la_liga2/ligue_2 (volume — kein xG), league_one/two/eerste_divisie (volume — kein xG)
 
-**Noch ohne Sofascore:**
-- jupiler_pro, super_lig, scottish_prem, austria_bl, swiss_sl (5 Ligen pending)
+**~~Noch ohne Sofascore~~ → ✅ CLOSED 2026-05-05:**
+- ~~jupiler_pro, super_lig, scottish_prem, austria_bl, swiss_sl~~ — alle 5 jetzt premium-tier nach Cloudflare-unblock-retry am 2026-05-05
 
 **Backtest-only (no live):**
 - eerste_divisie (no Odds-API)

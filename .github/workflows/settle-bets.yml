@@ -23,6 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    # Job-level env so step-level `if:` can gate on it without triggering
+    # the secrets-in-step-`if:` YAML-validation error (cf. fetch-odds.yml
+    # commit 14586fa which fixed exactly this 41-day silent failure).
+    env:
+      HAS_TELEGRAM: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -114,3 +120,20 @@ jobs:
         # section) only updates when someone manually runs the script.
         # Failure is non-fatal — bet settlement above is the priority.
         continue-on-error: true
+
+      - name: Notify Telegram on workflow failure
+        if: failure() && env.HAS_TELEGRAM == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        # Fires only on hard failure (a step without continue-on-error
+        # exited non-zero). Catches scenarios like Supabase auth break,
+        # Odds-API quota out, schema-mismatch errors. Telegram-ping
+        # makes silent cron drift visible without relying on default
+        # GH email which only goes to the repo owner and is easy to
+        # miss across 3 daily runs.
+        run: |
+          MSG="⚠️ FODZE workflow FAILED: ${{ github.workflow }}%0Arun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d "chat_id=$TELEGRAM_CHAT_ID" \
+            -d "text=$MSG" > /dev/null || true
