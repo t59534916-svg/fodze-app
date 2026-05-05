@@ -98,3 +98,19 @@ jobs:
         # When the key is added, Liga 3 starts getting real per-match xG
         # and the goals-proxy rows are replaced on conflict.
         run: node scripts/backfill-footystats.mjs --league liga3
+
+      - name: Persist live Brier snapshot (per engine × league)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/monitor-live-brier.mjs --persist --days 7
+        # Joins pipeline_shadow_log (per-engine predictions) × match_outcomes
+        # (just populated above) over the last 7 days, computes per-engine
+        # per-league Brier scores, and UPSERTs to live_brier_snapshots
+        # for the /health Section-5 dashboard. Idempotent on
+        # (window_end_date, engine, league). Without this, the live
+        # engine performance comparison (CLAUDE.md Live Engine Performance
+        # section) only updates when someone manually runs the script.
+        # Failure is non-fatal — bet settlement above is the priority.
+        continue-on-error: true
