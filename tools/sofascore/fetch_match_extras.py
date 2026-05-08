@@ -152,7 +152,11 @@ def fetch_pending_games(
         for i in range(0, len(game_ids), 200):
             chunk = game_ids[i : i + 200]
             params2 = {
-                "select": "game_id,has_statistics,has_player_stats,has_incidents,has_avg_positions,attempt_count",
+                # v1 + v2 flags so pending-detection considers both endpoint families
+                "select": (
+                    "game_id,has_statistics,has_player_stats,has_incidents,has_avg_positions,"
+                    "has_managers,has_pregame_form,has_team_streaks,attempt_count"
+                ),
                 "game_id": "in.(" + ",".join(chunk) + ")",
             }
             qs2 = urllib.parse.urlencode(params2, safe="(),")
@@ -193,11 +197,20 @@ def fetch_pending_games(
             if st is None:
                 pending.append(m)
             else:
+                # Pending if ANY of v1+v2 endpoints isn't yet pulled. Existing
+                # rows that completed v1 (statistics+lineups+incidents+avg-pos)
+                # but defaulted has_managers/has_pregame_form/has_team_streaks
+                # to FALSE during the v2 migration are correctly flagged
+                # pending here — the next run will pull just the v2 endpoints
+                # for them (and re-fetch v1 ones, but that's idempotent).
                 all_done = (
                     st["has_statistics"]
                     and st["has_player_stats"]
                     and st["has_incidents"]
                     and st["has_avg_positions"]
+                    and st.get("has_managers", False)
+                    and st.get("has_pregame_form", False)
+                    and st.get("has_team_streaks", False)
                 )
                 if all_done:
                     continue
@@ -286,16 +299,30 @@ def _get(http: cf_requests.Session, url: str, *, timeout: int = 15) -> dict | No
 
 
 def fetch_game_extras(http: cf_requests.Session, game_id: int) -> dict:
-    """Returns dict with keys: statistics, lineups, incidents, average_positions.
+    """Returns dict with payload per endpoint (or None on 404).
 
-    Each value is the raw Sofascore JSON, or None on 404 (endpoint doesn't exist
-    for that game — happens for some lower-league matches).
+    Endpoints (verified 2026-05-08 via Tor + chrome124 fingerprint):
+      Phase 1 (v1, since 2026-05-07):
+        statistics, lineups, incidents, average_positions
+      Phase 2 (v2, added 2026-05-08 — HIGH-SIGNAL):
+        managers       — homeManager + awayManager (id, name, slug)
+        pregame_form   — avgRating, position, value, last-5 form
+        team_streaks   — general (~8) + head2head (~5) entries
+
+    Each value is the raw Sofascore JSON, or None on 404 (endpoint doesn't
+    exist for that game — happens for some lower-league matches, or for
+    games where Sofa's editorial pipeline didn't generate the summary).
     """
     return {
+        # v1 endpoints (forever-cache established, pulled for 736 games as of 2026-05-08)
         "statistics":         _get(http, f"{SOFASCORE_BASE}/event/{game_id}/statistics"),
         "lineups":            _get(http, f"{SOFASCORE_BASE}/event/{game_id}/lineups"),
         "incidents":          _get(http, f"{SOFASCORE_BASE}/event/{game_id}/incidents"),
         "average_positions":  _get(http, f"{SOFASCORE_BASE}/event/{game_id}/average-positions"),
+        # v2 endpoints (HIGH-SIGNAL — added 2026-05-08, schema verified empirically)
+        "managers":           _get(http, f"{SOFASCORE_BASE}/event/{game_id}/managers"),
+        "pregame_form":       _get(http, f"{SOFASCORE_BASE}/event/{game_id}/pregame-form"),
+        "team_streaks":       _get(http, f"{SOFASCORE_BASE}/event/{game_id}/team-streaks"),
     }
 
 
@@ -308,18 +335,33 @@ def output_path(game_id: int) -> Path:
 def write_extras(game_id: int, game_meta: dict, payload: dict) -> Path:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     p = output_path(game_id)
+    # Forward-compatible: when an existing cache file is found (already
+    # has v1 payloads), merge the v2 endpoints in without overwriting v1.
+    # That way re-running with --use-tor on already-pulled games adds
+    # managers/pregame_form/team_streaks without re-fetching v1.
+    existing: dict = {}
+    if p.exists():
+        try:
+            existing = json.loads(p.read_text())
+        except Exception:
+            existing = {}
     enriched = {
+        **existing,  # preserve v1 payloads if present
         "game_id":       game_id,
         "league":        game_meta.get("league"),
         "season":        game_meta.get("season"),
         "home_team":     game_meta.get("home_team"),
         "away_team":     game_meta.get("away_team"),
         "fetched_at":    int(time.time()),
-        "statistics":         payload["statistics"],
-        "lineups":            payload["lineups"],
-        "incidents":          payload["incidents"],
-        "average_positions":  payload["average_positions"],
     }
+    # Only update keys that the current pull provided non-None values for —
+    # avoids overwriting a previously-cached payload with a None when an
+    # endpoint returns 404 on a retry.
+    for k in ("statistics", "lineups", "incidents", "average_positions",
+              "managers", "pregame_form", "team_streaks"):
+        v = payload.get(k)
+        if v is not None or k not in existing:
+            enriched[k] = v
     p.write_text(json.dumps(enriched, default=str, separators=(",", ":")))
     return p
 
@@ -352,6 +394,35 @@ class BackoffState:
         self.consecutive_blocks = 0
 
 
+# ─── Session factory ──────────────────────────────────────────────
+#
+# When --use-tor is set, route everything through Tor's local SOCKS5
+# proxy (default port 9050, set up via `brew install tor && brew services
+# start tor`). Empirically verified 2026-05-08: chrome124 TLS fingerprint
+# ALONE returns 403 from sofascore.com/api/* when the user's IP is
+# Cloudflare-flagged. Same chrome124 fingerprint via Tor returns 200,
+# because Tor exits aren't blanket-blocked — Cloudflare just applies
+# stricter inspection that the chrome124 fingerprint passes.
+#
+# Caveats observed during empirical testing:
+#   - Per-circuit rate limit hits at ~15 successive requests → use longer
+#     pacing (4-6s) and recycle sessions more aggressively (every ~25 games)
+#     to force a new Tor exit.
+#   - SOCKS5h (the 'h' = remote DNS) is required so Sofa hostname resolves
+#     via Tor, not via local DNS (which leaks our real IP).
+
+TOR_PROXY = "socks5h://127.0.0.1:9050"
+
+
+def make_session(use_tor: bool) -> cf_requests.Session:
+    if use_tor:
+        return cf_requests.Session(
+            impersonate="chrome124",
+            proxies={"http": TOR_PROXY, "https": TOR_PROXY},
+        )
+    return cf_requests.Session(impersonate="chrome124")
+
+
 # ─── Orchestration ─────────────────────────────────────────────────
 
 def fetch_pending(
@@ -361,8 +432,10 @@ def fetch_pending(
     pace: float,
     dry: bool,
     max_games: int | None,
+    use_tor: bool = False,
 ) -> None:
-    print(f"🔍 Fetching pending extras · leagues={leagues} · season={season}")
+    print(f"🔍 Fetching pending extras · leagues={leagues} · season={season}"
+          f"{' · via Tor' if use_tor else ''}")
     pending = fetch_pending_games(leagues, season, limit=max_games)
     if not pending:
         print("  no pending games (everything already pulled, or none ended)")
@@ -378,24 +451,34 @@ def fetch_pending(
 
     # Fresh session every SESSION_RECYCLE games — defends against
     # cf_requests.Session accumulating bad state (observed: hung indefinitely
-    # on game ~96 after ~480 cumulative games).
-    SESSION_RECYCLE = 50
-    PER_GAME_BUDGET = 30  # seconds; if a game's 4 endpoints exceed this,
-                          # write what we have and move on.
+    # on game ~96 after ~480 cumulative games). On Tor we recycle MORE
+    # aggressively (25 vs 50) because each recycle gives us a chance at a
+    # new Tor exit IP, which is critical when Cloudflare's per-exit rate
+    # counter starts climbing. 7 endpoints × 25 games = 175 requests per
+    # session, comfortably under the empirical ~250-request soft-limit.
+    SESSION_RECYCLE = 25 if use_tor else 50
+    PER_GAME_BUDGET = 60 if use_tor else 30  # 7 endpoints × ~6s pace via Tor
 
-    http = cf_requests.Session(impersonate="chrome124")
+    http = make_session(use_tor)
     backoff = BackoffState()
     success_count = 0
     skip_cached = 0
     error_count = 0
     games_on_session = 0
 
+    # Track which endpoints we expect for the kinds-counter display.
+    # Counts both v1 (4 keys) and v2 (3 keys) endpoints.
+    EXPECTED_KEYS = (
+        "statistics", "lineups", "incidents", "average_positions",
+        "managers", "pregame_form", "team_streaks",
+    )
+
     for idx, m in enumerate(pending, 1):
         gid = int(m["game_id"])
-        if already_cached(gid):
-            # JSON exists locally but state-table not yet flagged — loader will fix
-            skip_cached += 1
-            continue
+
+        # NOTE: don't bypass via already_cached() any more. Cached JSONs
+        # may pre-date v2 endpoints — we want to refetch (write_extras
+        # merges new payloads non-destructively).
 
         # Recycle session periodically (defense against curl_cffi state drift)
         if games_on_session >= SESSION_RECYCLE:
@@ -403,11 +486,11 @@ def fetch_pending(
                 http.close()
             except Exception:
                 pass
-            http = cf_requests.Session(impersonate="chrome124")
+            http = make_session(use_tor)
             games_on_session = 0
-            print(f"  ↻ session recycled at game {idx}", flush=True)
+            print(f"  ↻ session recycled at game {idx}{' (new Tor circuit)' if use_tor else ''}", flush=True)
 
-        # Per-game wallclock budget: total time across the 4 endpoints
+        # Per-game wallclock budget: total time across all endpoints
         t0 = time.time()
         try:
             payload = fetch_game_extras(http, gid)
@@ -434,9 +517,9 @@ def fetch_pending(
         path = write_extras(gid, m, payload)
         success_count += 1
         games_on_session += 1
-        kinds = sum(1 for k in ("statistics", "lineups", "incidents", "average_positions") if payload.get(k))
+        kinds = sum(1 for k in EXPECTED_KEYS if payload.get(k))
         print(f"  [{idx}/{len(pending)}] {gid}  {m['home_team'][:18]:18} vs {m['away_team'][:18]:18}  "
-              f"{kinds}/4 endpoints  → {path.name}", flush=True)
+              f"{kinds}/{len(EXPECTED_KEYS)} endpoints  → {path.name}", flush=True)
 
         # Pace
         time.sleep(pace + random.uniform(-0.2, 0.4))
@@ -446,12 +529,13 @@ def fetch_pending(
 
 # ─── Single-game (debug) ───────────────────────────────────────────
 
-def fetch_single(game_id: int, *, dry: bool) -> None:
-    print(f"🔍 Single-game fetch · {game_id}")
+def fetch_single(game_id: int, *, dry: bool, use_tor: bool = False) -> None:
+    print(f"🔍 Single-game fetch · {game_id}{' · via Tor' if use_tor else ''}")
     if dry:
-        print("  [DRY] would fetch /statistics /lineups /incidents /average-positions")
+        print("  [DRY] would fetch /statistics /lineups /incidents /average-positions"
+              " /managers /pregame-form /team-streaks")
         return
-    http = cf_requests.Session(impersonate="chrome124")
+    http = make_session(use_tor)
     try:
         payload = fetch_game_extras(http, game_id)
     except BlockedError as e:
@@ -459,8 +543,11 @@ def fetch_single(game_id: int, *, dry: bool) -> None:
         return
     meta = {"league": "?", "season": "?", "home_team": "?", "away_team": "?"}
     path = write_extras(game_id, meta, payload)
-    kinds = sum(1 for k in ("statistics", "lineups", "incidents", "average_positions") if payload.get(k))
-    print(f"  ✓ {kinds}/4 endpoints → {path}")
+    kinds = sum(1 for k in (
+        "statistics", "lineups", "incidents", "average_positions",
+        "managers", "pregame_form", "team_streaks",
+    ) if payload.get(k))
+    print(f"  ✓ {kinds}/7 endpoints → {path}")
 
 
 # ─── CLI ───────────────────────────────────────────────────────────
@@ -473,12 +560,22 @@ def main():
     p.add_argument("--game-id", type=int, help="single game (debug)")
     p.add_argument("--season", default="25/26", help="season label (default 25/26)")
     p.add_argument("--max", type=int, help="cap pending games processed this run")
-    p.add_argument("--pace", type=float, default=1.5, help="seconds between games (default 1.5)")
+    p.add_argument("--pace", type=float, default=None,
+                   help="seconds between games (default 1.5 direct, 5.0 via Tor)")
     p.add_argument("--dry", action="store_true", help="list pending, no fetch")
+    p.add_argument("--use-tor", action="store_true",
+                   help="route through Tor SOCKS5 (127.0.0.1:9050) — bypasses Cloudflare API "
+                        "block. Requires `brew install tor && brew services start tor`. Empirically "
+                        "the only reliable path to managers/pregame-form/team-streaks endpoints "
+                        "since Cloudflare started blocking direct API access on 2026-05-07.")
     args = p.parse_args()
 
+    # Default pace: 1.5s direct, 5.0s via Tor (Cloudflare's per-circuit
+    # rate-counter hits ~15 successive requests at 1.5s pacing → 403 burst).
+    pace = args.pace if args.pace is not None else (5.0 if args.use_tor else 1.5)
+
     if args.game_id:
-        fetch_single(args.game_id, dry=args.dry)
+        fetch_single(args.game_id, dry=args.dry, use_tor=args.use_tor)
         return
 
     if not (args.league or args.tier or args.all_tiers):
@@ -497,7 +594,8 @@ def main():
             print(f"⚠ unknown league: {lg}", file=sys.stderr)
             sys.exit(1)
 
-    fetch_pending(leagues, args.season, pace=args.pace, dry=args.dry, max_games=args.max)
+    fetch_pending(leagues, args.season, pace=pace, dry=args.dry,
+                  max_games=args.max, use_tor=args.use_tor)
 
 
 if __name__ == "__main__":

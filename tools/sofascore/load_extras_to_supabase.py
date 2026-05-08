@@ -512,6 +512,151 @@ def project_avg_positions(avg_json: dict, game_id: int, team_ids: dict[bool, int
     return rows
 
 
+# ─── /managers → sofascore_match_managers ──────────────────────────
+
+def project_managers(managers_json: dict, game_id: int) -> list[dict]:
+    """Returns 0 or 2 rows: (game_id, is_home=True/False) home + away coach.
+
+    Sofa shape: {homeManager: {id, name, slug, shortName, fieldTranslations:...},
+                 awayManager: {...}}
+    Either side can be missing (e.g. interim coach not yet assigned).
+    """
+    if not managers_json:
+        return []
+    rows: list[dict] = []
+    for is_home, key in ((True, "homeManager"), (False, "awayManager")):
+        m = managers_json.get(key)
+        if not isinstance(m, dict):
+            continue
+        mid = to_int(m.get("id"))
+        if mid is None:
+            continue
+        # fieldTranslations is i18n metadata (Arabic/Hindi/Bengali/...) — store
+        # as raw_extras to keep main columns clean.
+        leftovers = {k: v for k, v in m.items()
+                     if k not in {"id", "name", "shortName", "slug"}}
+        rows.append({
+            "game_id":            game_id,
+            "is_home":            is_home,
+            "manager_id":         mid,
+            "manager_name":       m.get("name"),
+            "manager_short_name": m.get("shortName"),
+            "manager_slug":       m.get("slug"),
+            "raw_extras":         leftovers or None,
+        })
+    return rows
+
+
+# ─── /pregame-form → sofascore_pregame_form ────────────────────────
+
+def project_pregame_form(pregame_json: dict, game_id: int) -> list[dict]:
+    """Returns 0 or 2 rows.
+
+    Sofa shape: {homeTeam: {avgRating: "6.92", position: 7, value: "7",
+                            form: ["D","L","L","W","W"]},
+                 awayTeam: {...},
+                 label: "Pts"}
+
+    Notes:
+      - avgRating + value come as strings (Sofa quirk) → parse to REAL/INT.
+      - form is most-recent-first array per Sofa convention; we join to
+        a 5-char string for compact storage.
+      - label is shared across both teams (top-level field).
+    """
+    if not pregame_json:
+        return []
+    rows: list[dict] = []
+    label = pregame_json.get("label")
+    for is_home, key in ((True, "homeTeam"), (False, "awayTeam")):
+        side = pregame_json.get(key)
+        if not isinstance(side, dict):
+            continue
+        avg = side.get("avgRating")
+        try:
+            avg_rating = float(avg) if avg is not None else None
+        except (TypeError, ValueError):
+            avg_rating = None
+        val = side.get("value")
+        try:
+            league_value = int(val) if val is not None else None
+        except (TypeError, ValueError):
+            league_value = None
+        form = side.get("form")
+        form_str = ("".join(str(f) for f in form)
+                    if isinstance(form, list) else None)
+        leftovers = {k: v for k, v in side.items()
+                     if k not in {"avgRating", "position", "value", "form"}}
+        rows.append({
+            "game_id":         game_id,
+            "is_home":         is_home,
+            "avg_rating":      avg_rating,
+            "league_position": to_int(side.get("position")),
+            "league_value":    league_value,
+            "label":           label,
+            "form":            form_str,
+            "raw_extras":      leftovers or None,
+        })
+    return rows
+
+
+# ─── /team-streaks → sofascore_team_streaks ────────────────────────
+
+_STREAK_FRAC_RE = re.compile(r"^\s*(\d+)(?:\s*/\s*(\d+))?")
+
+
+def _parse_streak_value(s) -> tuple[int | None, int | None]:
+    """`"5/7"` → (5, 7); `"3"` → (3, None); 5 → (5, None); None → (None, None)."""
+    if s is None:
+        return None, None
+    if isinstance(s, (int, float)):
+        return int(s), None
+    if isinstance(s, str):
+        m = _STREAK_FRAC_RE.match(s)
+        if m:
+            num = int(m.group(1))
+            den = int(m.group(2)) if m.group(2) else None
+            return num, den
+    return None, None
+
+
+def project_team_streaks(streaks_json: dict, game_id: int) -> list[dict]:
+    """Returns 0..N rows (typically ~13: ~8 general + ~5 head2head).
+
+    Sofa shape: {general: [{name, value, team, continued}, ...],
+                 head2head: [{...}, ...]}
+
+    We preserve the raw value_text for forensics, plus parse to numerator
+    + optional denominator for engine-feature consumption.
+    """
+    if not streaks_json:
+        return []
+    rows: list[dict] = []
+    for category in ("general", "head2head"):
+        items = streaks_json.get(category) or []
+        if not isinstance(items, list):
+            continue
+        for idx, entry in enumerate(items):
+            if not isinstance(entry, dict):
+                continue
+            value_raw = entry.get("value")
+            num, den = _parse_streak_value(value_raw)
+            leftovers = {k: v for k, v in entry.items()
+                         if k not in {"name", "value", "team", "continued"}}
+            rows.append({
+                "game_id":           game_id,
+                "category":          category,
+                "streak_idx":        idx,
+                "name":              entry.get("name"),
+                "value_text":        str(value_raw) if value_raw is not None else None,
+                "value_numerator":   num,
+                "value_denominator": den,
+                "team":              entry.get("team"),
+                "continued":         bool(entry.get("continued")) if entry.get("continued") is not None else None,
+                "raw_extras":        leftovers or None,
+            })
+    return rows
+
+
 # ─── Team-id resolver from sofascore_match (for player_match_stats team_id) ─
 
 _TEAM_ID_CACHE: dict[int, dict[bool, int]] = {}
@@ -599,9 +744,14 @@ def supa_upsert(rows: list[dict], table: str, on_conflict: str, *, dry: bool = F
 def update_state(game_id: int, league: str, season: str,
                  *, has_stats: bool, has_lineups: bool,
                  has_incidents: bool, has_avg: bool,
+                 has_managers: bool = False,
+                 has_pregame_form: bool = False,
+                 has_team_streaks: bool = False,
                  dry: bool = False) -> None:
     if dry:
         return
+    any_success = (has_stats or has_lineups or has_incidents or has_avg
+                   or has_managers or has_pregame_form or has_team_streaks)
     row = {
         "game_id":            game_id,
         "league":             league,
@@ -610,8 +760,11 @@ def update_state(game_id: int, league: str, season: str,
         "has_player_stats":   has_lineups,
         "has_incidents":      has_incidents,
         "has_avg_positions":  has_avg,
+        "has_managers":       has_managers,
+        "has_pregame_form":   has_pregame_form,
+        "has_team_streaks":   has_team_streaks,
         "last_attempt_at":    "now()",
-        "last_success_at":    "now()" if (has_stats or has_lineups or has_incidents or has_avg) else None,
+        "last_success_at":    "now()" if any_success else None,
     }
     # Increment attempt_count via separate PATCH? Simpler: set to 0 on success
     row["attempt_count"] = 0
@@ -620,8 +773,8 @@ def update_state(game_id: int, league: str, season: str,
 
 # ─── Per-file driver ───────────────────────────────────────────────
 
-def load_file(path: Path, *, dry: bool, verbose: bool = False) -> tuple[int, int, int, int]:
-    """Returns (matchstat_rows, playerstat_rows, incident_rows, avgpos_rows)."""
+def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]:
+    """Returns counts dict for all 7 endpoint families."""
     payload = json.loads(path.read_text())
     game_id = int(payload["game_id"])
     league = payload.get("league") or ""
@@ -668,13 +821,51 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> tuple[int, int
         if verbose:
             print(f"  avg_positions: {avg_ins}/{len(avg_rows)} (errs {avg_err})")
 
-    # 5. State tracker
+    # 5. v2: Managers (HIGH-SIGNAL — coaching change detection)
+    mgr_rows = project_managers(payload.get("managers") or {}, game_id)
+    has_managers = len(mgr_rows) > 0
+    if mgr_rows:
+        mgr_ins, mgr_err = supa_upsert(mgr_rows, "sofascore_match_managers",
+                                       "game_id,is_home", dry=dry)
+        if verbose:
+            print(f"  managers: {mgr_ins}/{len(mgr_rows)} (errs {mgr_err})")
+
+    # 6. v2: Pregame form (HIGH-SIGNAL — Sofa's pre-match form summary)
+    pgf_rows = project_pregame_form(payload.get("pregame_form") or {}, game_id)
+    has_pregame_form = len(pgf_rows) > 0
+    if pgf_rows:
+        pgf_ins, pgf_err = supa_upsert(pgf_rows, "sofascore_pregame_form",
+                                       "game_id,is_home", dry=dry)
+        if verbose:
+            print(f"  pregame_form: {pgf_ins}/{len(pgf_rows)} (errs {pgf_err})")
+
+    # 7. v2: Team streaks (HIGH-SIGNAL — momentum / head-to-head signals)
+    streak_rows = project_team_streaks(payload.get("team_streaks") or {}, game_id)
+    has_team_streaks = len(streak_rows) > 0
+    if streak_rows:
+        s_ins, s_err = supa_upsert(streak_rows, "sofascore_team_streaks",
+                                   "game_id,category,streak_idx", dry=dry)
+        if verbose:
+            print(f"  team_streaks: {s_ins}/{len(streak_rows)} (errs {s_err})")
+
+    # 8. State tracker — all 7 flags
     update_state(game_id, league, season,
                  has_stats=has_stats, has_lineups=has_lineups,
                  has_incidents=has_incidents, has_avg=has_avg,
+                 has_managers=has_managers,
+                 has_pregame_form=has_pregame_form,
+                 has_team_streaks=has_team_streaks,
                  dry=dry)
 
-    return len(ms_rows), len(ps_rows), len(inc_rows), len(avg_rows)
+    return {
+        "match_stats":  len(ms_rows),
+        "player_stats": len(ps_rows),
+        "incidents":    len(inc_rows),
+        "avg_pos":      len(avg_rows),
+        "managers":     len(mgr_rows),
+        "pregame_form": len(pgf_rows),
+        "team_streaks": len(streak_rows),
+    }
 
 
 # ─── CLI ───────────────────────────────────────────────────────────
@@ -702,22 +893,24 @@ def main():
             print(f"No JSONs in {DATA_DIR}", file=sys.stderr)
             return
 
-    total = {"match_stats": 0, "player_stats": 0, "incidents": 0, "avg_pos": 0}
+    total = {"match_stats": 0, "player_stats": 0, "incidents": 0, "avg_pos": 0,
+             "managers": 0, "pregame_form": 0, "team_streaks": 0}
     t0 = time.time()
     for i, f in enumerate(files, 1):
-        ms, ps, inc, ap = load_file(f, dry=args.dry, verbose=args.verbose)
-        total["match_stats"]  += ms
-        total["player_stats"] += ps
-        total["incidents"]    += inc
-        total["avg_pos"]      += ap
+        counts = load_file(f, dry=args.dry, verbose=args.verbose)
+        for k, v in counts.items():
+            total[k] += v
         if i % 25 == 0 or args.verbose:
             print(f"  [{i:>4}/{len(files)}] {f.name}")
     sec = time.time() - t0
     print(f"\n✓ {len(files)} games loaded in {sec:.1f}s")
-    print(f"  match_stats:  {total['match_stats']:>6}")
-    print(f"  player_stats: {total['player_stats']:>6}")
-    print(f"  incidents:    {total['incidents']:>6}")
-    print(f"  avg_pos:      {total['avg_pos']:>6}")
+    print(f"  match_stats:   {total['match_stats']:>6}")
+    print(f"  player_stats:  {total['player_stats']:>6}")
+    print(f"  incidents:     {total['incidents']:>6}")
+    print(f"  avg_pos:       {total['avg_pos']:>6}")
+    print(f"  managers:      {total['managers']:>6}  (v2)")
+    print(f"  pregame_form:  {total['pregame_form']:>6}  (v2)")
+    print(f"  team_streaks:  {total['team_streaks']:>6}  (v2)")
 
 
 if __name__ == "__main__":
