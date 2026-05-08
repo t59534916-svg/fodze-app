@@ -5,6 +5,7 @@ import XGSparkline from "@/components/XGSparkline";
 import OddsInput from "./OddsInput";
 import BettingSummary from "./BettingSummary";
 import EngineComparison from "./EngineComparison";
+import LineMovementChart from "./LineMovementChart";
 import XGHistoryBreakdown from "@/components/shared/XGHistoryBreakdown";
 import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
@@ -510,9 +511,10 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
 }
 
 // ─── Odds Tab ────────────────────────────────────────────────────
-function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, budget }: {
+function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSaveOdds, onDelHist, budget, league }: {
   match: RawMatch; calc: any; idx: number; odds: OddsData; oddsHistory: OddsSnapshot[];
   saving: boolean; onSetOdds: (f: string, v: string) => void; onSaveOdds: () => void; onDelHist: () => void; budget: number;
+  league?: string;
 }) {
   const movement = analyzeLineMovement(oddsHistory);
   const br = budget;
@@ -520,6 +522,19 @@ function TabOdds({ match, calc, idx, odds, oddsHistory, saving, onSetOdds, onSav
   return (
     <div style={{ padding: "12px 0" }}>
       <OddsInput odds={odds} onSetOdds={onSetOdds} onSave={onSaveOdds} saving={saving} idx={idx} />
+
+      {/* Sharp line movement (vig-removed Pinnacle prob over time).
+          Renders nothing when <2 snapshots exist for this match — common
+          during the data-accumulation period after a fresh fixture is added.
+          Source: odds_snapshots, appended by fetch-odds.mjs cron (every 4h
+          Fri-Sun + Wed since commit 652f2fa, 2026-05-08). */}
+      {league && match.home?.name && match.away?.name && (
+        <LineMovementChart
+          league={league}
+          homeTeam={match.home.name}
+          awayTeam={match.away.name}
+        />
+      )}
 
       {/* All bets table */}
       {calc?.bets?.length > 0 && (
@@ -741,7 +756,7 @@ export default function MatchDetail({ match, calc, idx, odds, oddsHistory, savin
             </details>
           </>
         )}
-        {tab === "odds" && <TabOdds match={match} calc={calc} idx={idx} odds={odds} oddsHistory={oddsHistory} saving={saving} onSetOdds={onSetOdds} onSaveOdds={onSaveOdds} onDelHist={onDelHist} budget={budget} />}
+        {tab === "odds" && <TabOdds match={match} calc={calc} idx={idx} odds={odds} oddsHistory={oddsHistory} saving={saving} onSetOdds={onSetOdds} onSaveOdds={onSaveOdds} onDelHist={onDelHist} budget={budget} league={league} />}
       </div>
     </div>
   );

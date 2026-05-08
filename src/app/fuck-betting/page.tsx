@@ -1218,6 +1218,13 @@ export default function FuckBettingPage() {
             <p style={{ fontSize: 11, color: "#a89070", margin: "2px 0 0" }}>
               Vollständige Wahrscheinlichkeitsanalyse. Ohne Wettquoten. Nur Mathematik.
             </p>
+            <a href="/movements" style={{
+              display: "inline-block", marginTop: 4, fontSize: 11, color: "#d4b86a",
+              textDecoration: "none", borderBottom: "1px dotted #d4b86a60",
+              padding: "1px 0",
+            }}>
+              📈 Line Movements (sharp odds shifts) →
+            </a>
           </div>
         </div>
       </div>
