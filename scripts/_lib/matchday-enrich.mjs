@@ -318,23 +318,124 @@ export function deriveTags(match, allFixtures) {
   return tags;
 }
 
+// ─── 4b. NEUER-TRAINER tag from Sofascore manager history ───────────
+//
+// Coaching changes are one of the strongest short-horizon predictive
+// signals in football — TAG_MAP in src/lib/dixon-coles.ts already wires
+// NEUER-TRAINER to λH=1.08. Until 2026-05-08 the tag was *only* set
+// manually via /api/matchday AI-enrichment, so coverage was ~0% on the
+// daily cron path.
+//
+// Now that sofascore_match_managers is populated (per-game home/away
+// coach with stable manager_id), we can detect coaching changes
+// programmatically: if a team's MOST-recent settled match has a
+// different manager_id than the previous one, the manager has changed
+// at some point in the last ~7-14 days.
+//
+// Limitations / known gaps:
+//   - Caretakers count as a "change". A caretaker for one match then
+//     return-to-original would emit two NEUER-TRAINER tags in a row.
+//     That's mostly fine — the engine multiplier is moderate (+8%) and
+//     the tag clears once normalcy returns.
+//   - Sofa's manager_id only updates when a new coach takes a team's
+//     match-day duties. Resignations announced before kickoff but
+//     played by a caretaker are correctly captured.
+//   - Backfill cadence: manager rows arrive in the daily extras-sync.
+//     A coaching change that happened during the WEEK before kickoff
+//     will not be tagged for THIS upcoming match if no settled game
+//     between the change and the upcoming game has been bridged yet.
+//     For predictive use during the match-week, /api/matchday AI
+//     enrichment remains the manual fallback.
+
+/**
+ * Build an in-memory lookup Map<canonical-team-name, history-array>
+ * from sofascore_team_manager_history rows. Each value is sorted by
+ * start_timestamp DESC (most recent first) and capped to N entries.
+ *
+ * Usage:
+ *   const rows = await supa.from("sofascore_team_manager_history")
+ *     .select("team,team_id,manager_id,start_timestamp")
+ *     .in("league", leagues);
+ *   const byTeam = buildManagerHistoryByTeam(rows.data);
+ *   const tags = deriveCoachingChangeTag(home, away, byTeam);
+ */
+export function buildManagerHistoryByTeam(rows, n = 5) {
+  const byTeam = new Map();
+  if (!Array.isArray(rows)) return byTeam;
+  for (const r of rows) {
+    if (!r?.team || r.manager_id == null || r.start_timestamp == null) continue;
+    const key = normalizeTeamName(r.team);
+    if (!key) continue;
+    if (!byTeam.has(key)) byTeam.set(key, []);
+    byTeam.get(key).push({
+      manager_id: Number(r.manager_id),
+      start_timestamp: Number(r.start_timestamp),
+      team_id: r.team_id != null ? Number(r.team_id) : null,
+    });
+  }
+  for (const [key, arr] of byTeam) {
+    arr.sort((a, b) => b.start_timestamp - a.start_timestamp);
+    if (arr.length > n) byTeam.set(key, arr.slice(0, n));
+  }
+  return byTeam;
+}
+
+/**
+ * Detect if EITHER team had a coaching change between their two most-
+ * recent settled matches. Returns ["NEUER-TRAINER"] or [].
+ *
+ * Implementation:
+ *   - Look up team's manager history in the pre-built Map (O(1))
+ *   - Need ≥2 entries (1 = no comparison possible, no tag)
+ *   - Compare manager_id at index 0 (most recent) vs index 1 (previous)
+ *   - Differ → coaching change happened in the last gap → tag
+ *
+ * Composes with deriveTags(): caller concats results.
+ */
+export function deriveCoachingChangeTag(homeTeam, awayTeam, managerHistoryByTeam) {
+  if (!managerHistoryByTeam || managerHistoryByTeam.size === 0) return [];
+  const teamHasChange = (team) => {
+    if (!team) return false;
+    const key = normalizeTeamName(team);
+    if (!key) return false;
+    const history = managerHistoryByTeam.get(key);
+    if (!history || history.length < 2) return false;
+    return history[0].manager_id !== history[1].manager_id;
+  };
+  if (teamHasChange(homeTeam) || teamHasChange(awayTeam)) {
+    return ["NEUER-TRAINER"];
+  }
+  return [];
+}
+
 // ─── Enrichment entry-point ─────────────────────────────────────────
 
 /**
  * All-in-one enrichment helper: given a match, league xG history, and all
  * league fixtures, returns { form_home, form_away, tags } ready to paste
  * into the matchday JSON.
+ *
+ * @param opts.managerHistoryByTeam — optional Map<canonical team, history>
+ *   built via buildManagerHistoryByTeam(). When supplied, NEUER-TRAINER tag
+ *   is appended automatically if either team changed coach between their
+ *   two most-recent settled matches. Backward-compatible: omitting opts
+ *   produces the same tag set as before this argument was added.
  */
-export function enrichMatch(match, xgHistory, allFixtures) {
+export function enrichMatch(match, xgHistory, allFixtures, opts = {}) {
   const home = match.home_team || match.home?.name;
   const away = match.away_team || match.away?.name;
   const homeFodze = match.home?.name || home;
   const awayFodze = match.away?.name || away;
 
+  const baseTags = deriveTags(match, allFixtures);
+  const coachingTags = opts?.managerHistoryByTeam
+    ? deriveCoachingChangeTag(home, away, opts.managerHistoryByTeam)
+    : [];
+
   return {
     form_home: deriveForm(xgHistory, [home, homeFodze]),
     form_away: deriveForm(xgHistory, [away, awayFodze]),
-    tags: deriveTags(match, allFixtures),
+    tags: [...baseTags, ...coachingTags],
   };
 }
 
