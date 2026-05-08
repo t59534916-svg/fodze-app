@@ -234,6 +234,68 @@ async function upsertToSupabase(league, odds) {
   } else {
     console.log(`  ✅ Inserted ${rows.length} events (replaced old)`);
   }
+
+  // ── Append time-series snapshot to odds_snapshots ───────────────
+  // live_odds is replace-on-fetch (always 1 row per match). To track
+  // line MOVEMENT, we ALSO append each fetch's odds to odds_snapshots
+  // — append-only time series, snapshot_time = fetched_at. Lets us
+  // compute opening-vs-current-vs-closing later.
+  //
+  // Schema: odds_snapshots (league, match_key, home_team, away_team,
+  //   odds JSONB, snapshot_time). match_key = league:slug(home)-slug(away)
+  //   (mirrors src/lib/format.ts::matchKey logic).
+  //
+  // Idempotency: each cron tick = new snapshot row even if odds didn't
+  // change. That's the point — we want every-4h granularity to detect
+  // movement timing. Disk cost: ~250 rows × 6 ticks/day × 30 days =
+  // 45k rows/month, trivial.
+  //
+  // Failure-safe: if snapshot insert fails, we LOG but don't abort —
+  // live_odds is the primary path, snapshots are bonus.
+  try {
+    const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const snapshotRows = rows.map((o) => ({
+      league: o.league,
+      match_key: `${o.league}:${slug(o.home_team)}-${slug(o.away_team)}`,
+      home_team: o.home_team,
+      away_team: o.away_team,
+      odds: {
+        h:           o.best_h?.toString(),
+        d:           o.best_d?.toString(),
+        a:           o.best_a?.toString(),
+        o25:         o.best_over25?.toString(),
+        u25:         o.best_under25?.toString(),
+        _sharp:      { h: o.sharp_h, d: o.sharp_d, a: o.sharp_a,
+                       over25: o.sharp_over25, under25: o.sharp_under25 },
+        _source:     "live-cron",
+        _fetched:    o.fetched_at,
+        _bookmakers: o.num_bookmakers,
+        _sharp_book: o.sharp_book,
+      },
+      snapshot_time: o.fetched_at,
+    })).filter(r => r.odds.h && r.odds._sharp.h);  // skip if no sharp/best baseline
+
+    if (snapshotRows.length > 0) {
+      const snapResp = await fetch(`${SUPA_URL}/rest/v1/odds_snapshots`, {
+        method: "POST",
+        headers: {
+          apikey: SUPA_KEY,
+          Authorization: `Bearer ${SUPA_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(snapshotRows),
+      });
+      if (!snapResp.ok) {
+        const txt = await snapResp.text();
+        console.warn(`  ⚠ snapshot append failed: ${snapResp.status} ${txt.slice(0, 200)}`);
+      } else {
+        console.log(`     +${snapshotRows.length} time-series snapshots`);
+      }
+    }
+  } catch (e) {
+    console.warn(`  ⚠ snapshot append errored: ${e.message}`);
+  }
 }
 
 // ─── Fixture extraction (zero extra API calls) ──────────────────
