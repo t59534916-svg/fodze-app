@@ -201,12 +201,14 @@ export default function HealthPage() {
       // For each table we fetch (a) count via head:true count:'exact' (fast,
       // no row-data transferred), (b) latest 1 row to surface freshness.
       const TABLES = [
+        // ─── Core engine-input tables ──────────────────────────────
         { name: "team_xg_history", dateCol: "match_date", expectMin: 80_000, stubCheck: false },
         { name: "odds_closing_history", dateCol: "match_date", expectMin: 20_000, stubCheck: false },
         { name: "live_odds", dateCol: "commence_time", expectMin: 100, stubCheck: false },
         { name: "matchdays", dateCol: "date", expectMin: 100, stubCheck: false },
         { name: "bets", dateCol: "placed_at", expectMin: 1, stubCheck: false },
         { name: "pipeline_shadow_log", dateCol: "predicted_at", expectMin: 100, stubCheck: false },
+        // ─── Metadata / discipline ─────────────────────────────────
         { name: "team_metadata", dateCol: "last_updated", expectMin: 100, stubCheck: false },
         { name: "stadiums", dateCol: "last_updated", expectMin: 100, stubCheck: true,
           stubReason: "altitude_m 0% populated, capacity 30% join coverage" },
@@ -214,6 +216,29 @@ export default function HealthPage() {
           stubReason: "fouls_per_game NULL all rows, 1 distinct home_yellow_bias value" },
         { name: "player_xg_history", dateCol: "last_updated", expectMin: 100, stubCheck: false,
           note: "Top-5 leagues only" },
+        // ─── Sofascore pipeline (v1 = shotmap + extras since 2026-04-29) ──
+        { name: "sofascore_match", dateCol: undefined, expectMin: 5_000, stubCheck: false,
+          note: "per-match meta from datafc lib (curl_cffi chrome124)" },
+        { name: "sofascore_shotmap", dateCol: undefined, expectMin: 100_000, stubCheck: false,
+          note: "per-shot events with xG/xGOT/situation tags" },
+        { name: "sofascore_match_statistics", dateCol: "inserted_at", expectMin: 100, stubCheck: false,
+          note: "v1 post-match team stats (~6 rows/game × 3 periods × 2 sides)" },
+        { name: "sofascore_player_match_stats", dateCol: "inserted_at", expectMin: 1_000, stubCheck: false,
+          note: "v1 per-player stats incl. xA, key passes, touches in box" },
+        { name: "sofascore_incidents", dateCol: "inserted_at", expectMin: 1_000, stubCheck: false,
+          note: "v1 goal/card/sub timeline" },
+        { name: "sofascore_average_positions", dateCol: "inserted_at", expectMin: 1_000, stubCheck: false,
+          note: "v1 tactical avg-position per starter" },
+        { name: "sofascore_extras_state", dateCol: "last_attempt_at", expectMin: 100, stubCheck: false,
+          note: "sync state-tracker (7 has_* flags)" },
+        // ─── Sofascore v2 (HIGH-SIGNAL — added 2026-05-08, REQUIRES Tor) ──
+        { name: "sofascore_match_managers", dateCol: "inserted_at", expectMin: 1, stubCheck: false,
+          note: "v2 home + away coach per game (id stable for change-detection)" },
+        { name: "sofascore_pregame_form", dateCol: "inserted_at", expectMin: 1, stubCheck: false,
+          note: "v2 Sofa pre-match form (avgRating, position, last-5)" },
+        { name: "sofascore_team_streaks", dateCol: "inserted_at", expectMin: 1, stubCheck: false,
+          note: "v2 streaks (~13/game across general + head2head categories)" },
+        // ─── Tracker tables (mostly empty, dormant) ────────────────
         { name: "player_injuries", dateCol: undefined, expectMin: 0, stubCheck: false,
           note: "TM injuries embedded in matchday JSON instead" },
         { name: "live_wp_snapshots", dateCol: undefined, expectMin: 0, stubCheck: false,

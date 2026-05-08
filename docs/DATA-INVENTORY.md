@@ -6,6 +6,10 @@ Vollständiges Inventar aller Datenquellen, deren Coverage pro Liga × Saison, u
 
 > **Update 2026-05-05:** Cloudflare hat die 5 vorher geblockten Tier-B-Ligen freigegeben — austria_bl, swiss_sl, scottish_prem, jupiler_pro, super_lig wurden mit `--pace 4.0` sequenziell nachgezogen (181/218/222/315/240 matches respectively, alle 99%+ xG-fill, alle premium-tier). Damit haben jetzt **alle 22 FODZE-Ligen** eine Sofascore-Tier-Klassifikation (16 premium, 1 partial, 5 volume). Plus: neues Skript `scripts/bridge-sofascore-to-team-xg.mjs` propagiert sofascore_team_chance_quality → team_xg_history mit `source='sofascore'` (~10k rows × 17 ligen). Konkrete Auswirkung: per-Liga-Zahlen in Sektion 4 sind nicht mehr aktuell (austria_bl/swiss_sl/scottish_prem/jupiler_pro/super_lig hatten "0 matches" Sofa, jetzt 4-7k shots each); die 5.2 "Bekannte Gaps" Tabelle weiter unten reflektiert den neuen State.
 
+> **Update 2026-05-07 (Sofascore extras v1):** 4 neue post-match endpoints + 4 Tabellen geshipped: `sofascore_match_statistics` (4.256 rows, ~40 stats × period × side), `sofascore_player_match_stats` (29.549 rows, per-player rating/xA/key_passes/touches_in_box), `sofascore_incidents` (14.952 goal/card/sub timeline rows), `sofascore_average_positions` (22.699 tactical pitch coords). Plus 18 neue Feature-Columns auf `team_xg_history` (big_chances/possession/tackles/cards/goals_prevented). Pipeline `tools/sofascore/{fetch_match_extras,load_extras_to_supabase}.py` + opt-in via `--extras` flag in `refresh-all.mjs`. Coverage 736/6810 ended games (~11%) — Backfill stockt seit ~2026-05-08 wegen Cloudflare.
+
+> **Update 2026-05-08 (Sofascore extras v2 — HIGH-SIGNAL):** 3 weitere Tabellen + view: `sofascore_match_managers` (manager_id stable für coaching-change-detection), `sofascore_pregame_form` (Sofa pre-match form summary), `sofascore_team_streaks` (~13 streaks pro Spiel). Migration `scripts/migration-sofascore-event-extras-v2.sql` + view `sofascore_team_manager_history` für Coaching-Change-Queries. NEUER-TRAINER tag wird jetzt automatisch via `scripts/_lib/matchday-enrich.mjs::deriveCoachingChangeTag` erkannt (16 vitest cases). End-to-end empirisch verifiziert (Spiel 14035865 → 7/7 endpoints → 17 rows). **Cloudflare-Reality:** Direct API access wurde am 2026-05-07 geblockt — alle v2-fetches brauchen Tor SOCKS5 (`brew install tor && --use-tor` flag). Smoke-test mittag 2026-05-08 zeigt aggressive Tor-exit blocks; Bulk-backfill via Tor unzuverlässig. Realistische Pfade vorwärts: incrementeller cron mit `FODZE_EXTRAS_USE_TOR=1` (langsam) oder paid residential proxy.
+
 ---
 
 ## 1. Tabellen-Übersicht
@@ -22,7 +26,15 @@ Vollständiges Inventar aller Datenquellen, deren Coverage pro Liga × Saison, u
 | `match_outcomes` | 2.618 | Predictions×reality bridge (settled matches) |
 | `match_predictions` | 1.062 | Pre-match snapshot per engine (mit lambda + sharp odds) |
 | `player_xg_history` | 2.500 | Per-player xG/xa/npxg/key_passes — Top-5 Ligen only |
-| `sofascore_match` | 5.720 | Match metadata (game_id, teams, scores, kickoff) |
+| `sofascore_match` | 7.013 | Match metadata (game_id, teams, scores, kickoff) |
+| `sofascore_player_match_stats` | 29.549 | v1 per-player stats (rating, xA, key_passes, touches_in_box, goals_prevented) |
+| `sofascore_average_positions` | 22.699 | v1 tactical avg-pitch position per starter |
+| `sofascore_incidents` | 14.952 | v1 goal/card/sub timeline (with minute + score progression) |
+| `sofascore_match_statistics` | 4.256 | v1 ~40 team-level stats × period (ALL/1ST/2ND) |
+| `sofascore_extras_state` | 736 | Sync-state-tracker (7 has_* flags per game) |
+| `sofascore_match_managers` | 2 | **v2** per-game home + away coach (id-stable for change-detection) |
+| `sofascore_pregame_form` | 2 | **v2** Sofa pre-match form (avgRating, position, last-5) |
+| `sofascore_team_streaks` | 13 | **v2** per-game streaks (general + head2head categories) |
 | `team_metadata` | 430 | Team-Logos + thesportsdb_id + api_sports_id |
 | `referees` | 354 | ⚠ STUB DATA — fouls_per_game alle NULL |
 | `sofascore_team_rolling_8` (view) | 336 | Last-8-games per team — engine-input shape |

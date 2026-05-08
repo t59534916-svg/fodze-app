@@ -40,7 +40,7 @@ Die zentrale Analyse-Seite. Pro Spiel siehst du:
 |---|---|
 | **Kit-Icons** | Trikot-Farben der Teams (intuitive Zuordnung) |
 | **xG-Bar** | Modellierte Heim/Remis/Gast-Wahrscheinlichkeit |
-| **Tags** | Derby, CL-Sandwich, Abstiegskampf etc. |
+| **Tags** | Derby, CL-Sandwich, Abstiegskampf, Neuer-Trainer (auto seit 2026-05-08), Rotation etc. |
 | **Anstoßzeit** | Kickoff in deiner Zeitzone |
 | **Grade-Badge** | A/B/C/D/F je nach Edge |
 

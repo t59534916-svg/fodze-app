@@ -367,6 +367,44 @@ const phases = [
   },
 ];
 
+// ─── DNS warm-up (defense against macOS sleep/wake cron failures) ──
+//
+// launchd fires us at 07:30 daily — but on a Mac that just woke up, DNS
+// can take 5-30s to be ready while the network stack reconnects. Symptom:
+// `Fatal: fetch failed / getaddrinfo ENOTFOUND` on the first phase
+// (typically fetch-odds), which then cascades because odds_snapshots
+// stays stale and the audit complains. Observed 2026-05-08 morning run.
+//
+// Fix: probe Supabase host's DNS before any phase runs. If it fails,
+// sleep + retry up to 6×10s. Total wait worst-case 60s; cheap insurance.
+//
+// We deliberately use `dns.promises.lookup` (not a fetch) so we test the
+// resolver layer in isolation — fetch-failures could be CORS, SSL,
+// upstream-down, etc., but DNS-readiness is the actual cron-trigger
+// failure mode and the only one we can trivially recover from.
+async function waitForDNS(maxRetries = 6, intervalMs = 10_000) {
+  const dns = await import("dns/promises");
+  const supaUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  if (!supaUrl) return;  // env not loaded yet, fetch-odds will fail loudly
+  let host;
+  try { host = new URL(supaUrl).hostname; } catch { return; }
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await dns.lookup(host);
+      if (i > 0) console.log(`  ✓ DNS ready for ${host} (after ${i + 1} attempts)`);
+      return;
+    } catch (e) {
+      if (i === maxRetries - 1) {
+        console.warn(`  ⚠ DNS still failing after ${maxRetries} attempts (${e.code}). ` +
+                     `Continuing — phases will fail loudly if network is genuinely down.`);
+        return;
+      }
+      console.log(`  … DNS not ready (${e.code}), retry ${i + 1}/${maxRetries} in ${intervalMs / 1000}s`);
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 
 async function main() {
@@ -376,6 +414,10 @@ async function main() {
   console.log("  FODZE Full Refresh Pipeline");
   console.log(`  ${new Date().toLocaleString("de-DE")}`);
   console.log("═══════════════════════════════════════════════════════════════════");
+
+  // Wait for DNS resolver to be ready — defends against post-wake cron
+  // running before the network stack is fully online.
+  await waitForDNS();
 
   const results = [];
   for (let i = 0; i < phases.length; i++) {
