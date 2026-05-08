@@ -261,9 +261,15 @@ async function auditSofascoreExtras() {
     incidentRows,
     avgPosRows,
     stateRows,
-    stateFullDone,
+    stateV1Done,
     bridgeRowsTotal,
     bridgeRowsRecent,
+    // v2 tables (added 2026-05-08)
+    managerRows,
+    pregameFormRows,
+    streakRows,
+    stateV2Done,    // managers AND pregame_form AND team_streaks
+    stateAllDone,   // v1 AND v2
   ] = await Promise.all([
     safeCount("sofascore_match"),
     safeCount("sofascore_match", "&status=eq.Ended"),
@@ -278,6 +284,15 @@ async function auditSofascoreExtras() {
     safeCount("team_xg_history", "&big_chances=not.is.null"),
     safeCount("team_xg_history",
       `&big_chances=not.is.null&match_date=gte.${new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)}`),
+    // v2: HIGH-SIGNAL endpoints
+    safeCount("sofascore_match_managers"),
+    safeCount("sofascore_pregame_form"),
+    safeCount("sofascore_team_streaks"),
+    safeCount("sofascore_extras_state",
+      "&has_managers=eq.true&has_pregame_form=eq.true&has_team_streaks=eq.true"),
+    safeCount("sofascore_extras_state",
+      "&has_statistics=eq.true&has_player_stats=eq.true&has_incidents=eq.true&has_avg_positions=eq.true" +
+      "&has_managers=eq.true&has_pregame_form=eq.true&has_team_streaks=eq.true"),
   ]);
 
   // Per-league extras-state coverage (only if base table exists)
@@ -307,11 +322,19 @@ async function auditSofascoreExtras() {
     incidentRows,
     avgPosRows,
     stateRows,
-    stateFullDone,
+    stateV1Done,
+    stateFullDone: stateV1Done,  // backward-compat alias
     bridgeRowsTotal,
     bridgeRowsRecent,
     perLeague,
-    pctDone: matchEnded > 0 ? (stateFullDone ?? 0) / matchEnded : 0,
+    pctDone: matchEnded > 0 ? (stateV1Done ?? 0) / matchEnded : 0,
+    // v2 (HIGH-SIGNAL endpoints, added 2026-05-08)
+    managerRows,
+    pregameFormRows,
+    streakRows,
+    stateV2Done,
+    stateAllDone,
+    pctV2Done: matchEnded > 0 ? (stateV2Done ?? 0) / matchEnded : 0,
   };
 }
 
@@ -346,6 +369,20 @@ function renderSofascoreExtras(extras) {
   console.log(`  ${bMark} bridge → team_xg_history.big_chances populated:`);
   console.log(`     all-time: ${extras.bridgeRowsTotal} rows  (~${bridgePct}% of ended games × 2 sides)`);
   console.log(`     last 30d: ${extras.bridgeRowsRecent} rows  (cron health indicator)`);
+
+  // v2: HIGH-SIGNAL endpoints (managers, pregame_form, team_streaks)
+  if (extras.managerRows !== null && extras.managerRows !== undefined) {
+    const v2pct = (extras.pctV2Done * 100).toFixed(0);
+    const v2mark = extras.pctV2Done > 0.95 ? "✓" : extras.pctV2Done > 0.5 ? "⚠" : "✗";
+    console.log("");
+    console.log(`  ${v2mark} v2 (HIGH-SIGNAL) extras-state: ${extras.stateV2Done}/${extras.matchEnded} ended games (${v2pct}%)`);
+    console.log(`     managers rows:        ${extras.managerRows}     (expect 2 per ended game = ${extras.matchEnded * 2})`);
+    console.log(`     pregame_form rows:    ${extras.pregameFormRows} (expect 2 per ended game)`);
+    console.log(`     team_streaks rows:    ${extras.streakRows}      (expect ~13 per ended game)`);
+    if ((extras.stateV2Done ?? 0) === 0) {
+      console.log(`     ⚠ v2 endpoints require Tor — set FODZE_EXTRAS_USE_TOR=1 to enable in cron`);
+    }
+  }
 
   if (extras.perLeague?.length) {
     console.log("\n  per-league extras-state coverage:");

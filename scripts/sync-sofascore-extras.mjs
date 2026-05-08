@@ -26,6 +26,10 @@
  *   node scripts/sync-sofascore-extras.mjs --league bundesliga
  *   node scripts/sync-sofascore-extras.mjs --dry              # plan only
  *   node scripts/sync-sofascore-extras.mjs --skip-fetch       # only re-load cached JSONs
+ *   node scripts/sync-sofascore-extras.mjs --use-tor          # route via Tor SOCKS5
+ *                                                             # (REQUIRED for v2 endpoints
+ *                                                             # since 2026-05-08 — Cloudflare
+ *                                                             # blocks direct API access)
  */
 
 import { spawnSync } from "child_process";
@@ -59,6 +63,12 @@ const max = val("max");
 const dry = flag("dry");
 const skipFetch = flag("skip-fetch");
 const SEASON = val("season") ?? "25/26";
+// --use-tor passes through to fetch_match_extras.py. Required since 2026-05-08
+// for the v2 endpoints (managers / pregame-form / team-streaks) — Cloudflare
+// blocks direct API access on those, but chrome124-fingerprinted requests
+// via Tor SOCKS5 (127.0.0.1:9050) pass. Setup: `brew install tor && brew
+// services start tor`.
+const useTor = flag("use-tor");
 
 function run(name, py, extraArgs) {
   console.log(`\n━━━ ${name} ━━━`);
@@ -90,6 +100,7 @@ if (!skipFetch) {
   else               fetchArgs.push("--tier", tier);
   if (max)           fetchArgs.push("--max", max);
   if (dry)           fetchArgs.push("--dry");
+  if (useTor)        fetchArgs.push("--use-tor");
   run("fetch_match_extras", FETCH_PY, fetchArgs);
 }
 

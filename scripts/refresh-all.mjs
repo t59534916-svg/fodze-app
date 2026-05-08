@@ -231,18 +231,27 @@ const phases = [
   {
     name: "sync-sofascore-extras",
     emoji: "📝",
-    description: "Sofascore post-match extras (stats + lineups + incidents + avg-positions)",
+    description: "Sofascore extras (stats + lineups + incidents + avg-pos + managers + pregame-form + team-streaks)",
     // Opt-in: --extras flag. Default off because first-run is heavy
-    // (~5000 games × 4 calls). Use --extras --max-extras 200 the first
-    // few runs to amortize, then enable unconditionally for incremental.
+    // (~5000 games × 7 endpoints). Use --extras with FODZE_EXTRAS_MAX=N
+    // (default 50) the first few runs to amortize, then enable
+    // unconditionally for incremental cron.
     skip: () => !WITH_EXTRAS || !existsSync(resolve(REPO_ROOT, "tools/venv/bin/python3")),
     run: () => {
       // Cap per run so a stalled fetch doesn't blow the refresh budget.
-      // 50 pending games × 4 endpoints × 1.5s pace = ~5min. Default-friendly.
-      // For initial backfill, override via env: FODZE_EXTRAS_MAX=200 npm run refresh:full --extras
+      // Direct: 50 games × 4 endpoints × 1.5s pace ≈ 5min.
+      // Tor (7 endpoints × 5s pace): ~30min for 50 games — drop max
+      // to ~25 in cron when FODZE_EXTRAS_USE_TOR=1.
       const maxN = process.env.FODZE_EXTRAS_MAX ?? "50";
+      // Optional: route via Tor SOCKS5 (127.0.0.1:9050). REQUIRED for v2
+      // endpoints (managers/pregame-form/team-streaks) since Cloudflare
+      // started blocking direct API access on 2026-05-07. Setup once:
+      // `brew install tor && brew services start tor`. Activate via env
+      // FODZE_EXTRAS_USE_TOR=1 in launchd plist or shell.
+      const cliArgs = ["--all-tiers", "--max", maxN];
+      if (process.env.FODZE_EXTRAS_USE_TOR === "1") cliArgs.push("--use-tor");
       return runScript("scripts/sync-sofascore-extras.mjs",
-        ["--all-tiers", "--max", maxN], "sync-sofascore-extras");
+        cliArgs, "sync-sofascore-extras");
     },
     // Forever-cache + idempotent — safe to fail and retry next run.
     abortOnFail: false,
