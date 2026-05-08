@@ -41,6 +41,9 @@
  *                                                # (progress file < 6h old)
  *   node scripts/refresh-all.mjs --injuries      # include Transfermarkt injury scrape
  *   node scripts/refresh-all.mjs --referees      # include FBref referee-stats scrape
+ *   node scripts/refresh-all.mjs --extras        # include Sofascore post-match extras
+ *                                                # (stats + lineups + incidents + avg-positions)
+ *                                                # — capped via FODZE_EXTRAS_MAX=N (default 50)
  */
 
 import { spawn } from "child_process";
@@ -93,6 +96,12 @@ const WITH_INJURIES = args.includes("--injuries");
 // Matchdays will hydrate match.referee from this table when a pre-match
 // source supplies referee_name.
 const WITH_REFEREES = args.includes("--referees");
+// Opt-in: pull Sofascore post-match extras (statistics + lineups +
+// incidents + avg-positions) into 4 forever-cached tables. First run is
+// heavy (~5000 games × 4 calls) so it's capped via FODZE_EXTRAS_MAX=N
+// (default 50). Once the backfill is amortized, leave the flag on so
+// every refresh keeps the new matches synced (~80 games/week incremental).
+const WITH_EXTRAS = args.includes("--extras");
 
 // ─── Progress File (resumability) ───────────────────────────────────
 //
@@ -217,6 +226,47 @@ const phases = [
     // Idempotent upsert. Failure here just means engine reads run on
     // pre-bridge xG (still functional, just slightly more stale for
     // non-DE leagues between FootyStats CSV imports).
+    abortOnFail: false,
+  },
+  {
+    name: "sync-sofascore-extras",
+    emoji: "📝",
+    description: "Sofascore post-match extras (stats + lineups + incidents + avg-positions)",
+    // Opt-in: --extras flag. Default off because first-run is heavy
+    // (~5000 games × 4 calls). Use --extras --max-extras 200 the first
+    // few runs to amortize, then enable unconditionally for incremental.
+    skip: () => !WITH_EXTRAS || !existsSync(resolve(REPO_ROOT, "tools/venv/bin/python3")),
+    run: () => {
+      // Cap per run so a stalled fetch doesn't blow the refresh budget.
+      // 50 pending games × 4 endpoints × 1.5s pace = ~5min. Default-friendly.
+      // For initial backfill, override via env: FODZE_EXTRAS_MAX=200 npm run refresh:full --extras
+      const maxN = process.env.FODZE_EXTRAS_MAX ?? "50";
+      return runScript("scripts/sync-sofascore-extras.mjs",
+        ["--all-tiers", "--max", maxN], "sync-sofascore-extras");
+    },
+    // Forever-cache + idempotent — safe to fail and retry next run.
+    abortOnFail: false,
+  },
+  {
+    name: "bridge-sofascore-extras",
+    emoji: "🔗",
+    description: "Sofascore-extras → team_xg_history (possession, big_chances, tackles, cards, ...)",
+    // Same gate as the extras fetch: skip if --extras flag absent OR
+    // bridge has been globally suppressed (--skip-bridge). The bridge
+    // itself reads sofascore_team_match_stats VIEW which is built from
+    // sofascore_match_statistics, so without the upstream sync there's
+    // nothing to propagate.
+    skip: () => !WITH_EXTRAS || SKIP_BRIDGE,
+    run: () => {
+      // 30-day window matches the primary sofascore bridge — cron-safe.
+      // For backfill of older matches, run the script directly without --since.
+      const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+      return runScript("scripts/bridge-sofascore-extras-to-team-xg.mjs",
+        ["--since", since], "bridge-sofascore-extras");
+    },
+    // Idempotent merge-duplicates upsert. Failure here just means the
+    // engine reads on yesterday's extras (still functional — primary xG
+    // bridge already wrote the critical features).
     abortOnFail: false,
   },
   {

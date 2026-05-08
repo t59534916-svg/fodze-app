@@ -214,6 +214,107 @@ async function auditOddsSnapshots() {
   return { total, latestSnapshot: recent[0]?.snapshot_time || null };
 }
 
+// ─── Sofascore extras audit ───────────────────────────────────────
+//
+// Tracks coverage of the 4 post-match extras tables (Phase 1) plus
+// the team_xg_history extras-bridge propagation (Phase 1.5).
+// Returns {skipped:...} gracefully when migrations haven't been applied
+// yet — the audit script then skips the section instead of producing
+// misleading "0/N" counters.
+async function auditSofascoreExtras() {
+  // Probe: detect 404 explicitly. The `count()` helper above silently
+  // returns 0 when PostgREST 404s (it parses the content-range header
+  // which is absent on errors), so distinguish missing-table from
+  // empty-table by raw status check.
+  const probeUrl = `${SUPA_URL}/rest/v1/sofascore_extras_state?select=*&limit=1`;
+  let probeResp;
+  try {
+    probeResp = await fetch(probeUrl, { headers: SUPA_HEADERS });
+  } catch {
+    return { skipped: "supabase unreachable" };
+  }
+  if (probeResp.status === 404) {
+    return { skipped: "migration-sofascore-extras.sql not applied yet" };
+  }
+  if (!probeResp.ok) {
+    return { skipped: `probe HTTP ${probeResp.status}` };
+  }
+
+  const matchCount = await count("sofascore_match");
+  if (matchCount === 0) {
+    return { skipped: "no sofascore_match rows yet (run sync-sofascore first)" };
+  }
+
+  const safeCount = async (table, filter = "") => {
+    try {
+      return await count(table, filter);
+    } catch {
+      return null;  // table missing → null instead of crash
+    }
+  };
+
+  const [
+    matchTotal,
+    matchEnded,
+    statsRows,
+    playerRows,
+    incidentRows,
+    avgPosRows,
+    stateRows,
+    stateFullDone,
+    bridgeRowsTotal,
+    bridgeRowsRecent,
+  ] = await Promise.all([
+    safeCount("sofascore_match"),
+    safeCount("sofascore_match", "&status=eq.Ended"),
+    safeCount("sofascore_match_statistics"),
+    safeCount("sofascore_player_match_stats"),
+    safeCount("sofascore_incidents"),
+    safeCount("sofascore_average_positions"),
+    safeCount("sofascore_extras_state"),
+    safeCount("sofascore_extras_state",
+      "&has_statistics=eq.true&has_player_stats=eq.true&has_incidents=eq.true&has_avg_positions=eq.true"),
+    // Bridge propagation: rows in team_xg_history with extras populated
+    safeCount("team_xg_history", "&big_chances=not.is.null"),
+    safeCount("team_xg_history",
+      `&big_chances=not.is.null&match_date=gte.${new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)}`),
+  ]);
+
+  // Per-league extras-state coverage (only if base table exists)
+  let perLeague = [];
+  if (stateRows !== null) {
+    for (const lg of leagueKeys) {
+      const [endedInLg, doneInLg] = await Promise.all([
+        safeCount("sofascore_match", `&league=eq.${lg}&status=eq.Ended`),
+        safeCount("sofascore_extras_state",
+          `&league=eq.${lg}&has_statistics=eq.true&has_player_stats=eq.true` +
+          `&has_incidents=eq.true&has_avg_positions=eq.true`),
+      ]);
+      perLeague.push({
+        league: lg,
+        ended: endedInLg ?? 0,
+        done: doneInLg ?? 0,
+        pending: Math.max(0, (endedInLg ?? 0) - (doneInLg ?? 0)),
+      });
+    }
+  }
+
+  return {
+    matchTotal,
+    matchEnded,
+    statsRows,
+    playerRows,
+    incidentRows,
+    avgPosRows,
+    stateRows,
+    stateFullDone,
+    bridgeRowsTotal,
+    bridgeRowsRecent,
+    perLeague,
+    pctDone: matchEnded > 0 ? (stateFullDone ?? 0) / matchEnded : 0,
+  };
+}
+
 // ─── Rendering ────────────────────────────────────────────────────
 
 function badge(ok, warn = false) {
@@ -222,8 +323,47 @@ function badge(ok, warn = false) {
   return "✗";
 }
 
+function renderSofascoreExtras(extras) {
+  if (!extras) return;
+  console.log("\n🎯 Sofascore extras coverage (post-match stats / lineups / incidents / avg-positions)\n");
+  if (extras.skipped) {
+    console.log(`  ⏭ skipped — ${extras.skipped}`);
+    return;
+  }
+
+  const pct = (extras.pctDone * 100).toFixed(0);
+  const mark = extras.pctDone > 0.95 ? "✓" : extras.pctDone > 0.5 ? "⚠" : "✗";
+  console.log(`  ${mark} extras-state: ${extras.stateFullDone}/${extras.matchEnded} ended games fully pulled (${pct}%)`);
+  console.log(`     match_statistics rows:    ${extras.statsRows}  (expect ~6 per ended game = ${extras.matchEnded * 6})`);
+  console.log(`     player_match_stats rows:  ${extras.playerRows}  (expect ~36-44 per ended game)`);
+  console.log(`     incidents rows:           ${extras.incidentRows}  (expect ~20-30 per ended game)`);
+  console.log(`     average_positions rows:   ${extras.avgPosRows}   (expect ~32 per ended game)`);
+
+  const bridgePct = extras.matchEnded > 0
+    ? ((extras.bridgeRowsTotal ?? 0) / (extras.matchEnded * 2) * 100).toFixed(0)
+    : 0;
+  const bMark = bridgePct > 95 ? "✓" : bridgePct > 50 ? "⚠" : "✗";
+  console.log(`  ${bMark} bridge → team_xg_history.big_chances populated:`);
+  console.log(`     all-time: ${extras.bridgeRowsTotal} rows  (~${bridgePct}% of ended games × 2 sides)`);
+  console.log(`     last 30d: ${extras.bridgeRowsRecent} rows  (cron health indicator)`);
+
+  if (extras.perLeague?.length) {
+    console.log("\n  per-league extras-state coverage:");
+    const sorted = [...extras.perLeague].sort((a, b) => b.pending - a.pending);
+    for (const l of sorted.slice(0, 12)) {
+      if (l.ended === 0) continue;
+      const lpct = (l.done / l.ended * 100).toFixed(0);
+      const lmark = l.pending === 0 ? "✓" : l.pending < l.ended * 0.1 ? "⚠" : "✗";
+      console.log(`    ${lmark} ${l.league.padEnd(18)} ${l.done}/${l.ended} (${lpct}%) · ${l.pending} pending`);
+    }
+    if (sorted.length > 12) {
+      console.log(`    … (${sorted.length - 12} more leagues, see --json for full list)`);
+    }
+  }
+}
+
 function renderReport(data) {
-  const { xg, matchdays, liveOdds, bets, snapshots } = data;
+  const { xg, matchdays, liveOdds, bets, snapshots, sofaExtras } = data;
 
   console.log("\n═══════════════════════════════════════════════════════════════════");
   console.log("  FODZE DATA-QUALITY AUDIT");
@@ -312,6 +452,9 @@ function renderReport(data) {
     console.log(`  ⚠ Consider cleanup: >50k rows (> 1y history not actionable)`);
   }
 
+  // ─── sofascore extras (Phase 1 + 1.5) ────────────────────────────
+  renderSofascoreExtras(sofaExtras);
+
   // ─── Critical summary ────────────────────────────────────────────
   console.log("\n═══════════════════════════════════════════════════════════════════");
   console.log("  CRITICAL ISSUES");
@@ -362,15 +505,16 @@ function renderReport(data) {
 async function main() {
   console.error(`[audit] Scanning ${leagueKeys.length} leagues...`);
 
-  const [xg, matchdays, liveOdds, bets, snapshots] = await Promise.all([
+  const [xg, matchdays, liveOdds, bets, snapshots, sofaExtras] = await Promise.all([
     Promise.all(leagueKeys.map(auditLeagueXG)),
     Promise.all(leagueKeys.map(auditMatchdays)),
     Promise.all(leagueKeys.map(auditLiveOdds)),
     auditBets(),
     auditOddsSnapshots(),
+    auditSofascoreExtras(),
   ]);
 
-  const data = { xg, matchdays, liveOdds, bets, snapshots };
+  const data = { xg, matchdays, liveOdds, bets, snapshots, sofaExtras };
 
   if (asJson) {
     console.log(JSON.stringify(data, null, 2));
