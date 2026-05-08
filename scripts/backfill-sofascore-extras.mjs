@@ -36,6 +36,14 @@
  *   node scripts/backfill-sofascore-extras.mjs --league epl       # single league
  *   node scripts/backfill-sofascore-extras.mjs --dry              # plan only
  *   node scripts/backfill-sofascore-extras.mjs --cooldown 60      # pause between chunks (default 30s)
+ *   node scripts/backfill-sofascore-extras.mjs --use-tor          # route via Tor SOCKS5 (REQUIRED
+ *                                                                 # for v2 endpoints since 2026-05-08).
+ *                                                                 # When --use-tor: lower --chunk to ~25
+ *                                                                 # so each Tor circuit handles
+ *                                                                 # 25*7=175 reqs (under CF cap).
+ *
+ * Recommended Tor command (initial backfill):
+ *   node scripts/backfill-sofascore-extras.mjs --use-tor --tier A --chunk 25 --cooldown 90 --max-chunks 5
  */
 
 import { spawnSync } from "child_process";
@@ -61,6 +69,14 @@ const TIER        = val("tier");
 const LEAGUE      = val("league");
 const SEASON      = val("season") ?? "25/26";
 const DRY         = flag("dry");
+// Forward --use-tor to sync-sofascore-extras.mjs → fetch_match_extras.py.
+// REQUIRED for the v2 endpoints (managers/pregame-form/team-streaks) since
+// Cloudflare started blocking direct API access on api.sofascore.com on
+// 2026-05-07. Without --use-tor, the v2 portion of every chunk will fail
+// with 403, leaving the v2-state-flags FALSE and forcing infinite retries.
+// When using Tor, drop --chunk to ~25 (default 200) — Cloudflare's
+// per-Tor-exit rate counter caps at ~15-25 successive requests.
+const USE_TOR     = flag("use-tor");
 
 const FAIL_BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000];  // 5m, 15m, 1h
 
@@ -102,7 +118,8 @@ function runChunk() {
     "--season", SEASON,
     "--max", String(CHUNK),
   ];
-  if (DRY) cliArgs.push("--dry");
+  if (DRY)     cliArgs.push("--dry");
+  if (USE_TOR) cliArgs.push("--use-tor");
 
   const r = spawnSync("node", cliArgs, {
     stdio: "inherit",
