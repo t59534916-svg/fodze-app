@@ -66,6 +66,22 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/value-alerts.mjs --threshold 5
 
+      - name: Send Line-Movement Alerts to Telegram
+        if: env.HAS_TELEGRAM == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        # Reads odds_snapshots time-series (appended by fetch-odds step
+        # above), surfaces matches where sharp prob shifted ≥5pp in the
+        # last 24h. Sends a Markdown digest of top 10 movers. Each cron
+        # tick re-evaluates → repeated movement keeps alerting (desired).
+        # Failure non-fatal — value-alerts already ran above.
+        run: node scripts/movement-alerts.mjs --threshold 5 --window 24h
+        continue-on-error: true
+
       - name: Notify Telegram on workflow failure
         if: failure() && env.HAS_TELEGRAM == 'true'
         env:
