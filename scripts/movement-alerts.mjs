@@ -98,6 +98,34 @@ async function fetchSnapshots() {
   return r.json();
 }
 
+// Fetch the set of match_keys for matches that are STILL upcoming
+// (commence_time > NOW). Once a match goes live, fetch-odds.mjs deletes
+// it from live_odds — so a missing entry = match has already kicked off.
+//
+// This filter exists because in-play odds movement is structurally
+// different from pre-match (in-play models, score-state effects); we
+// don't want movement-alerts pinging users about matches they can no
+// longer bet on with the same edge.
+//
+// match_key construction mirrors src/lib/format.ts and fetch-odds.mjs
+// snapshot logic: lowercase + alphanumeric-only slug, joined.
+async function fetchUpcomingMatchKeys() {
+  const nowIso = new Date().toISOString();
+  const qs = `select=league,home_team,away_team,commence_time` +
+             `&commence_time=gt.${nowIso}` +
+             `&limit=2000`;
+  const r = await fetch(`${SUPA_URL}/rest/v1/live_odds?${qs}`, { headers });
+  if (!r.ok) {
+    // Non-fatal — if live_odds fetch fails, conservatively allow all
+    // matches (better to over-alert than silently swallow movements).
+    console.warn(`  ⚠ live_odds fetch ${r.status} — alert filter disabled, will include all`);
+    return null;
+  }
+  const rows = await r.json();
+  const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return new Set(rows.map(r => `${r.league}:${slug(r.home_team)}-${slug(r.away_team)}`));
+}
+
 // Vig-removed prob from sharp odds. Returns {h, d, a} in [0,1].
 function vigRemoveSharp(odds) {
   const sharp = odds?._sharp;
@@ -225,11 +253,23 @@ async function main() {
   }
 
   console.log(`📈 Movement alerts · window=${WINDOW_HOURS}h threshold=${THRESHOLD_PP}pp${DRY ? " (DRY)" : ""}`);
-  const snaps = await fetchSnapshots();
-  console.log(`   ${snaps.length} snapshots fetched`);
+  const [snaps, upcomingKeys] = await Promise.all([
+    fetchSnapshots(),
+    fetchUpcomingMatchKeys(),
+  ]);
+  console.log(`   ${snaps.length} snapshots fetched, ${upcomingKeys?.size ?? "?"} upcoming matches`);
 
-  const alerts = buildAlerts(snaps, THRESHOLD_PP);
-  console.log(`   ${alerts.length} matches with movement ≥${THRESHOLD_PP}pp`);
+  const allAlerts = buildAlerts(snaps, THRESHOLD_PP);
+  // Filter out alerts for matches that already kicked off — once a match
+  // goes live, fetch-odds.mjs deletes its row from live_odds, so missing
+  // from upcomingKeys = match already started. Don't ping users about
+  // odds movement they can't act on with the same edge anymore.
+  const alerts = upcomingKeys
+    ? allAlerts.filter(a => upcomingKeys.has(a.match_key))
+    : allAlerts;
+  const skipped = allAlerts.length - alerts.length;
+  console.log(`   ${alerts.length} matches with movement ≥${THRESHOLD_PP}pp` +
+              (skipped > 0 ? ` (${skipped} skipped — already kicked off)` : ""));
 
   if (!alerts.length) {
     console.log("   no alerts to send.");

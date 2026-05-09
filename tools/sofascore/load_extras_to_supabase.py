@@ -822,8 +822,15 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
             print(f"  avg_positions: {avg_ins}/{len(avg_rows)} (errs {avg_err})")
 
     # 5. v2: Managers (HIGH-SIGNAL — coaching change detection)
+    # has_X semantics for v2: "we attempted this endpoint and got a definitive
+    # answer from Sofa" — TRUE when key present in payload, regardless of
+    # whether Sofa returned data. Sofa returns 404/empty for many endpoints
+    # on older "ended" games (especially pregame_form which Sofa only generates
+    # for recent matches). Without this distinction, the fetcher refetches
+    # the same already-attempted games forever — observed 2026-05-08 evening
+    # backfill running 55 min for 0 new data.
     mgr_rows = project_managers(payload.get("managers") or {}, game_id)
-    has_managers = len(mgr_rows) > 0
+    has_managers = "managers" in payload  # attempted, regardless of data
     if mgr_rows:
         mgr_ins, mgr_err = supa_upsert(mgr_rows, "sofascore_match_managers",
                                        "game_id,is_home", dry=dry)
@@ -832,7 +839,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
 
     # 6. v2: Pregame form (HIGH-SIGNAL — Sofa's pre-match form summary)
     pgf_rows = project_pregame_form(payload.get("pregame_form") or {}, game_id)
-    has_pregame_form = len(pgf_rows) > 0
+    has_pregame_form = "pregame_form" in payload  # attempted (often 404 for older games)
     if pgf_rows:
         pgf_ins, pgf_err = supa_upsert(pgf_rows, "sofascore_pregame_form",
                                        "game_id,is_home", dry=dry)
@@ -841,7 +848,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
 
     # 7. v2: Team streaks (HIGH-SIGNAL — momentum / head-to-head signals)
     streak_rows = project_team_streaks(payload.get("team_streaks") or {}, game_id)
-    has_team_streaks = len(streak_rows) > 0
+    has_team_streaks = "team_streaks" in payload  # attempted, regardless of data
     if streak_rows:
         s_ins, s_err = supa_upsert(streak_rows, "sofascore_team_streaks",
                                    "game_id,category,streak_idx", dry=dry)
