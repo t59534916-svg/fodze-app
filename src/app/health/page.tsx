@@ -134,12 +134,24 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
 
 // ─── Main page ──────────────────────────────────────────────────────
 
+interface DailyPullRow {
+  day: string;
+  pulled: number;
+}
+
 export default function HealthPage() {
   const { supabase, modelErrors, calLoaded, hasApi } = useApp();
   const [tables, setTables] = useState<TableRow[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [bets, setBets] = useState<{ total: number; settled: number; withClv: number; pending: number; lastSettled?: string } | null>(null);
   const [brier, setBrier] = useState<BrierSnapshot[] | null>(null);
+  const [v2Coverage, setV2Coverage] = useState<{
+    total_ended: number;
+    fully_done: number;
+    pct: number;
+    pending: number;
+    daily_pulls: DailyPullRow[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -362,6 +374,51 @@ export default function HealthPage() {
         setBrier(latest as BrierSnapshot[]);
       }
 
+      // ── Sofa v2-extras coverage (Webshare-backed pipeline) ──────
+      // Surfaces "are we keeping up?" — daily pulls last 7 days, plus
+      // total fully-done vs ended-games. If daily-cron is failing
+      // (Cloudflare blocked the proxy pool), the daily-pulls trail
+      // toward zero, visible at a glance.
+      try {
+        const [v2DoneCount, endedCount, dailyRows] = await Promise.all([
+          supabase.from("sofascore_extras_state").select("*", { head: true, count: "exact" })
+            .eq("has_managers", true).eq("has_pregame_form", true).eq("has_team_streaks", true),
+          supabase.from("sofascore_match").select("*", { head: true, count: "exact" })
+            .eq("status", "Ended").eq("season", "25/26"),
+          // Last 8 days of newly-pulled state rows (daily counts)
+          supabase.from("sofascore_extras_state").select("last_success_at")
+            .eq("has_managers", true).eq("has_pregame_form", true).eq("has_team_streaks", true)
+            .gte("last_success_at", new Date(Date.now() - 8 * 86400_000).toISOString())
+            .order("last_success_at", { ascending: false })
+            .limit(2000),
+        ]);
+        const totalEnded = endedCount.count ?? 0;
+        const fullyDone = v2DoneCount.count ?? 0;
+        // Bucket dailyRows by ISO date (YYYY-MM-DD)
+        const buckets = new Map<string, number>();
+        for (const r of (dailyRows.data || [])) {
+          const d = (r.last_success_at as string)?.slice(0, 10);
+          if (d) buckets.set(d, (buckets.get(d) || 0) + 1);
+        }
+        // Build last-7-days array (most recent first), filling gaps with 0
+        const days: DailyPullRow[] = [];
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(Date.now() - i * 86400_000).toISOString().slice(0, 10);
+          days.push({ day: d, pulled: buckets.get(d) || 0 });
+        }
+        if (!cancelled) {
+          setV2Coverage({
+            total_ended: totalEnded,
+            fully_done: fullyDone,
+            pct: totalEnded > 0 ? (fullyDone / totalEnded) * 100 : 0,
+            pending: Math.max(0, totalEnded - fullyDone),
+            daily_pulls: days,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("v2 coverage fetch failed:", e);
+      }
+
       if (!cancelled) setLoading(false);
     })();
 
@@ -551,6 +608,61 @@ export default function HealthPage() {
               warten bis n ≥ 100 pro Engine für aussagekräftigen Vote.
             </div>
           </>
+        )}
+      </Section>
+
+      {/* Section 6: Sofa v2-extras pipeline coverage. Tracks the
+          managers/pregame/streaks endpoints that need Cloudflare-bypass
+          (Webshare residential proxies). Surfaces "are we keeping up?"
+          via daily-pull bars — if proxies get blocked, today's bar drops
+          to 0 visibly, no need to log-dive. */}
+      <Section title="SOFA V2-EXTRAS COVERAGE"
+        subtitle={v2Coverage ? `${v2Coverage.fully_done}/${v2Coverage.total_ended} games (${v2Coverage.pct.toFixed(1)}%)` : "loading…"}>
+        {v2Coverage && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+              <Stat label="Fully Done" value={v2Coverage.fully_done.toLocaleString()} />
+              <Stat label="Pending" value={v2Coverage.pending.toLocaleString()}
+                warn={v2Coverage.pending > 1000} />
+              <Stat label="% Complete" value={`${v2Coverage.pct.toFixed(1)}%`}
+                warn={v2Coverage.pct < 25} />
+            </div>
+            <div style={labelStyle}>last 7 days · pulled per day · expected ~50/day during season</div>
+            <div style={{ display: "flex", gap: 4, alignItems: "flex-end", height: 60, padding: "8px 0" }}>
+              {v2Coverage.daily_pulls.slice().reverse().map((d) => {
+                // Bar height proportional to pulled count, capped at 100
+                const pct = Math.min(100, (d.pulled / 100) * 100);
+                const isToday = d.day === new Date().toISOString().slice(0, 10);
+                const lowAlert = d.pulled < 10 && !isToday;
+                return (
+                  <div key={d.day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <div style={{
+                      width: "100%",
+                      height: `${Math.max(2, pct)}%`,
+                      background: lowAlert ? "#d4b86a30" : isToday ? "#6aad5560" : "#6aad5530",
+                      border: `1px solid ${lowAlert ? "#d4b86a60" : isToday ? "#6aad5580" : "#6aad5550"}`,
+                      borderRadius: "2px 2px 0 0",
+                      minHeight: 2,
+                    }} />
+                    <div style={{
+                      fontSize: 9, color: lowAlert ? "#d4b86a" : "#c4a26580",
+                      fontFamily: "monospace", fontVariantNumeric: "tabular-nums",
+                    }}>
+                      {d.pulled}
+                    </div>
+                    <div style={{ fontSize: 8, color: "#c4a26550" }}>
+                      {d.day.slice(5)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 9, color: "#c4a26560", lineHeight: 1.5 }}>
+              Quelle: <code>sofascore_extras_state.last_success_at</code> wo alle 3 v2-flags TRUE.
+              Daily-cron pulls ~50 ended games/Tag während Saison. Wenn ein Tag &lt;10 zeigt: Cloudflare hat
+              Proxy-Pool blocked → Webshare-Plan re-aktivieren oder Residential-IPs replacen. Heute = grün.
+            </div>
+          </div>
         )}
       </Section>
 

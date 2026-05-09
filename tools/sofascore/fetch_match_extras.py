@@ -580,16 +580,48 @@ def fetch_pending(
             backoff.success()
         except BlockedError as e:
             print(f"  [{idx}/{len(pending)}] {gid}: blocked ({e})", flush=True)
-            if not backoff.hit():
-                print(f"  ✗ aborted after 3 consecutive blocks — re-run later", flush=True)
-                break
-            # retry this game once after backoff
-            try:
-                payload = fetch_game_extras(http, gid)
-                backoff.success()
-            except BlockedError:
-                error_count += 1
-                continue
+            payload = None
+
+            # Webshare auto-fallback: when proxy gets 403, IMMEDIATELY rotate
+            # to next proxy in pool instead of triggering BackoffState's
+            # 60s/5min/30min cascade. We have N proxies available; if proxy
+            # X is Cloudflare-flagged, proxy Y might still work. Try every
+            # remaining proxy in pool before falling back to backoff.
+            #
+            # Empirically observed 2026-05-09: a single Webshare proxy gets
+            # blocked partway through a chunk, and the BackoffState cascade
+            # wastes ~30min before aborting — even though the OTHER 2-3 proxies
+            # in the pool would still work. This loop spends ~5s per proxy
+            # rotation (1 retry attempt each) instead of 30min waiting.
+            if use_webshare and len(_webshare_pool) > 1:
+                tried_count = 0
+                while tried_count < len(_webshare_pool) - 1:
+                    tried_count += 1
+                    try:
+                        http.close()
+                    except Exception:
+                        pass
+                    http = make_session(use_tor=False, use_webshare=True)
+                    games_on_session = 0  # reset since session changed
+                    try:
+                        payload = fetch_game_extras(http, gid)
+                        backoff.success()
+                        print(f"     ↳ recovered via proxy rotation (tried {tried_count})", flush=True)
+                        break
+                    except BlockedError:
+                        continue  # next proxy
+
+            # If still no payload, fall back to BackoffState cascade (last resort)
+            if payload is None:
+                if not backoff.hit():
+                    print(f"  ✗ aborted after 3 consecutive blocks — re-run later", flush=True)
+                    break
+                try:
+                    payload = fetch_game_extras(http, gid)
+                    backoff.success()
+                except BlockedError:
+                    error_count += 1
+                    continue
 
         elapsed = time.time() - t0
         if elapsed > PER_GAME_BUDGET:
