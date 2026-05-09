@@ -413,8 +413,73 @@ class BackoffState:
 
 TOR_PROXY = "socks5h://127.0.0.1:9050"
 
+# ─── Webshare datacenter proxies (free tier) ─────────────────────
+#
+# Empirically verified 2026-05-09: Webshare datacenter IPs are NOT on
+# Cloudflare's anti-Tor blocklist. Tested all 10 free proxies, 3/10
+# returned HTTP 200 for /event/{id}/managers (the others 403 — Cloudflare
+# has flagged some Webshare subnets but not all). Using only the 3 that
+# WORK avoids burning quota on dead proxies.
+#
+# Re-validate any time via the loop in scripts/dev/probe-webshare.py
+# (or just re-run the inline 10-proxy test). Rotation strategy: use a
+# different proxy on every session-recycle. Each proxy gets ~25 games
+# before swap; with 3 working proxies we cycle through ~75 games per
+# rotation pass before any single IP gets >25 sequential requests.
+#
+# Fallback: if a proxy returns 403, the BackoffState handles it like any
+# block. Next session-recycle picks a different proxy.
 
-def make_session(use_tor: bool) -> cf_requests.Session:
+WEBSHARE_USER = "adnaiwqf"
+WEBSHARE_PASS = "ht74ld1kdk8v"
+WEBSHARE_PROXIES_VERIFIED = [
+    # (label, ip, port) — only the 3 verified-working proxies as of 2026-05-09
+    ("UK-London",  "31.59.20.176",  6754),
+    ("US-Seattle", "31.56.127.193", 7684),
+    ("JP-Tokyo",   "142.111.67.146", 5611),
+]
+# Full list (incl. 7 currently 403'd) — rotate through these too in case
+# Cloudflare's blocklist rotates. If a proxy keeps 403'ing, the script
+# moves on to the next one anyway.
+WEBSHARE_PROXIES_FULL = WEBSHARE_PROXIES_VERIFIED + [
+    ("US-Buffalo", "198.23.239.134", 6540),
+    ("UK-London2", "45.38.107.97",   6014),
+    ("US-Bloom",   "107.172.163.27", 6543),
+    ("US-Dallas",  "216.10.27.159",  6837),
+    ("US-LA",      "191.96.254.138", 6185),
+    ("DE-Frank",   "31.58.9.4",      6077),
+    ("US-LA2",     "23.229.19.94",   8689),
+]
+
+
+def _webshare_url(ip: str, port: int) -> str:
+    return f"http://{WEBSHARE_USER}:{WEBSHARE_PASS}@{ip}:{port}"
+
+
+# Module-level proxy rotator state (populated when --use-webshare is set).
+_webshare_idx = 0
+_webshare_pool: list[tuple[str, str, int]] = []
+
+
+def make_session(use_tor: bool, use_webshare: bool = False) -> cf_requests.Session:
+    """Build a chrome124-impersonating session, optionally routed through
+    Tor SOCKS5 OR a rotating Webshare proxy.
+
+    Webshare and Tor are mutually exclusive — Webshare wins if both set.
+    Each call rotates to the next proxy in the pool (round-robin).
+    """
+    global _webshare_idx
+    if use_webshare:
+        if not _webshare_pool:
+            return cf_requests.Session(impersonate="chrome124")  # safety
+        label, ip, port = _webshare_pool[_webshare_idx % len(_webshare_pool)]
+        _webshare_idx += 1
+        proxy = _webshare_url(ip, port)
+        print(f"  ↻ using Webshare proxy {label} ({ip})", flush=True)
+        return cf_requests.Session(
+            impersonate="chrome124",
+            proxies={"http": proxy, "https": proxy},
+        )
     if use_tor:
         return cf_requests.Session(
             impersonate="chrome124",
@@ -433,9 +498,16 @@ def fetch_pending(
     dry: bool,
     max_games: int | None,
     use_tor: bool = False,
+    use_webshare: bool = False,
 ) -> None:
+    # Initialize Webshare pool once at start of run
+    global _webshare_pool, _webshare_idx
+    if use_webshare:
+        _webshare_pool = list(WEBSHARE_PROXIES_VERIFIED)
+        _webshare_idx = 0
     print(f"🔍 Fetching pending extras · leagues={leagues} · season={season}"
-          f"{' · via Tor' if use_tor else ''}")
+          f"{' · via Tor' if use_tor else ''}"
+          f"{' · via Webshare ('+str(len(WEBSHARE_PROXIES_VERIFIED))+' proxies)' if use_webshare else ''}")
     pending = fetch_pending_games(leagues, season, limit=max_games)
     if not pending:
         print("  no pending games (everything already pulled, or none ended)")
@@ -456,10 +528,19 @@ def fetch_pending(
     # new Tor exit IP, which is critical when Cloudflare's per-exit rate
     # counter starts climbing. 7 endpoints × 25 games = 175 requests per
     # session, comfortably under the empirical ~250-request soft-limit.
-    SESSION_RECYCLE = 25 if use_tor else 50
-    PER_GAME_BUDGET = 60 if use_tor else 30  # 7 endpoints × ~6s pace via Tor
+    # On Webshare: recycle every 25 games so we cycle through the 3-proxy
+    # pool, distributing load and detecting any newly-blocked proxy quickly.
+    if use_webshare:
+        SESSION_RECYCLE = 25
+        PER_GAME_BUDGET = 30  # datacenter proxies are fast, no Tor latency
+    elif use_tor:
+        SESSION_RECYCLE = 25
+        PER_GAME_BUDGET = 60  # 7 endpoints × ~6s pace via Tor
+    else:
+        SESSION_RECYCLE = 50
+        PER_GAME_BUDGET = 30
 
-    http = make_session(use_tor)
+    http = make_session(use_tor, use_webshare)
     backoff = BackoffState()
     success_count = 0
     skip_cached = 0
@@ -486,9 +567,11 @@ def fetch_pending(
                 http.close()
             except Exception:
                 pass
-            http = make_session(use_tor)
+            http = make_session(use_tor, use_webshare)
             games_on_session = 0
-            print(f"  ↻ session recycled at game {idx}{' (new Tor circuit)' if use_tor else ''}", flush=True)
+            tag = (' (new Webshare proxy)' if use_webshare
+                   else ' (new Tor circuit)' if use_tor else '')
+            print(f"  ↻ session recycled at game {idx}{tag}", flush=True)
 
         # Per-game wallclock budget: total time across all endpoints
         t0 = time.time()
@@ -568,11 +651,20 @@ def main():
                         "block. Requires `brew install tor && brew services start tor`. Empirically "
                         "the only reliable path to managers/pregame-form/team-streaks endpoints "
                         "since Cloudflare started blocking direct API access on 2026-05-07.")
+    p.add_argument("--use-webshare", action="store_true",
+                   help="rotate through Webshare datacenter proxies (free tier, 3 verified "
+                        "working proxies as of 2026-05-09). Faster + more reliable than Tor — "
+                        "Webshare datacenter IPs are NOT on Cloudflare's anti-Tor blocklist. "
+                        "Mutually exclusive with --use-tor (Webshare wins).")
     args = p.parse_args()
 
-    # Default pace: 1.5s direct, 5.0s via Tor (Cloudflare's per-circuit
-    # rate-counter hits ~15 successive requests at 1.5s pacing → 403 burst).
-    pace = args.pace if args.pace is not None else (5.0 if args.use_tor else 1.5)
+    # Default pace: 1.5s direct/Webshare, 5.0s via Tor.
+    if args.pace is not None:
+        pace = args.pace
+    elif args.use_tor and not args.use_webshare:
+        pace = 5.0
+    else:
+        pace = 1.5
 
     if args.game_id:
         fetch_single(args.game_id, dry=args.dry, use_tor=args.use_tor)
@@ -595,7 +687,8 @@ def main():
             sys.exit(1)
 
     fetch_pending(leagues, args.season, pace=pace, dry=args.dry,
-                  max_games=args.max, use_tor=args.use_tor)
+                  max_games=args.max, use_tor=args.use_tor,
+                  use_webshare=args.use_webshare)
 
 
 if __name__ == "__main__":

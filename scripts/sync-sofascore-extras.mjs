@@ -69,6 +69,11 @@ const SEASON = val("season") ?? "25/26";
 // via Tor SOCKS5 (127.0.0.1:9050) pass. Setup: `brew install tor && brew
 // services start tor`.
 const useTor = flag("use-tor");
+// --use-webshare rotates through Webshare datacenter proxies (free tier).
+// Faster + more reliable than Tor since 2026-05-09 — Webshare datacenter
+// IPs are NOT on Cloudflare's anti-Tor blocklist. Mutually exclusive with
+// --use-tor (Webshare wins). Hardcoded proxy creds in fetch_match_extras.py.
+const useWebshare = flag("use-webshare");
 
 function run(name, py, extraArgs) {
   console.log(`\n━━━ ${name} ━━━`);
@@ -101,6 +106,7 @@ if (!skipFetch) {
   if (max)           fetchArgs.push("--max", max);
   if (dry)           fetchArgs.push("--dry");
   if (useTor)        fetchArgs.push("--use-tor");
+  if (useWebshare)   fetchArgs.push("--use-webshare");
   run("fetch_match_extras", FETCH_PY, fetchArgs);
 }
 

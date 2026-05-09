@@ -77,6 +77,11 @@ const DRY         = flag("dry");
 // When using Tor, drop --chunk to ~25 (default 200) — Cloudflare's
 // per-Tor-exit rate counter caps at ~15-25 successive requests.
 const USE_TOR     = flag("use-tor");
+// --use-webshare rotates through Webshare datacenter proxies (free tier).
+// Empirically faster + more reliable than Tor since 2026-05-09 — Webshare
+// IPs aren't on Cloudflare's blocklist. Recommended for active backfill;
+// chunk-size can stay higher (~50) than Tor (~25).
+const USE_WEBSHARE = flag("use-webshare");
 
 const FAIL_BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000];  // 5m, 15m, 1h
 
@@ -118,8 +123,9 @@ function runChunk() {
     "--season", SEASON,
     "--max", String(CHUNK),
   ];
-  if (DRY)     cliArgs.push("--dry");
-  if (USE_TOR) cliArgs.push("--use-tor");
+  if (DRY)          cliArgs.push("--dry");
+  if (USE_TOR)      cliArgs.push("--use-tor");
+  if (USE_WEBSHARE) cliArgs.push("--use-webshare");
 
   const r = spawnSync("node", cliArgs, {
     stdio: "inherit",
