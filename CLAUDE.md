@@ -71,7 +71,7 @@ Zero errors in `src/` expected. Two pre-existing errors in `tests/dixon-coles.te
 | Script | Zweck | Wann |
 |---|---|---|
 | `scripts/refresh-all.mjs` | Full-Pipeline Orchestrator (6 Phasen) | `npm run refresh[:full]` |
-| `scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API (alle 19 Ligen) | Cron alle 4h (Fr-So + Mi) |
+| `scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API (alle 19 Ligen) | GitHub Actions Cron 2× täglich (06:17 + 18:17 UTC) Sun/Wed/Fri/Sat — reduziert 2026-05-21 von 4h auf 12h wegen Budget |
 | `scripts/snapshot-closing-odds.mjs` | Closing-odds für pending bets innerhalb 2h vor Kickoff — füllt `bets.closing_odds` + `bets.clv`. Last-write-wins. | Im fetch-odds-Cron |
 | `scripts/fetch-results.mjs` | Auto-Settlement + CLV-Recompute beim Settlement | Täglich 02:17 + 08:17 UTC |
 | `scripts/backfill-liga3-openligadb.mjs` | Liga 3 xG via OpenLigaDB (ersetzt alten goals-proxy) | Täglich in settle-bets cron |
@@ -94,6 +94,13 @@ Zero errors in `src/` expected. Two pre-existing errors in `tests/dixon-coles.te
 | `scripts/spieltag.mjs` | Interaktiver 6-Schritt Spieltag-Wizard | Manueller Enrichment-Flow |
 | `scripts/value-alerts.mjs --threshold 5` | Telegram-Alerts bei Edge ≥ 5% | Optional, im fetch-odds-Cron |
 | `scripts/export-xg.mjs` | Supabase → lokale JSON-Backups | Vor Migrationen |
+| `scripts/burn-in-shadow-signals.mjs [--json] [--min-n 200]` | v1.1 M2 burn-in: aggregiert SHADOW_LOG_ONLY trails × match_outcomes → graduation-recommendations (GRADUATE / KEEP_SHADOW / INVERT_SIGNAL / INSUFFICIENT_N). Deduped by (trap_kind, match_key) gegen Re-emissions. | Wöchentlich, nach match_outcomes-populate |
+| `scripts/clv-trap-decay.mjs [--dry] [--json]` | v1.1 M8 CLV-decay-watcher: joined unresolved trails (`clv_resolved_at IS NULL` + `match_kickoff` in Vergangenheit) mit `odds_closing_history`, patched closing_odds + moved_against_us + clv_resolved_at, aggregiert per-trap convergence-rate (MARKET_CONVERGED → DEPRECATE / TRAP_ALIVE / CONVERGING / BURN_IN). | Täglich, nach snapshot-closing-odds |
+| `scripts/backfill-football-data-co-uk.mjs --all --season YYYY` (out of `_archive/` 2026-05-21) | Lädt football-data.co.uk CSVs (16 Ligen × Saison) und upserted closing odds (PSCH/D/A) plus PRE-MATCH opening odds (PSH/D/A — 2026-05-21 extension für drift-features) in `odds_closing_history`. Idempotent via `?on_conflict=match_key` + `Prefer: resolution=merge-duplicates`. | Saison-Backfill; rerun nach Update der CSV-Quelle (fd.co.uk publiziert wöchentlich) |
+| `scripts/dump-canonical-team-map.mjs` | Dumps (league, raw_name) → canonical Map aller Teams aus `odds_closing_history` + `team_xg_history` nach `tools/v4/diagnostics/canonical-team-map.json`. Nutzt `_lib/canonical-team.mjs::canonicalize` als source-of-truth. Python-side via `tools/v4/modules/m3_xg/canonical_team_map.py::canonical_team`. | Bei TEAM_REGISTRY / EXTRA_ALIASES Änderung |
+| `tools/v4/export_dev03_to_json.py` | Dumps `m3_xg-{home,away}-dev-03.pkl` (5 bagged LightGBM Tweedie boosters) + `m6_benter-dev-03.pkl` (per-league β-weights) + golden-test fixtures → `public/dev03-model.json` (7.5 MB). Browser-runnable artifact für `dev03-runtime.ts`. | Nach jedem dev-03 retrain (zusammen mit `export_feature_cache.py`) |
+| `tools/v4/export_feature_cache.py` | Snapshot of `EloCalculator` (post-fit `_history[-1]` per team-league) + `TeamMomentumCalculator` (rolling-5 lineup_quality + weighted-3 form_streak) + per-league `compute_league_constants` über volle 87k team_xg_history → `public/dev03-feature-cache.json` (~105 KB). Cache-Snapshot ist `history_through + 30 days` für Alignment mit Python's `get_rating(before_date=future)` Semantik. | Wöchentlich via `refresh:full` (Phase `dev03-cache`) + nach jedem dev-03 retrain |
+| `tools/v4/refit-dev03-artifacts.sh` | Post-retrain Orchestrator: rerun `export_dev03_to_json.py` + `export_feature_cache.py` + `generate_dev03_features_golden.py` + vitest dev03 parity-suite, in der reihenfolge-kritischen Reihenfolge. Exit 3 bei Parity-Fail (artifacts geschrieben, Review nötig). `--skip-golden` Flag verfügbar. | Nach dev-03 retrain (analog `refit-all.sh` für v2) |
 
 Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo applicable). `.env.local` wird auto-geladen.
 
@@ -109,6 +116,8 @@ Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo app
 | `thesportsdb.mjs` | TheSportsDB v1 Client + Liga-ID/Name-Map (19 Ligen) + parseTeamRecord Helper (liefert `api_sports_id` als Cross-Source-Bridge) |
 | `odds-api.mjs` | The-Odds-API client mit Multi-Key Rotation. Liest `ODDS_API_KEY` + optional `ODDS_API_KEY_2..._10`; rotiert bei 401/429 oder remaining < minRemaining. Effektives Monatsbudget = N Keys × 500. Genutzt von fetch-odds, fetch-results, backfill-liga3-goals, health-check (seit 2026-04-29) |
 | `canonical-team.mjs` | `canonicalize(team, league)` — single source of truth für ingest-side. TEAM_REGISTRY (354 entries from team-resolver.ts) + EXTRA_ALIASES (24 lower-tier overrides). Mirror in `src/lib/team-resolver.ts::canonicalizeTeamName` für read-side |
+| `trail-aggregations.mjs` | v1.1 Asymmetric Negation pure-functions: `dedupeTrails(raw)` (by trap_kind+match_key), `aggregateBurnIn(trails, outcomeMap, opts)` (graduation recommendations), `aggregateClvDecay(trails, closingByKey, opts)` (CLV convergence stats), `computeClosingHwRate(closing)` (vig-removed implied prob), `clvDecayStatus(rate, n)` (status pill). 26 vitest cases in `tests/trail-aggregations.test.ts`. Konsumiert von `burn-in-shadow-signals.mjs` + `clv-trap-decay.mjs`. |
+| `postgrest.mjs` | `inEscape(value)` + `buildInFilter(column, values)` — PostgREST-quote-escape THEN URL-encode in correct order. Naked `encodeURIComponent` lässt `"` und `\` durchrutschen → silent in-list-Truncation. Genutzt von burn-in + clv-decay crons (Quote-Escape-Fix 2026-05-20). |
 
 ### Python Tools (nur für Model-Retraining)
 ```bash
@@ -165,12 +174,14 @@ Next.js 14 App Router (alle pages "use client")
   │
   ├── Cron (auto-refresh)
   │      GitHub Actions (wenn aktiviert):
-  │        fetch-odds.yml (alle 4h): odds + closing-snapshot + value-alerts
+  │        fetch-odds.yml (12h on matchdays): odds + closing-snapshot + value-alerts
   │        settle-bets.yml (täglich): fetch-results + liga3-openligadb + footystats
   │        ci.yml (push/PR): lint → typecheck → test → build
-  │      Alternative: scripts/launchd/ (macOS LaunchAgents)
-  │        com.fodze.refresh        — täglich 07:30, npm run refresh
-  │        com.fodze.refresh.full   — Di + Fr 19:00, npm run refresh:full
+  │      Local supplement: scripts/launchd/ (macOS LaunchAgents)
+  │        com.fodze.refresh        — täglich 07:30, refresh-all.mjs --skip-odds
+  │                                   (matchday-regen ohne odds-burn; odds-refresh
+  │                                    owned exclusively by GitHub Actions seit 2026-05-21)
+  │        com.fodze.refresh.full   — Di + Fr 19:00, refresh-all.mjs --injuries --skip-odds
   │
   └── Data Sources (alle via scripts/)
          Supabase            ← primary DB, Quoten, Bets, xG-Historie
@@ -423,12 +434,18 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ---
 
-## Tests (565 total, 37 files)
+## Tests
+
+- **vitest (TS):** 1864 tests / 120 files
+- **v4 pytest (Python):** 206 tests in `tools/v4/tests/` (m3_xg + m4-7 modules)
 
 ```bash
-npm run test              # alle Tests
+npm run test              # alle TS-Tests
 npm run test:watch        # Watch-Mode
 npx vitest run tests/bet-metrics.test.ts  # einzelne Datei
+
+# Python (v4) tests
+cd tools/v4 && ../venv/bin/python3 -m pytest tests/ -v
 ```
 
 Coverage-Hotspots:
@@ -458,47 +475,78 @@ Coverage-Hotspots:
 - `pipeline-integration.test.ts` — End-to-End Smoke
 - `schemas.test.ts` — Zod Matchday-JSON Validation
 - `anna-request-validation.test.ts` — Streaming SSE Input Guards
+- `asymmetric-negation.test.ts` — v1.1 `evaluateLatentTopology` (M2/M4/M5/M7), 25 cases incl. persistence-contract (canonical matchKey + seconds-kickoff + ms-detectedAt)
+- `trail-aggregations.test.ts` — v1.1 Cron-Analytics (dedupeTrails, aggregateBurnIn 4-recommendations, computeClosingHwRate vig-removal, clvDecayStatus pill, aggregateClvDecay updates-vs-aggregation-dedupe), 26 cases
+
+**v4 pytest suite** (206 tests, `tools/v4/tests/`):
+- `test_m1_score.py` — DC math identities + ρ-MLE + coarse-graining
+- `test_m2_lambda.py` — EWMA estimator
+- `test_m3_xg.py` — dev-03 lean feature_builder + ensemble + DC integration
+- `test_m4_setpiece.py` — set-piece adjustment
+- `test_m5_stubs.py` — regime + intensity filter contracts
+- `test_m6_market.py` — Benter blend + Shin vig-removal
+- `test_m7_kelly.py` — Robust Bayesian Kelly + Goldilocks + CLV dampening
+- `test_eval_metrics.py` — Brier/LogLoss/ECE + bootstrap CI
+- `test_coverage_router.py` — dev-06 Option C router decisions (19 cases)
+- `test_feature_builder_premium.py` — Sofa-extras orchestrator (10 cases incl. real-data smoke)
+- `test_blended_predictor.py` — m3_lean + m3_premium blend math (8 cases)
 
 **NICHT getestet**: React-Contexts (MatchdayContext, AppContext), Components (MatchDetail, BetHistoryShare, etc.), API-Routes, Hooks, Pages, Scripts.
 
 ---
 
-## Areas to Watch (Stand 2026-05-14)
+## Areas to Watch (Stand 2026-05-21)
+
+Historical entries (dev-04/05/06/07/08 archives, one-time backfill events, Sofa-bypass discoveries, dev-03 sprint-by-sprint deltas) sind in [`docs/archive/areas-to-watch-2026-05.md`](docs/archive/areas-to-watch-2026-05.md). Hier nur was OPS-RELEVANT für laufenden Betrieb ist.
+
+### Production state
 
 | Area | Status | Notes |
 |---|---|---|
-| Engine math | ✅ clean | isotonic + Benter empirisch best (current-season Brier 0.6120 vs 0.6146 raw vs 0.6158 dirichlet) |
-| `team_xg_history` canonicalization | ✅ clean | All 22 leagues drift=0; ingest-layer canonicalize-on-write across 14 active scripts |
-| TS↔JS canonicalize alignment | ✅ clean | Regression tests in `tests/canonicalize-team-name.test.ts` (15 cases lock down EXTRA_LEAGUE_ALIASES sync) |
-| Read-side canonicalize gap | ✅ closed (2026-05-01) | `generate-matchday.mjs` + `goldilocks/page.tsx` riefen team_xg_history-lookups mit Odds-API-spelling auf — verlor Top-5 engine-coverage auf 20-50%. Beide jetzt mit `sharedCanonicalize`/`canonicalizeTeamName`. |
-| `match_outcomes` schema | ✅ clean | UNIQUE (match_key, match_date) — supports double-round-robin (austria_bl etc.) |
-| **Sofascore standings (NEU)** | ✅ live (2026-05-01) | `sofascore_standings` View ersetzt `computeStandingsFromXG` für 10 covered leagues — bypass des PostgREST 1000-row default page-limits, der vorher 1-3 Teams aus EPL/BL/Ligue 1 verlor (Brighton missing-Bug). |
-| **TM injuries für 22 Ligen** | ✅ extended (2026-05-01) | `build-tm-team-ids.mjs` LEAGUES-config jetzt 22 statt 19 Ligen (austria_bl/swiss_sl/eerste_divisie ergänzt). Plus `TRANSFERMARKT_ALIASES`-bridge in resolver wired (war silent dead-code) → 5 alte aliases live + html_decode in scraper verhindert `&amp;`-key-bugs. |
-| Conformal Gate drift | 🟡 audited (2026-04-29) | **Validated empirisch:** 13/18 ok, 2 drift, **3 catastrophic (epl/la_liga2/primeira_liga)**. EPL α=0.10 under-covers by 8.5pp. **Flip zu enforce-mode BLOCKED** bis Re-fit. Artifact: `tools/backtest/conformal-drift-report.json`. Tool: `tools/backtest/validate_conformal_drift.py`. Mode bleibt `warn` (zero production-risk). |
-| GitHub Actions cron | ✅ repaired (2026-05-02) | `fetch-odds.yml` failte 41 Tage am Stück (alle runs 0s) wegen YAML-validation: `secrets.X` ist nicht in step-level `if:` erlaubt. Fix: hoist zu job-level env. Plus `ODDS_API_KEY_2` aufgenommen für Multi-Key. settle-bets.yml lief immer durch. |
-| **Engine consumes Sofascore features** | 🟡 evaluated 2026-05-03, no auto-enable | Drei Integration-Strategien getestet via `--use-sofascore-tactics` (Setpiece-Replace) und `--use-sofascore-chance-quality` (Feature-19-Replace) flags in `tools/retrain_v2.py`. Loaders in [`tools/sofascore/engine_features.py`](tools/sofascore/engine_features.py) (`load_sofascore_tactics_features`, `load_sofascore_chance_quality_features`) — beide opt-in, default off. **Empirische Findings (--no-optuna A/B, n≈2660, cutoff 2026-01-01):** (1) Setpiece-Replace allein: +0.0016 Brier (schlechter — feature 14 hat zu wenig Importance um den Distribution-Shift zu kompensieren). (2) 4 neue Sofa-Features (big_chance, fastbreak, header, mean_shot_xg) als Features 21-24: +0.0025 Brier (Multikollinearität + Overfitting). (3) Replace nur feature 19 (shot_quality_diff) durch mean_shot_xg: -0.0031 Brier (best, aber EPL-spezifisch +0.0235 schlechter — Brentford-Effekt: shot-quality-Teams im EPL converten weniger als ihr xG suggeriert; corr(mean_shot_xg, goals/game) = 0.375 EPL vs 0.5-0.8 in den anderen 10 premium leagues). EPL-Blacklist via `SOFA_F19_BLACKLIST = {"epl"}` in feature 19 computation. **Keiner der Modi netto-positiv genug für auto-enable** (Run-Variance ±0.005 frisst das ~-0.003 Sofa-Signal). Code bleibt für späteres re-eval (mehr 25/26 data, Optuna-tuning, oder per-match temporal rolling-8 statt season-mean). Plus `--oot-cutoff YYYY-MM-DD` arg um cutoff für A/B-tests zu überschreiben. |
-| **Tier-B Sofascore backfill** | ✅ complete (2026-05-05) | Alle 11 Tier-B-Ligen jetzt in `sofascore_match`. Cloudflare-unblock nach 24h-cooldown — am 2026-05-05 sequenziell mit `--pace 4.0` (single-league mode via direct `tools/sofascore/fetch_shots.py`) erfolgreich nachgezogen: austria_bl (181 m × 4413 shots), swiss_sl (218 m × 5990 shots), scottish_prem (222 m × 5384 shots), jupiler_pro (315 m × 7484 shots), super_lig (240 m × 6033 shots). Alle 99.2-99.7% xG-fill + assisted/fast-break tags → tier=premium. Inkl. Playoff/Splitt-Rounds (Meistergruppe AT, Championship Group CH, Top-6 SCO, Champions Playoff BE). Bridge-Skript wired sie automatisch in `team_xg_history`. |
-| **Sofascore→team_xg_history Bridge** | ✅ live (2026-05-05) | `scripts/bridge-sofascore-to-team-xg.mjs` propagiert per-team-per-game data aus `sofascore_team_chance_quality` (filter `data_quality_tier IN ('premium','partial')`) idempotent in `team_xg_history` mit `source='sofascore'`. Erstes Live-Run: 9608 rows × 17 leagues × 4804 match-pairs. Kanonische Team-Namen via `canonicalize()` aus `_lib/canonical-team.mjs`. Schließt die manuelle FootyStats-CSV-Lücke für non-DE leagues (Top-5 + championship/serie_b/eredivisie/primeira_liga + die 5 frisch-unblocked Tier-B). Phase 5 in `refresh-all.mjs` wired (opt-in `--skip-bridge` to suppress). |
-| **Sofascore extras v1 (post-match stats)** | ✅ shipped (2026-05-07) | 4 endpoints (`/event/{id}/{statistics,lineups,incidents,average-positions}`) → 4 tables. 736 games gepulled, 4256 match-stat rows + 29.5k player-match-stats incl. xA/key-passes/touches_in_box. Bridge propagiert 18 neue feature-columns auf `team_xg_history` (big_chances/possession/tackles/cards/goals_prevented — opt-in via `--extras` flag). |
-| **Sofascore extras v1+v2 backfill** | ✅ **100% complete** (2026-05-10) | **6856/6856 ended games** mit allen 7 endpoints in Supabase + lokal SQLite. Total 493k Supabase rows + 279k lokal-only player_match_stats. Bypass via tls_requests fingerprint (siehe nächste row). |
-| **Cloudflare-Bypass via tls_requests** | ✅ **breakthrough** (2026-05-10) | CF blockt `curl_cffi chrome124` fingerprint vollständig auf api.sofascore.com (alle 30 Webshare IPs + Tor 0% success rate empirisch verified). **Lösung:** `tls_requests` (bogdanfinn/tls-client wrapper) hat anderen TLS-Fingerprint, geht durch ohne Proxy. Activation: `--use-tls-requests` flag (in fetch + sync + backfill wrappers). 1568 missing games in ~1.5h gepulled, 0 errors. **Default-empfohlene Methode** für Sofa-API-fetches. |
-| **Local SQLite Mirror** | ✅ live + expanded (2026-05-10) | `tools/sofascore/data/local_extras.db` (340 MB SQLite, WAL mode + retry-on-busy) spiegelt ALLE 7 Sofa-extras + sofascore_match Tabellen 1:1, **plus `team_xg_history`** (87.330 rows, primary engine input). Default-on in `load_extras_to_supabase.py` (disable via `--no-local-mirror`). team_xg_history mirror manuell via `tools/sofascore/mirror_team_xg_history.py` (--reset/--incremental). Speichert auch player_match_stats (279k rows · 36 KB/game) die Supabase skipped. Plus `--no-supabase` mode + Circuit-Breaker für Free-tier resilience. **Engine-critical data alle lokal**: bei Supabase-Outage kann offline weiter gearbeitet werden. |
-| **Datapoints Inventory** | ✅ live (2026-05-10) | `docs/DATAPOINTS-OVERVIEW.md` — vollständige color-coded matrix aller Datenpunkte × Engine-Nutzung (🟢 Standard / 🟣 v1 / 🔵 v2 / 🟦 v3 / 🟧 Calibration / 🟥 Backtest / 🟨 UI / ⚪ Metadata) + per-Liga coverage. |
-| **launchd cron health** | 🟡 fragile | 2026-05-08 07:33 morgen-cron failte mit `Fatal: fetch failed / getaddrinfo` (DNS-Fail beim Wake-up). Symptom seit Tagen — `live_odds 38h alt` im audit. Wahrscheinliche Ursache: macOS sleep/wake DNS-readiness nicht synchron mit cron-trigger. Workaround-TODO: DNS-warmup-retry am Anfang von refresh-all.mjs. |
-| **Webshare residential proxy bypass** | ✅ live (2026-05-09) | Cloudflare blockt direkten + Tor-API-zugriff auf Sofa-v2-endpoints. Webshare Static Residential ($6/Mo, 20 IPs, 250GB) umgeht das — alle 20 IPs HTTP 200 verified, 2.2s/game. `--use-webshare` flag in fetch_match_extras.py + sync + backfill scripts. Auto-fallback rotiert proxy bei 403 statt 30min backoff cascade. Coverage am 2026-05-09 von v2_done=84 auf >250 Spiele in 2h gepulled. Plan: Backfill in Monat 1 ($6) komplett durchziehen, dann auf free-tier downgraden für daily incremental (50 games/Tag). |
-| **Supabase advisor cleanup** | ✅ all 15 ERRORs cleared (2026-05-09) | RLS aktiviert auf 10 Sofa-Tables + allow-anon-read policy; 5 Sofa-Views auf SECURITY INVOKER (außer rolling_8 — siehe nächster row); 2 Functions explicit search_path. Self-review verifiziert: 1767/1767 tests pass, alle algorithm + AI calculation paths intakt, trigger feuert, service-key writes funktionieren. 21 verbleibende WARNs sind alle intentional pattern (service-write `WITH CHECK (true)`, infrastructure SECURITY DEFINER funcs für rate-limiting + auth-trigger). |
-| **`sofascore_team_rolling_8` view-performance** | 🟡 tech-debt (2026-05-09) | View braucht ~1.7s service-key, ~3s anon (timeout). Inhärent slow weil Full table scan über 173k shotmap-events + window-aggregation. Production-Consumer ist nur `tools/sofascore/engine_features.py` (service-key, OK). Anon-Path war nie funktional weil PostgREST anon Statement-Timeout = 3s. **Bei Engine-Retraining: 400 teams × 1.7s = ~11min** für rolling-8-load. Fix-Optionen: (A) materialized view + nightly REFRESH (30min Aufwand, 340× speedup, 24h staleness OK weil rolling-8 sich nicht stündlich ändert), (B) cron-populated cache-table (1-2h, 850× speedup, mehr Flexibilität). Nicht dringend — erst angehen wenn engine_features.py die rolling-8 features tatsächlich für v3-retraining nutzen wird. |
-| **v4 skeleton + Stage 0/1 gates** | ✅ live (2026-05-12) | Hard-modular 7-module hybrid pre-match engine. Architektur in `docs/V4-BACKTESTING-PROTOCOL.md` (V3 revision: Bayesian-Ensemble model-side in m3 statt m6; module-numbering matches `tools/v4/modules/`). `m1_score` (Dixon-Coles/NegBin/coarse-graining/ρ-MLE) ✅ 13/13 math identity tests pass. `m5_filters` stubs (regime + intensity) ✅ contract-tested. Infrastructure ready: `data/loaders.py` (5 paginated SQLite readers, cross-tier smoke-tested BL/BL2/austria_bl), `eval/metrics.py` (Brier multiclass/binary + LogLoss + ECE + bootstrap-CI + input-validation), `pipeline/stage_0_data_sanity.py` (schema + season-aware coverage floor), `tests/` pytest-discoverable (28/28 pass). Next sprint = β1 m2_lambda (xG-EWMA estimator). |
-| **v4 m3+m6+m7 end-to-end + Elo** | ✅ shipped (2026-05-13) | All 7 modules built; 168 pytest pass. **dev-02-elo** is the primary m3 artifact (14 features: m2_lambda outputs + Elo). **Stage 1.m3 Brier 0.6133 vs v2_benter 0.6194 (Δ -0.0061) — CLEARS protocol G1 ship-gate** (v4 ≤ v2 - 0.003 = ≤ 0.6164). Per-Liga: weak-data leagues benefit most (austria_bl 0.67→0.66, ligue_2 0.66→0.65). m6_market (Shin + Benter, per-Liga β) refit on 23/24 with new m3 (β_model 0.39 → 0.53). m7_kelly (Robust Bayesian Kelly + per-Liga Goldilocks + CLV dampening) shipped. **⚠ Stage 5 caveat:** Brier improvement does NOT translate to Kelly ROI improvement — dev-02-elo ROI -4.0% vs dev-01 -2.7%, Path A WATCH filter ROI flipped +4.3% → -8.9%. Brier captures mean accuracy; Kelly betting requires tail-of-distribution edge calibration. Real production betting still needs per-Liga calibration on OOF data. Stage 5 ship-decision deferred. Artifacts: `tools/v4/artifacts/m3_xg-{home,away}-dev-02-elo.pkl`, `m6_benter-dev-02-elo.pkl`. |
-| **v4 dev-03 + OOS-validated** | ✅ **shipped + Money-Gate passed** (2026-05-14) | β7 sprint adds `lineup_quality_diff` (rolling-5 (gf+xg)/2 - (ga+xga)/2 z-scored, team-level proxy) + `form_streak_diff` (weighted 3-game points) = **16-feature schema**. `TeamMomentumCalculator` fit-once / query-many (analog Elo). New artifacts: `tools/v4/artifacts/m3_xg-{home,away}-dev-03.pkl`, `m6_benter-dev-03.pkl`. Brier auf 25/26 verschlechtert (0.6201 vs 0.6102 dev-02-elo) **ABER alle Money-Metriken besser**. **Brier-vs-ROI-Dissoziation bestätigt zum 2. Mal**. **OOS Validation auf 24/25 (5.485 matches, separate season — NICHT für Feature-Engineering benutzt)**: Stage 5 Goldilocks ROI **+3.51%** CI [-3.98, +11.20] n=1378 ≈ in-sample +4.05% (Δ -0.55pp → Holdout-Contamination war kein Problem). **High-Conf ROI +10.12% CI [+1.23, +19.03] n=248 — first statistically significant positive ROI in v4-Geschichte** (CI vollständig über Null). Per-tier split: Lower-17 leagues **+5.73% Stage 5** vs Top-5 -4.98% — Goldilocks-Tier-Design empirisch korrekt (sharp markets zu effizient). [0.68, 0.72) Trap-Zone gap +16.9pp → +6.4pp (-10.5pp better). Diagnostics: `tools/v4/diagnostics/compare_dev02_vs_dev03.py` + `oos_validation_24-25.py`. |
-| **v4 dev-04 archived (Regression)** | ❌ archived (2026-05-14) | β8 sprint added `market_disagreement_flag` (mean(\|p_proxy_skellam − p_market_shin\|/p_market)) + binary `_high` (>0.08 threshold) = **18 features**. **Mac-IP catastrophic regression**: Brier 0.6453 (+0.0252 worse), Stage 5 ROI -3.04% (Δ -6.39pp vs dev-03 +3.35%). Root cause: (1) Coverage-Sparsity (only 7.1% of training matches had Pinnacle odds via `MarketDisagreementCalculator` lookup — team-name canonicalization missing for cross-source join), (2) Skellam-proxy systematically underestimates P(D) vs Dixon-Coles → 90% of holdout matches trip threshold = not selective, (3) Binary `_high` feature is dead weight (\|SHAP\|=0.0011 = lowest rank). Disagreement correlation reduced -0.0426 → -0.0388 (only 9% reduction, p still significant). Artifacts kept for posterity: `tools/v4/artifacts/m3_xg-{home,away}-dev-04.pkl`, `m6_benter-dev-04.pkl`. |
-| **v4 dev-05 archived (Regression — same pattern)** | ❌ archived (2026-05-14) | β9 sprint added `lineup_quality_player_diff` + `_available` via `PlayerLineupCalculator` (Understat 24/25 player-match data, top-11-by-minutes starter aggregation, weighted composite of xg_chain + key_passes + xg + xa per-90) = **20 features**. **Repeated dev-04 trap**: training-coverage 9.3% non-zero (Top-5 only, Understat 8 seasons) vs OOS-coverage 32% (24/25 includes Top-5 + Lower-17 with 0). Trees learned "ignore feature in 90% case" → at inference player-signal added noise. Brier 0.6298 (+0.0293 worse on 24/25 OOS vs dev-03 0.6005). Stage 5 ROI +4.00% (n=1007, -27% sample), HC ROI **+2.88% (LOST statistical significance** vs dev-03's +10.12% [+1.23, +19.03]). [0.68, 0.72) gap +11.92pp WORSE. SHAP rank of new features: #19-21 (dead). **Lesson**: sparsity >80% in training corpus = feature-dead-on-arrival trap (same as dev-04 market-disagreement). Solutions for future dev-06: (a) train Top-5-only model, (b) Sofa-backfill 24/25+23/24 ALL leagues first to raise training coverage to ~80%, (c) post-hoc calibration layer instead of m3-feature. Artifacts: `tools/v4/artifacts/m3_xg-{home,away}-dev-05.pkl`, `m6_benter-dev-05.pkl`. Tool: `tools/v4/modules/m3_xg/player_lineup.py` (kept — usable for future Top-5-specific model). |
-| **Post-Processing Shrinkage** | 🟡 evaluated (2026-05-14), not deployed | α-sweep [0.0, 0.6] on dev-03's blended probs: pull toward market when `disag_flag > 0.08`. **α=0.20 optimal for Stage 5**: ROI +3.35% → **+6.10%** [-4.77, +16.95] n=708. **But:** trade-off — HC ROI +10.77% → +0.31% (lost significant subset), [0.68, 0.72) gap +6.35pp → +22.15pp (overcorrection). Multiple-testing selection-bias adds ~1.5pp inflation → realistic +4.5% Stage 5. **NOT auto-deployed** — dev-03 baseline already +3.51% OOS-confirmed. Shrinkage is option for future A/B test, not default. Tool: `tools/v4/diagnostics/dev03_shrinkage_tuning.py`. |
-| **Understat 24/25 Bridge (team-level)** | ✅ live (2026-05-14) | Local CSVs (`tools/understat_match_stats.csv` 1.827 matches × Top-5) → team_xg_history mit `source='understat'` via `tools/sofascore/bridge_understat_24-25.py`. Idempotent dedup by (team, league, match_date, venue). Result: team_xg_history 24/25 understat-rows **481 → 3.766** (+682%). Top-5 24/25 holdout jetzt voll OOS-validierbar OHNE Sofa-Backfill. SQLite + Supabase synced. |
-| **Understat Player-Level Bridge (8 seasons)** | ✅ live (2026-05-14) | All 8 seasons 2017/18-2024/25 player-match rosters → local SQLite `understat_player_match_stats` (424.098 rows × 21k unique players × Top-5). Fields: xg, xa, key_passes, xg_chain, xg_buildup, position, is_starter, time_minutes. Enables future dev-05 player-level `lineup_quality_diff` feature for Top-5. Tool: `tools/sofascore/bridge_understat_players_24-25.py --all-seasons`. PRIMARY KEY (match_id, player_id) for idempotent re-runs. |
-| **Sofa parallel-backfill infrastructure** | ✅ built (2026-05-14) | Multi-process orchestrator `tools/sofascore/fetch_match_extras_parallel.py` (10 workers × pinned Webshare IPs, per-game JSON checkpoint, Circuit-Breaker 5×403→10min sleep, session-recycle every 500 fetches for tls_requests memory creep defense). Hetzner VM bootstrap `tools/sofascore/hetzner_bootstrap.sh` (5 Cent for 3-4h backfill, fresh DE IP). 2-Phase runner scripts `run_backfill_{24-25,23-24}.sh`. **Reality 2026-05-14:** Phase 3 für 24/25 Tier-A hit massive CF cascade — alle 30 Webshare IPs banned + Mac IP banned (collateral from concurrent verify-scripts). 234/6500 games done before block. State preserved in `tools/sofascore/data/parallel_state.json` for resume. **Lessons:** CF banns scale to concurrent direct-IP fetches if same fingerprint pattern seen across pool. Future Phase 3 → Hetzner VM only. |
-| **24/25 endpoint availability empirically verified** | ✅ tested (2026-05-14) | 10 matches × 5 leagues × 8 endpoints: 7/8 endpoints full coverage (statistics 21K, lineups 63K, incidents 34K, avg-positions 35K, managers 1K, team-streaks 828B, shotmap 30K). pregame-form: 5/10 — pattern is **early-season Week 1-2 matches inherently lack pregame-form** (needs prior-season-form data which doesn't exist at season-start). Not 24/25-specific. 23/24 same test: 8/8 full for top 4 leagues; liga3 has shotmap + avg-positions 404 (lower tier coverage). Tool: `tools/sofascore/verify_{24-25,23-24}_endpoints.py`. Confirms 24/25 + 23/24 Sofa-backfill viable with ~95% data integrity vs 25/26. |
-| `team_metadata` cross-league sync | 🟢 best-effort | 54 verbleibende cross-league gaps (Reserve-Teams + austria_bl/swiss_sl/greek_sl regional clubs nicht in TheSportsDB Free-Tier indexiert) — nicht critical. |
+| **Engine math (v2 + dev-03)** | live | v2 = isotonic + Benter blend (Brier 0.6120 current-season). dev-03 = LightGBM Bayesian-Ensemble + per-league m6_benter (cross-season-validated Money-Edge in 3 Ligen — see Money-Eval row below). |
+| **dev-03 TS-runtime end-to-end** | shipped (2026-05-21) | 4 Sprints in einem Sitzen: `dev03-runtime.ts` (5-bagged LightGBM browser-runnable, 43 tests) + `dev03-features.ts` (m2_lambda+Elo+Momentum TS port via precomputed cache, 40 tests) + `dev03-engine.ts` (MatchCalc wrapper) + AppContext bootstrap + MatchdayContext routing. Artifacts: `public/dev03-model.json` (7.5 MB) + `public/dev03-feature-cache.json` (~106 KB). Engine erscheint als "v4 dev-03" in Settings + /matchday. Money-Eval-validated für serie_a/scottish_prem/epl. **Cache-refresh cron**: `dev03-cache` Phase in refresh-all.mjs. **Post-retrain workflow**: `tools/v4/refit-dev03-artifacts.sh` (analog refit-all.sh for v2). Defense-in-depth: hard early-return guard in `benterBlend()` für `engine === "dev-03"` verhindert silent double-blend selbst wenn `benter-weights.json` versehentlich einen `dev-03` Key bekommt. Per-sprint deltas: archive. |
+| **v1.1 Asymmetric Negation Protocol** | live (2026-05-20) | 8-Mandate-Refactor (M1-M8). `evaluateLatentTopology` in `goldilocks-engine.ts` (Possession-Trap mit M5 Heckman gate + Manager-Bounce M4 piecewise-step + TACTICAL_WIDTH SHADOW_LOG_ONLY). UI: Veto-Badges + Kelly-Multiplier + "Veto-frei" Filter in `/goldilocks`. `epistemic_trails` Tabelle live. Beide Crons (burn-in M2 + clv-decay M8) shipped + dedupe-protected. **Persistence-contract**: matchKey canonical FODZE-format, matchKickoff Unix SECONDS, detected_at Unix MS. **Future M4**: `matchSinceManagerChange` + `tacticalWidth` weiter null durchgängig — Sofa-`match_managers`-Join sprint pending. |
+| **v1.2 Filter-Shield (CSD veto)** | live (2026-05-22) | 3-stage empirical workflow: (1) `tools/v4/diagnostics/csd_veto_threshold_calibration.py` testete 16 Veto-Configs gegen v2-OOT Brier-lift → **persistent_reversal regime on goal_diff signal (loose thresholds) qualified**: n=355, Brier lift +0.0427 (CI [+0.017, +0.069]). (2) `csd_veto_money_eval.py` Kelly-PnL: small joined-sample (109 bets, 6 shield-affected) → direction-positive (+0.0017) but CI crosses 0. (3) Persistent_reversal ships ACTIVE (multiplier 0.50), catastrophic SHADOW until 200-firing burn-in. **Production-wiring live**: AppContext loads `/filter-shield-config.json` → MatchdayContext.loadCached attaches per-team last-10 goal_diff series via new `byTeamGoalDiff` index → MatchdayContext.calcMatch builds `shieldVetoes` once via `buildCsdVetoes()` → forwarded through `mlInputs.shieldVetoes` to v1/v2/dev-03 wrappers + directly to ensemble + footBayes `calculateBetsEnhanced` → min-pool multiplier applied to Kelly post-CLV-dampening pre-final-clamp. `EnhancedBetCalc` gains `shieldMult/shieldActive/shieldShadow` diagnostics for UI surfacing. Modules: `tools/v4/modules/m9_filter_shield/{csd_veto,shield_orchestrator,config}.py` (28 pytest) + `src/lib/filter-shield.ts` (30 vitest, Python parity at rho_1=-0.98995 to 4 dp). Single-source-config: `public/filter-shield-config.json`. **Full test sweep 1979/1979 + 0 src TS errors + clean prod build.** **Rejected layers (DO NOT re-implement without new evidence):** TRAVEL_FATIGUE (62% stadium-MNAR confounds signal — detected-fatigue subset has +0.063 NEGATIVE Brier lift), PER_LEAGUE_ISOTONIC (walk-forward CV: all 3 target leagues fail acceptance gate; deferred to backlog after 22/23+23/24 v2-OOT backfill). |
+| **Money-Eval Hybrid-Per-League Map** | 5 leagues validated (2026-05-21) | Cross-engine + cross-season Money-Edge via 5 Backtest-Sims. **Validated edges (n≥30 both seasons):** dev-03+m6_benter wins serie_a (+3.4→+8.2%), scottish_prem (+17→+32%), epl (+4.7→+32%); v2_production wins la_liga (+13.6→+31.7%), serie_b (+3.9→+27.7%). **Don't bet:** bundesliga/eredivisie (reversed both directions), ligue_1/super_lig/greek_sl/ligue_2/primeira_liga (consistent-negative or small-n). Production-Patch: `src/lib/bet-edge-policy.ts` + Goldilocks-UI "🎯 Validated Edge" filter-chip + per-Bet badge. **Caveat**: 23/24 dev-03 in-sample (positiv-bias), n=345-451/engine. 20 vitest cases in `tests/bet-edge-policy.test.ts`. Audit-Sims: `tools/backtest/{v2-production-kelly-sim,v2-vs-dev03-25-26-sim,v2_dev03_full_validation,concentration_validation,dev03_m6_23-24_per_league}.json`. |
+| `team_xg_history` canonicalization | clean | All 22 leagues drift=0; canonicalize-on-write across 14 ingest-scripts. Read-side via `MatchdayContext.loadCached → canonicalizeTeamName`. TS↔JS aligned via `tests/canonicalize-team-name.test.ts` (15 cases). |
+| `match_outcomes` schema | clean | UNIQUE (match_key, match_date) — supports double-round-robin (austria_bl etc.). |
+| **Sofascore standings (DB view)** | live (2026-05-01) | `sofascore_standings` View ersetzt `computeStandingsFromXG` für 10 leagues — bypass PostgREST 1000-row default page-limit (vorher 1-3 Teams aus EPL/BL/Ligue 1 verloren). |
+| **TM injuries 22 Ligen** | live (2026-05-01) | `build-tm-team-ids.mjs` jetzt 22 Ligen. `TRANSFERMARKT_ALIASES`-bridge wired. html_decode in scraper verhindert `&amp;`-key-bugs. |
+| **Cloudflare-Bypass via tls_requests** | default (2026-05-10) | `tls_requests` (bogdanfinn/tls-client wrapper) — anderer TLS-Fingerprint als curl_cffi, geht durch ohne Proxy. Activation: `--use-tls-requests` flag. **Default-empfohlene Methode**. |
+| **Local SQLite Mirror** | live (2026-05-10) | `tools/sofascore/data/local_extras.db` (340 MB) spiegelt 7 Sofa-extras + sofascore_match + team_xg_history (90k rows). **Engine-critical data alle lokal** — Supabase-Outage resilient. |
+| **Sofascore→team_xg_history Bridge** | live (2026-05-05) | `scripts/bridge-sofascore-to-team-xg.mjs` propagiert per-team-per-game idempotent in `team_xg_history` mit `source='sofascore'`. Phase 5 in `refresh-all.mjs`. Canonical names via `canonicalize()`. |
+| **GitHub Actions cron** | healthy + budget-tuned (2026-05-21) | `fetch-odds.yml` repariert (war 41 Tage YAML-broken). Multi-Key support `ODDS_API_KEY_2..._10`. **Schedule reduziert 4h → 12h on matchdays** (Sun/Wed/Fri/Sat 06:17+18:17 UTC) — siehe "Odds-API budget posture" row. |
+| **Odds-API budget posture** | tuned (2026-05-21) | Discovery via `npm run health`: K1+K2 hard-exhausted (500/500 used both), only K3 (`6c7dc9…`) hatte credits. **3-layer fix**: (1) added `ODDS_API_KEY_3` to .env.local + multi-key rotation greift, (2) GitHub Actions `fetch-odds.yml` cron 4h → 12h = -870/month credits, (3) beide launchd plists (`com.fodze.refresh{,.full}.plist`) gepatched mit `--skip-odds` — GitHub Actions besitzt jetzt allein die live_odds-refresh-responsibility, launchd nur matchday-regen + injuries. **Total burn**: 3060/month → 1050/month (-66%) bei gleicher Production-Coverage. Sustainable auf 3 keys × 500 = 1500/month max budget. Reset-Datum für K1/K2 nicht im Response-Header — Account-Dashboard check empfohlen. Budget-Math + Doku in `fetch-odds.yml` header. |
+| **Audit season-awareness** | shipped (2026-05-21) | `scripts/audit-data-quality.mjs` flagged früher 19 P1 false-positives ("live_odds 142h alt — Cron läuft nicht?") obwohl der wahre Grund Saisonende war (8 Liga: bundesliga/liga3/ligue_2/eerste_divisie/primeira_liga/super_lig/greek_sl/swiss_sl haben 0 upcoming fixtures). **Fix**: neue `auditUpcomingFixtures()` Funktion + `seasonActiveByLeague` Lookup; P1 stale-warnings skippen jetzt off-season-Liga. Plus positive ℹ output listet off-season Liga explizit damit user weiß es ist erwartet. **Output Δ**: 19 P1 → 0 critical + 1 ℹ informational. **Known limitation**: classifies "0 upcoming fixtures = off-season". Edge case: if fetch-odds cron broken DURING active season for >14 days, upcoming_fixtures stale-decays to empty → audit falsely classifies as off-season → P1-cron-warning gets silently skipped. Mitigation: combine with `team_xg_history`-recent-match-date check for ground-truth season-state. Not implemented — calendar (Jun-Jul = off-season) would be the cleanest fallback. |
+| **Source-data sort_values determinism** | enforced (2026-05-21) | `pandas.sort_values` default `kind='quicksort'` ist UNSTABLE. **Fix**: alle 5 sort_values in `tools/v4/modules/` (Elo + TeamMomentum + m2_lambda × 2 + player_lineup) verwenden `kind="mergesort"` + canonical secondary key. Cache + Python pipeline match 800/800 mit max diff 0. **Audit-Methode**: `grep -rn "sort_values" tools/v4/modules/ \| grep -v "kind="`. 3 Regression-Tests in `tools/v4/tests/test_elo_momentum_determinism.py`. Tolerances tightened auf 1e-6 (was 5e-2 wegen falsch-diagnostiziertem duplicate-row-trap). Numerical-anchor `Bayern_Elo ± 1e-6 → ± 0.01` für Tweak-tolerance ohne den Determinismus-Catch zu opfern. |
+
+### Active tech-debt / gaps
+
+| Area | Status | Notes |
+|---|---|---|
+| **Conformal Gate drift** | audited 🟡 (2026-04-29) | 13/18 ok, 2 drift, **3 catastrophic (epl/la_liga2/primeira_liga)** — EPL α=0.10 under-covers by 8.5pp. **Flip zu enforce-mode BLOCKED** bis Re-fit. Mode bleibt `warn` (zero production-risk). Audit: `tools/backtest/conformal-drift-report.json`. Note (2026-05-22): per-league isotonic calibration attempted as fix → walk-forward CV failed acceptance gate on all 3 (ECE-improvement only +14.2 % on EPL, la_liga2 + primeira_liga DEGRADED). Conformal-drift signal does NOT translate to Brier-improvability via isotonic. Module shipped in `tools/v4/modules/m10_per_league_calibration/` for future multi-season validation. |
+| **v1.2 Filter-Shield UI + persistence** | live (2026-05-22) | Goldilocks-page computes CSD vetoes alongside v1.1 topology (uses identical hHist/aHist data from `histByKey`), batches into existing `trailBatches` array, POSTs to `/api/persist-trails`. `shieldVetoToTrail()` helper in `src/lib/filter-shield.ts` converts ShieldVeto → EpistemicTrail (trap_kind = first two `:` segments of veto.name, raw_signals numeric-only, kickoff in Unix SECONDS, detected_at in MILLISECONDS per migration contract). UI: per-bet `csdVetoes` + `csdMult` filtered to market-relevant team-side (1→home, X→draw, 2→away, Ü2.5→over, U2.5→under); active vetoes render orange "🛡 CSD pers-rev" badges with regime tooltip + "Kelly × N" multiplier pill; shadow vetoes render italic gray line. "Veto-frei" filter extended to also gate on active CSD vetoes. `/health` Section "FILTER-SHIELD (CSD VETO)" aggregates last 7d firings: total active/shadow split, mean active multiplier, per-regime breakdown, per-Liga top-12 firing counts, catastrophic burn-in counter (X/200) toward shadow→active graduation. Failure-safe: empty-state hint when no trails yet. **Full test sweep 1979/1979 + 0 src TS errors + clean prod build.** |
+| **launchd cron health** | fragile 🟡 (less critical seit 2026-05-21) | macOS sleep/wake DNS-readiness race. Symptom: `live_odds 38h alt`, "getaddrinfo ENOTFOUND". Workaround in `refresh-all.mjs` aktiv (6×10s DNS retry). **Reduced criticality**: seit beide plists `--skip-odds` flag haben, ist launchd kein Odds-Refresh-Owner mehr — failure-Recovery für odds liegt bei GitHub Actions (separates env, kein DNS-race). Launchd nur noch für matchday-regen + injuries (off-season eh inaktiv). |
+| **`sofascore_team_rolling_8` view** | tech-debt 🟡 (2026-05-09) | ~1.7s service-key, ~3s anon (timeout). Full-scan + window-aggregation inherent slow. Production-consumer ist nur `tools/sofascore/engine_features.py`. Bei Retraining ~11min/rolling-8-load. Fix-Optionen: materialized view + nightly REFRESH OR cron-populated cache-table. |
+| **Sofascore-features in Engine** | evaluated no-enable 🟡 (2026-05-03) | 3 Integration-Strategien getestet. Beste single-config: Replace feature 19 durch mean_shot_xg = -0.0031 Brier global aber EPL +0.0235 schlechter (Brentford-Effekt). Run-Variance ±0.005 frisst Sofa-Signal. EPL-Blacklist via `SOFA_F19_BLACKLIST`. |
+| **dev-03 Auto-Routing UX** | manual only 🟡 | Validation-Badge in Goldilocks zeigt "🎯 Dev-03" als RECOMMENDATION, aber User muss Engine **manuell** in Settings switchen. Hybrid-Engine-Story aus `bet-edge-policy.ts` bleibt empfehlend, nicht durchgesetzt. |
+| **dev-03 cache-staleness surface** | not monitored 🟡 | `dev03-feature-cache.json.data_window.history_through` existiert, aber UI surface fehlt. Bei Cron-Tod arbeitet User mit N-Wochen-altem Cache ohne Warnung. Future: `/health` Section. |
+| **Tier-B Sofa-backfill 24/25 + 23/24** | pending 🟡 | 11 Ligen (eredivisie, primeira_liga, league_one/two, eerste_divisie, greek_sl, austria_bl, swiss_sl, scottish_prem, jupiler_pro, super_lig) brauchen Phase 1+2+3. Tier-A done. Sprint ~16h via Hetzner VM. |
+| **22/23 Sofa backfill** | partial (2026-05-21) | football-data.co.uk closing+opening odds für 22/23 ✓ done (5622 rows × 16 leagues × 99.8% PSH coverage, idempotent re-run). Sofa Tier-A 22/23 partial: ✓ bundesliga (306m / 7826 shots), bundesliga2 (306m / 8300), epl (402m / 9654 — note: 402 vs 380 expected at 20×38/2; Sofa includes some reschedule-dupe rows for EPL 22/23), la_liga (380m / 9392); 🟡 la_liga2 (88m / 1761 shots — 8 of 42 weeks done, expected ~462 matches; CF hit mid-fetch); ❌ liga3 (not in Sofa season-catalogue), serie_a/serie_b/ligue_1/ligue_2/championship (5 leagues CF-blocked via season-list HTTP 403). Mac-IP cooldown >2h elapsed — retry möglich oder Hetzner sprint empfohlen. Tier-B 22/23 noch nicht gestartet. |
+
+### Reference
+
+| Area | Status | Notes |
+|---|---|---|
+| **Datapoints Inventory** | live (2026-05-10) | [`docs/DATAPOINTS-OVERVIEW.md`](docs/DATAPOINTS-OVERVIEW.md) — color-coded matrix aller Datenpunkte × Engine-Nutzung + per-Liga coverage. **Lese ZUERST bei Engine-Feature-Fragen.** |
+| **Data Inventory** | live (2026-05-10) | [`docs/DATA-INVENTORY.md`](docs/DATA-INVENTORY.md) — Source-Catalog × Saison × 22 Ligen mit row counts + date ranges. |
+| **v4 backtesting protocol** | live (2026-05-12) | [`docs/V4-BACKTESTING-PROTOCOL.md`](docs/V4-BACKTESTING-PROTOCOL.md) — Stage 0/1/5 + ship-gates G1 (Brier ≤ v2-0.003) + G2 (Stage 5 ROI bootstrap CI > 0). |
+| **24/25 + 23/24 endpoint coverage** | verified (2026-05-14) | Sofa-backfill für historische Saisons ~95% data-integrity vs current. pregame-form fehlt Week 1-2 (prior-season-form data fehlt). Tool: `tools/sofascore/verify_{24-25,23-24}_endpoints.py`. |
+| **Understat bridges** | live (2026-05-14) | Team-level 24/25 (1827 matches Top-5) + Player-level 8 Saisons (424k rows × 21k players). Idempotent dedup. Tools: `tools/sofascore/bridge_understat_{24-25,players_24-25}.py`. |
+| **Supabase advisor cleanup** | done (2026-05-09) | 15 ERRORs cleared (RLS auf 10 Sofa-Tables, 5 Views auf SECURITY INVOKER, 2 Functions explicit search_path). 21 verbleibende WARNs intentional. |
+| `team_metadata` cross-league sync | best-effort 🟢 | 54 cross-league gaps (Reserve-Teams + austria_bl/swiss_sl/greek_sl regional clubs nicht in TheSportsDB Free-Tier) — nicht critical. |
+| **Lessons archive** | reference | [`docs/archive/areas-to-watch-2026-05.md`](docs/archive/areas-to-watch-2026-05.md) — dev-04/05/06/07/08 + line-movement + shrinkage archived experiments + per-sprint dev-03 deltas + one-time-infra builds. **Common patterns**: sparsity >80% = feature-dead-on-arrival; single-seed Brier-improvement < 1σ inter-seed variance (~0.002) = run-noise; higher-order-statistics on team-quality data are info-redundant with mean-features. |
+
 
 ---
 
@@ -544,12 +592,18 @@ player_injuries    — api-sports-sourced current-season injuries.
                      embedded statt normalisiert. Schema bleibt für künftigen
                      api-sports-Backfill (Key 2 ist suspendiert).
 odds_closing_history — Pinnacle closing odds. ~25k rows. Mehrere sources:
-                     "football-data.co.uk" — historisch + STALE seit 2026-01-14
-                       (Source publiziert PSCH/PSCD/PSCA nicht mehr)
+                     "football-data.co.uk" — historisch (war STALE seit 2026-01-14
+                       aber CSVs sind seit ~Apr 2026 wieder up-to-date — verified
+                       2026-05-21 nach Re-backfill 22/23-25/26)
                      "live-odds-snapshot" — NEU 2026-04-26: snapshot-closing-odds.mjs
                        Cron persistiert hier zusätzlich für Forward-CLV-Recovery
                      UNIQUE (match_key). Cols: psch/pscd/psca/psc_over25/psc_under25/
                        pscahh/pscaha/ah_line/ft_result/ft_goals_h/ft_goals_a
+                     Plus psh/psd/psa (NEU 2026-05-21 via add_pinnacle_opening_odds
+                       migration): Pinnacle PRE-MATCH (early-week, ~Tuesday) odds für
+                       drift-feature engineering. 99%+ coverage über 22/23-25/26 ×
+                       16 Ligen via scripts/backfill-football-data-co-uk.mjs. Range-
+                       CHECK > 1.0. Drift = vig_removed(close) - vig_removed(open).
 pipeline_shadow_log — Per-Matchday Engine A/B/C/D predictions: ensemble + poisson-ml
                      + poisson-ml-v2 + poisson-ml-v3 + footbayes-hierarchical
                      (alle 4-5 engines geloggt seit a264419). Cols: match_key,
@@ -583,6 +637,22 @@ player_xg_history  — Per-Player xG-per-90/xa/npxg/key_passes (2500 rows, Top-5
 live_wp_snapshots  — ⚠ EMPTY (0 rows). Phase 3.3 dormant — braucht Betfair-API-Key.
 corners_odds_history — ⚠ EMPTY (0 rows). Phase 3.1 dormant — braucht UI-Tab.
 player_props_posteriors — ⚠ EMPTY (0 rows). Phase 3.2 dormant — braucht R-service.
+epistemic_trails   — v1.1 Asymmetric Negation Protocol per-trap firings. Migration
+                     `scripts/migration-epistemic-trails.sql` applied 2026-05-20.
+                     Cols: id BIGSERIAL, trap_kind, match_key (canonical FODZE format),
+                     match_kickoff BIGINT (Unix epoch SECONDS), league, detected_at
+                     BIGINT (Unix epoch MILLISECONDS), raw_signals JSONB (numeric-only
+                     by design), predicted_hw_rate NUMERIC CHECK [0,1], shadow BOOLEAN.
+                     CLV-tracking cols (filled by clv-trap-decay cron): closing_odds
+                     NUMERIC CHECK >1.0, moved_against_us BOOLEAN, clv_resolved_at
+                     BIGINT (ms). UNIQUE (trap_kind, match_key, detected_at) —
+                     sub-second granularity intentional für Re-emission-Audit-History.
+                     6 indexes: PK + UNIQUE + 2 simple btree (match_key, kickoff) +
+                     1 partial (unresolved WHERE clv_resolved_at IS NULL) + 1 composite
+                     (trap_kind, shadow). RLS: anon SELECT, service_role ALL. Schreiber:
+                     `/api/persist-trails` route (proxy für `src/lib/epistemic-trails.ts
+                     ::persistEpistemicTrails`), aufgerufen von `/goldilocks/page.tsx`
+                     beim Page-Load. Reader: burn-in + clv-decay crons.
 ```
 
 Standings werden client-side aus `team_xg_history` berechnet (`computeStandings()` in `supabase.ts`) ODER pipeline-side in `matchday-enrich.mjs::computeStandingsFromXG`. RLS aktiv — User lesen alles, schreiben nur eigene Rows (`bets`, `profiles`). `migration-rls-tighten.sql` hat das 2024 gepatched.
@@ -664,6 +734,46 @@ Failure-safe: corrupte/fehlende JSONs throwen vom Loader → werden in `modelErr
 
 **Live System-State auf `/health`** Dashboard zeigt für jede Layer den Loaded-Status, env-Wert, und gemessenen Brier-Impact in Echtzeit.
 
+### v1.1 Asymmetric Negation Protocol (Stand 2026-05-20)
+
+**Filter-as-Shield, kein Booster** — die Cartographie aus dem Epistemic-Audit war v1.0 ein additiver-Edge-Hunter und scheiterte an 4 fatalen Pathologien (akademische Brier-Gain-Jagd, parametrische Halluzinationen, MNAR selection traps, intra-matchday look-ahead bias). v1.1 abandoned die Suche nach additiven Mikro-Edges und nutzt die Cartographie als **Minen-Detektor** für harte Kelly-Haircuts auf toxischen Mispricings. Acht Mandate:
+
+- **M1 Elastic-Net Shrinkage** — `tools/v4/train_pipeline.py` mit explizitem `lambda_l1: 0.5` + `lambda_l2: 1.0` in LightGBM-Tweedie params (kein manual 0.5-sign-flip-Heuristik mehr).
+- **M2 SHADOW_LOG_ONLY Quarantine** — `TACTICAL_WIDTH` + `MANAGER_BOUNCE_RAW` Set in `goldilocks-engine.ts`. Trails werden geloggt mit `shadow: true` aber **modifizieren `stakeMultiplier` NICHT**. 200-Match-Burn-in enforced durch `scripts/burn-in-shadow-signals.mjs` weekly cron.
+- **M3 Trees+SHAP über linear interactions** — `discover_manifolds(model, X_sample, max_rows=1500)` in train_pipeline.py mit hartem Stratified-Sample-Bound (SHAP interaction values sind O(T·D·L²) — full set würde memory blowup auslösen).
+- **M4 Kein parametrischer Gaussian** — `managerBounceMultiplier(matchesSince)` ist eine piecewise-step-Funktion: [0-1] → 0.85 (immediate shake-up noise), [2-3] → 0.92 (honeymoon-fade), >3 → 1.0 (settled). Plus pygam Penalized-B-Splines in train_pipeline.py (`fit_manager_bounce_gam` mit GCV gridsearch).
+- **M5 Heckman MNAR Gate** — `POSSESSION_TRAP` feuert nur in `TIER_A_COVERAGE` Ligen (12 Ligen mit >95% Possession-Coverage). Gates: `possessionDiff > 15 AND xgDiffEwma3 < 0 AND xgEwma3 < leagueBaselineXg * 0.85`. Brentford-style toxic-dominance pattern (-19.8pp deviation from engine HW-rate in audit).
+- **M6 Strict 4h Timestamping** — `tools/v4/queries/strict_lagging.sql` CTE mit `prev.start_timestamp <= cur.start_timestamp - 14400` (4h cutoff). Verhindert intra-matchday-leakage (15:30 → 18:30 same day). Verified 12.576 rows / minimum 122.5h gap auf local SQLite.
+- **M7 Asymmetric Negation** — `stakeMultiplier ∈ [0, 1.0]` hard-clamped am Ende von `evaluateLatentTopology`. Vetoes stacken zur MINIMUM (nicht Sum, nicht Product). Garantiert: kein Boost-Pfad existiert.
+- **M8 CLV-Reflexivity Tracking** — `epistemic_trails` Tabelle + `scripts/clv-trap-decay.mjs` daily cron. Bei convergence-rate ≈ 50% (sharp markets haben unsere Edge eingepreist) → DEPRECATE-Recommendation. Bei <30% → trap ist noch alpha.
+
+**Data-Flow:**
+```
+/goldilocks/page.tsx (client)
+  ├─ pro Match: synthetisiere LatentSignals aus team_xg_history
+  │   (possession EWMA mit minSamples=3, xG-EWMA(3) span=3)
+  ├─ evaluateLatentTopology(matchAug, signals) → LatentTopology
+  ├─ Display: Veto-Badges + Kelly × Multiplier + "Veto-frei" filter
+  └─ POST /api/persist-trails (batched, idempotent)
+        ↓
+      epistemic_trails (Supabase, RLS service-only write)
+        ↓
+  ├─ scripts/burn-in-shadow-signals.mjs (weekly)
+  │   └─ joined match_outcomes → GRADUATE/KEEP_SHADOW/INVERT_SIGNAL
+  └─ scripts/clv-trap-decay.mjs (daily, nach snapshot-closing-odds)
+      └─ joined odds_closing_history → MARKET_CONVERGED/TRAP_ALIVE/CONVERGING
+```
+
+**Persistence-Contract (kritisch):**
+- `match_key` MUSS `canonicalMatchKey(league, home, away)` aus `src/lib/format.ts` sein. Custom-Format würde den CLV-decay-join × `odds_closing_history.match_key` stumm scheitern lassen.
+- `match_kickoff` MUSS Unix epoch SECONDS sein. Cron filtert via `match_kickoff < now/1000` — ms-shaped values würden 1000× in die Zukunft schießen und nie als "past kickoff" qualifizieren.
+- `detected_at` MUSS Unix epoch MILLISECONDS sein. Teil von UNIQUE constraint mit sub-second-Granularität für Re-emission-Audit-History.
+- DB CHECK constraints enforcement: `predicted_hw_rate ∈ [0, 1]`, `closing_odds > 1.0 OR NULL`.
+
+**Engine-Hierarchy-Position:** v1.1 ist EIN POST-PROCESSING-LAYER auf der bestehenden Engine-Output. Die Engines (Standard, v1, v2, v3) sind UNVERÄNDERT. Topology-Output ist optional und betrifft nur Goldilocks-UI (nicht direkte Engine-Predictions auf `/matchday`).
+
+**Testing:** 47 vitest cases zwischen `tests/asymmetric-negation.test.ts` (25 — incl. persistence-contract: matchKey canonical, kickoff seconds, detectedAt ms) + `tests/trail-aggregations.test.ts` (26 — pure-function-layer für beide Crons mit dedupe semantics, vig-removal edge-cases, alle 4 recommendations, alle 4 status pills).
+
 ### Backtest Tooling (für jede neue Calibration-Decision)
 
 Vor jeder Aktivierung eines neuen Calibration-Layers MUSS der current-season Backtest laufen:
@@ -725,8 +835,18 @@ Sample n=104 ist mager. ±5pp Differenzen statistisch noch nicht hart abgesicher
 **Automatisch (empfohlen):**
 ```bash
 bash scripts/launchd/install.sh   # macOS LaunchAgents einmal installieren
-# Ab jetzt: täglich 07:30 npm run refresh, Di+Fr 19:00 npm run refresh:full
+# Ab jetzt:
+#   täglich 07:30   → refresh-all.mjs --skip-odds         (matchday-regen)
+#   Di + Fr 19:00   → refresh-all.mjs --injuries --skip-odds  (full + TM-injuries)
+# Odds-Refresh läuft separat via GitHub Actions fetch-odds.yml
+# (Sun/Wed/Fri/Sat 06:17 + 18:17 UTC). Reduced from 4h to 12h on 2026-05-21
+# wegen Odds-API Budget — siehe Areas-to-Watch "Odds-API budget posture".
 ```
+
+**Cron architecture invariant (post-2026-05-21):**
+- GitHub Actions `fetch-odds.yml` ist der EINZIGE Odds-Refresh-Owner.
+- launchd ist der EINZIGE Matchday-Regen + Injuries-Owner.
+- Beide Jobs sind idempotent + skipping-safe (each can fail without breaking the other).
 
 **Manuell:**
 ```bash
@@ -757,6 +877,25 @@ git commit -am 'chore(models): refit artifacts'
 ```
 
 Skipping a step leaves downstream quantiles/calibrations scored on a DIFFERENT probability distribution than the runtime pipeline produces — exactly the bug fixed in `f9c6ce7` where conformal coverage under-covered by 5 pp after the Dirichlet default-flip. Der Orchestrator [`tools/backtest/refit-all.sh`](tools/backtest/refit-all.sh) erzwingt die richtige Reihenfolge.
+
+**Nach dev-03-Retrain (Stage 1.m3 + Stage 1.m6):** Die TS-Runtime-Artifacts (`public/dev03-model.json` + `public/dev03-feature-cache.json` + `tests/fixtures/dev03-features-golden.json`) sind alle Snapshot-Outputs der frischen Pickles in `tools/v4/artifacts/`. Sie MÜSSEN alle drei in der gleichen Sprint-Iteration neu generiert werden, sonst driftet die TS-Inference von Python's Reference:
+
+```bash
+# 1. Retrain dev-03 (produces pickles in tools/v4/artifacts/)
+tools/venv/bin/python3 tools/v4/pipeline/stage_1_m3_xg.py --tag dev-03
+tools/venv/bin/python3 tools/v4/pipeline/stage_1_m6_market.py --tag dev-03
+
+# 2. Refit ALL three TS artifacts + golden tests in one atomic step
+bash tools/v4/refit-dev03-artifacts.sh   # reihenfolge-kritisch:
+                                          # export_dev03_to_json → export_feature_cache
+                                          # → generate_dev03_features_golden → vitest parity
+# --skip-golden wenn nur ein deploy braucht aber keine Tests-Verify-Pass
+
+git diff public/dev03-*.json tests/fixtures/dev03-*.json
+git commit -am 'chore(dev03): refit artifacts after retrain'
+```
+
+Die `refit-dev03-artifacts.sh` exit codes: 0 = alles ok, 1 = pickles fehlen (retrain erst), 3 = parity-tests failed (Artifacts geschrieben aber TS-Port driftet — review nötig). **Wichtig:** `export_feature_cache.py` läuft AUCH wöchentlich via `refresh:full` Phase `dev03-cache` (independent vom Retrain), damit Elo + Momentum-Snapshots sich nicht zu sehr von der Realität entfernen. Der Retrain-Hook regeneriert es zusätzlich um sicherzustellen dass Cache + Model in der gleichen training-cutoff Reality leben.
 
 ---
 

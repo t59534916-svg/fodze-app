@@ -1,6 +1,6 @@
 # FODZE — Quantitative Fußball-Wettanalyse
 
-Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson, **Dirichlet 3-Klassen-Kalibrierung**, **per-Liga Benter Market×Modell-Blend**, **Conformal Prediction Gates** und Kelly-Criterion Staking. **22 Ligen** live + 2 European cups, **4 Prediction-Engines** parallel, **~104.000 Trainings-Rows** aus 4 Datenquellen, **550 Tests** grün.
+Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson, **isotonic + Benter calibration**, **Conformal Prediction Gates** und Kelly-Criterion Staking. **22 Ligen** live + 2 European cups, **4 Prediction-Engines** parallel, **~87.000 xG-history-rows** aus 7 Datenquellen, **6.856 Sofa-extras games** (100% v1+v2 coverage seit 2026-05-10), **550+ Tests** grün.
 
 **Next.js 14** · TypeScript · Supabase · Vercel
 
@@ -62,7 +62,9 @@ bash scripts/launchd/install.sh   # täglich 07:30 + Di/Fr 19:00
 
 ## Daten-Pipeline
 
-**4 Primary-Quellen** für echte xG-Ground-Truth (team_xg_history, ~104k Rows):
+> 📋 **Vollständige Datenpunkt × Engine Matrix:** [`docs/DATAPOINTS-OVERVIEW.md`](docs/DATAPOINTS-OVERVIEW.md) (color-coded: 🟢 Standard / 🟣 v1 / 🔵 v2 / 🟦 v3 / 🟧 Calibration / 🟥 Backtest / 🟨 UI)
+
+**7 Primary-Quellen** für echte xG-Ground-Truth (team_xg_history, ~87k Rows):
 
 | Source | Rows | Coverage |
 |---|---|---|
@@ -91,16 +93,17 @@ bash scripts/launchd/install.sh   # täglich 07:30 + Di/Fr 19:00
 | referees | Per-Referee Foul/Yellow-Bias-Profile | 354 rows ⚠ STUB-Daten (fouls NULL, 1 distinct bias-value) |
 | stadiums | Lat/Lng/Capacity per Heim-Stadion | 278 rows, altitude 0%, capacity 30% Join-Coverage |
 
-**Sofascore Pipeline (NEU 2026-04-29):**
-- **Library:** [`datafc`](https://pypi.org/project/datafc/) (curl_cffi mit Chrome 124 TLS-Fingerprint, kein Headless-Browser)
-- **Tabellen:** `sofascore_match` (3.736 rows) + `sofascore_shotmap` (92.898 rows)
-- **Views:** `sofascore_team_chance_quality` (per-game) + `sofascore_team_rolling_8` (engine-input shape) + `sofascore_standings` (live league table — bypass für PostgREST 1000-row default page-limit)
-- **Tier-Klassifikation** via `sofascore_data_quality_tier(league)`:
-  - `premium` (8 Ligen): full xG + assisted/fast-break tags
-  - `partial` (Liga 3): full xG, nur "regular" für open-play
-  - `volume` (la_liga2 + ligue_2): shot events ohne xG-model
-- **Cron:** Phase 4 in `refresh-all.mjs` via `node scripts/sync-sofascore-shotmap.mjs --tier A`
-- **Engine-Hookpunkt:** `tools/sofascore/engine_features.py` exportiert `load_team_features()` + `feature_with_fallback()` für v2/v3 retraining
+**Sofascore Pipeline (vollständig seit 2026-05-10):**
+- **Library:** [`datafc`](https://pypi.org/project/datafc/) für shotmap, [`tls_requests`](https://pypi.org/project/wrapper-tls-requests/) (bogdanfinn TLS-fingerprint) für extras
+- **Match-Universe:** 6.856 ended games × 22 Ligen × Saison 25/26
+- **Shotmap:** `sofascore_match` (7.099 rows) + `sofascore_shotmap` (174.902 shot events)
+- **V1 Extras (4 endpoints):** `sofascore_match_statistics` (39.666 rows) + `sofascore_player_match_stats` (lokal-only 279.832 rows in SQLite) + `sofascore_incidents` (139.793) + `sofascore_average_positions` (211.240)
+- **V2 Extras (3 HIGH-SIGNAL endpoints):** `sofascore_match_managers` (13.703) + `sofascore_pregame_form` (13.228) + `sofascore_team_streaks` (75.252)
+- **Bridge → team_xg_history:** 18 feature-cols (big_chances/possession/tackles/cards/goals_prevented) via `bridge-sofascore-extras-to-team-xg.mjs`
+- **Tier-Klassifikation:** 16 premium / 1 partial / 5 volume (alle 22 Ligen)
+- **Cloudflare-Bypass:** `--use-tls-requests` flag (bogdanfinn fingerprint, kein Proxy nötig). curl_cffi chrome124 wurde am 2026-05-10 von CF blockiert; tls_requests passiert.
+- **Local SQLite Mirror:** `tools/sofascore/data/local_extras.db` (253 MB) spiegelt alle 7 Tabellen + `sofascore_match` lokal. Speichert auch player_match_stats die Supabase wegen Free-tier 500MB cap skipped.
+- **Cron:** Phase 4 (shotmap) + Phase 6 (extras) in `refresh-all.mjs`
 
 ## Prediction Engines
 

@@ -1,52 +1,58 @@
 # DATA-INVENTORY.md
 
-**Stand:** 2026-05-03 (mit Update-Note 2026-05-05 unten) · **Quelle:** Live-query gegen Supabase project `oddsmind` (resdrxgfcpaxosiwnxiu)
+**Stand:** 2026-05-10 · **Quelle:** Live-query gegen Supabase project `oddsmind` (resdrxgfcpaxosiwnxiu) + local SQLite mirror
 
-Vollständiges Inventar aller Datenquellen, deren Coverage pro Liga × Saison, und Quality-Status. Diese Datei ist von Hand kuratiert basierend auf Live-DB-counts — bei Diskrepanzen mit der Realität ist die DB-Live-Query autoritativ. Zum Refresh: `node scripts/audit-data-quality.mjs` (für Hauptmetriken) bzw. die in dieser Doku unten verlinkten ad-hoc Audit-Scripts.
+Vollständiges Inventar aller Datenquellen, deren Coverage pro Liga × Saison, und Quality-Status. Diese Datei ist von Hand kuratiert basierend auf Live-DB-counts — bei Diskrepanzen mit der Realität ist die DB-Live-Query autoritativ. Zum Refresh: `node scripts/audit-data-quality.mjs` (für Hauptmetriken).
 
-> **Update 2026-05-05:** Cloudflare hat die 5 vorher geblockten Tier-B-Ligen freigegeben — austria_bl, swiss_sl, scottish_prem, jupiler_pro, super_lig wurden mit `--pace 4.0` sequenziell nachgezogen (181/218/222/315/240 matches respectively, alle 99%+ xG-fill, alle premium-tier). Damit haben jetzt **alle 22 FODZE-Ligen** eine Sofascore-Tier-Klassifikation (16 premium, 1 partial, 5 volume). Plus: neues Skript `scripts/bridge-sofascore-to-team-xg.mjs` propagiert sofascore_team_chance_quality → team_xg_history mit `source='sofascore'` (~10k rows × 17 ligen). Konkrete Auswirkung: per-Liga-Zahlen in Sektion 4 sind nicht mehr aktuell (austria_bl/swiss_sl/scottish_prem/jupiler_pro/super_lig hatten "0 matches" Sofa, jetzt 4-7k shots each); die 5.2 "Bekannte Gaps" Tabelle weiter unten reflektiert den neuen State.
+> **🎯 Lookup nach Engine-Use:** Wenn du wissen willst welche Datenpunkte von welcher Engine konsumiert werden, lies [`DATAPOINTS-OVERVIEW.md`](DATAPOINTS-OVERVIEW.md) — color-coded (🟢🟣🔵🟦🟧🟥🟨⚪) Matrix mit per-Datapoint Engine-Mapping + Liga-Coverage. Diese DATA-INVENTORY.md ist der **Source-Catalog** (woher kommen die Daten); DATAPOINTS-OVERVIEW.md ist der **Use-Catalog** (wer konsumiert sie).
 
-> **Update 2026-05-07 (Sofascore extras v1):** 4 neue post-match endpoints + 4 Tabellen geshipped: `sofascore_match_statistics` (4.256 rows, ~40 stats × period × side), `sofascore_player_match_stats` (29.549 rows, per-player rating/xA/key_passes/touches_in_box), `sofascore_incidents` (14.952 goal/card/sub timeline rows), `sofascore_average_positions` (22.699 tactical pitch coords). Plus 18 neue Feature-Columns auf `team_xg_history` (big_chances/possession/tackles/cards/goals_prevented). Pipeline `tools/sofascore/{fetch_match_extras,load_extras_to_supabase}.py` + opt-in via `--extras` flag in `refresh-all.mjs`. Coverage 736/6810 ended games (~11%) — Backfill stockt seit ~2026-05-08 wegen Cloudflare.
+> **Update 2026-05-10 (Sofa-Extras 100% Backfill + tls_requests Breakthrough):** 
+> 1. **6.856 / 6.856 ended games** mit allen 7 endpoints in Supabase + lokal SQLite. Total 493k Supabase-rows + 279k lokal-only player_match_stats.
+> 2. **Cloudflare-Bypass via tls_requests:** CF blockt `curl_cffi` chrome124 fingerprint vollständig (alle 30 Webshare-IPs + Tor 0% am 2026-05-10 morning). `tls_requests` (bogdanfinn/tls-client) hat anderen TLS-Fingerprint, geht direkt durch ohne Proxy. 1568 missing games in 1.5h gepulled. **Default-recommended Method** — `--use-tls-requests` flag.
+> 3. **Local SQLite Mirror:** `tools/sofascore/data/local_extras.db` (253 MB, WAL mode + retry-on-busy) spiegelt alle 7 extras + sofascore_match Tabellen. Speichert auch player_match_stats die Supabase wegen Free-tier-cap skipped. Plus `--no-supabase` mode + Circuit-Breaker (5 fail → abort) gegen IO-budget exhaustion.
+> 4. **Per-Liga Match-JSONs:** Lokale `tools/sofascore/data/{league}_25-26.json` files enthalten 7.099 matches + 174.918 shots events (Shotmap-pipeline output, größer als ended-games-count weil includes upcoming).
 
-> **Update 2026-05-08 (Sofascore extras v2 — HIGH-SIGNAL):** 3 weitere Tabellen + view: `sofascore_match_managers` (manager_id stable für coaching-change-detection), `sofascore_pregame_form` (Sofa pre-match form summary), `sofascore_team_streaks` (~13 streaks pro Spiel). Migration `scripts/migration-sofascore-event-extras-v2.sql` + view `sofascore_team_manager_history` für Coaching-Change-Queries. NEUER-TRAINER tag wird jetzt automatisch via `scripts/_lib/matchday-enrich.mjs::deriveCoachingChangeTag` erkannt (16 vitest cases). End-to-end empirisch verifiziert (Spiel 14035865 → 7/7 endpoints → 17 rows). **Cloudflare-Reality:** Direct API access wurde am 2026-05-07 geblockt — alle v2-fetches brauchen Tor SOCKS5 (`brew install tor && --use-tor` flag). Smoke-test mittag 2026-05-08 zeigt aggressive Tor-exit blocks; Bulk-backfill via Tor unzuverlässig. Realistische Pfade vorwärts: incrementeller cron mit `FODZE_EXTRAS_USE_TOR=1` (langsam) oder paid residential proxy.
+> **Update 2026-05-08:** v2 HIGH-SIGNAL pipeline initial — siehe DATAPOINTS-OVERVIEW.md Sektion 2.6-2.8 für details.
+
+> **Update 2026-05-07:** v1 post-match-extras pipeline initial.
+
+> **Update 2026-05-05:** Cloudflare hat 5 vorher geblockte Tier-B-Ligen freigegeben — alle 22 Ligen jetzt mit Sofa-Tier-Klassifikation (16 premium / 1 partial / 5 volume).
 
 ---
 
 ## 1. Tabellen-Übersicht
 
-### Aktive Tabellen (mit production-data)
+### Aktive Tabellen (mit production-data, Stand 2026-05-10)
 
 | Tabelle | Rows | Zweck |
 |---|---|---|
-| `team_xg_history` | 85.510 | Per-Match xG-Historie (mixed sources) — primärer Modell-Input |
-| `sofascore_shotmap` | 141.315 | Per-shot events (xG, situation, body_part) seit 2026-04-29 |
-| `sofascore_team_chance_quality` (view) | 11.149 | Per-team-per-game chance-quality aggregates |
-| `odds_closing_history` | 24.753 | Pinnacle closing odds historisch + forward-cache |
-| `pipeline_shadow_log` | 3.441 | Per-engine predictions (4 engines) für post-hoc Brier-Vergleich |
-| `match_outcomes` | 2.618 | Predictions×reality bridge (settled matches) |
-| `match_predictions` | 1.062 | Pre-match snapshot per engine (mit lambda + sharp odds) |
+| `team_xg_history` | 87.330 | Per-Match xG-Historie (mixed sources, +18 sofa-extras feature cols seit 2026-05-07) — primärer Modell-Input |
+| `sofascore_shotmap` | 174.902 | Per-shot events (xG, situation, body_part) — 22 Ligen 25/26 |
+| `sofascore_average_positions` | 211.240 | v1 tactical avg-pitch position per starter |
+| `sofascore_incidents` | 139.793 | v1 goal/card/sub timeline (with minute + score progression) |
+| `sofascore_team_streaks` | 75.252 | **v2** per-game streaks (general + head2head categories, ~11/game) |
+| `sofascore_match_statistics` | 39.666 | v1 ~40 team-level stats × period (ALL/1ST/2ND) |
+| `sofascore_player_match_stats` | 31.857 | v1 per-player stats — Supabase has subset, **lokal-only 279.832 rows** in SQLite mirror |
+| `odds_closing_history` | 24.798 | Pinnacle closing odds historisch + forward-cache |
+| `sofascore_match_managers` | 13.703 | **v2** per-game home + away coach (id-stable for change-detection) |
+| `sofascore_pregame_form` | 13.228 | **v2** Sofa pre-match form (avgRating, position, last-5) |
+| `sofascore_match` | 7.099 | Match metadata (game_id, teams, scores, kickoff) |
+| `sofascore_extras_state` | 6.856 | Sync-state-tracker (7 has_* flags per game) — **= 100% ended-games** |
+| `pipeline_shadow_log` | 4.193 | Per-engine predictions (4-5 engines) für post-hoc Brier-Vergleich |
+| `match_outcomes` | 3.090 | Predictions×reality bridge (settled matches) |
 | `player_xg_history` | 2.500 | Per-player xG/xa/npxg/key_passes — Top-5 Ligen only |
-| `sofascore_match` | 7.013 | Match metadata (game_id, teams, scores, kickoff) |
-| `sofascore_player_match_stats` | 29.549 | v1 per-player stats (rating, xA, key_passes, touches_in_box, goals_prevented) |
-| `sofascore_average_positions` | 22.699 | v1 tactical avg-pitch position per starter |
-| `sofascore_incidents` | 14.952 | v1 goal/card/sub timeline (with minute + score progression) |
-| `sofascore_match_statistics` | 4.256 | v1 ~40 team-level stats × period (ALL/1ST/2ND) |
-| `sofascore_extras_state` | 736 | Sync-state-tracker (7 has_* flags per game) |
-| `sofascore_match_managers` | 2 | **v2** per-game home + away coach (id-stable for change-detection) |
-| `sofascore_pregame_form` | 2 | **v2** Sofa pre-match form (avgRating, position, last-5) |
-| `sofascore_team_streaks` | 13 | **v2** per-game streaks (general + head2head categories) |
+| `match_predictions` | 1.506 | Pre-match snapshot per engine (mit lambda + sharp odds) |
+| `odds_snapshots` | 955 | Manual + cron snapshots |
+| `matchdays` | 627 | Spieltag-JSON snapshots (per Liga, JSONB) |
 | `team_metadata` | 430 | Team-Logos + thesportsdb_id + api_sports_id |
 | `referees` | 354 | ⚠ STUB DATA — fouls_per_game alle NULL |
-| `sofascore_team_rolling_8` (view) | 336 | Last-8-games per team — engine-input shape |
-| `sofascore_standings` (view) | 336 | Live league table aus Sofascore |
 | `stadiums` | 278 | Lat/Lng/capacity (30% join coverage, marginal value) |
-| `live_odds` | 202 | Live odds (sharp + best, refreshed alle 4h) |
-| `upcoming_fixtures` | 202 | Fixtures mit kickoff (1:1 mit live_odds) |
-| `live_brier_snapshots` | 27 | Cron-aggregierte Live-Brier per engine × league |
-| `matchdays` | 492 | Spieltag-JSON snapshots (per Liga, JSONB) |
-| `bets` | 3 | User-Bets (klein — wenig usage so far) |
+| `live_odds` | 215 | Live odds (sharp + best, refreshed alle 4h) |
+| `upcoming_fixtures` | 215 | Fixtures mit kickoff (1:1 mit live_odds) |
+| `live_brier_snapshots` | 195 | Cron-aggregierte Live-Brier per engine × league |
 | `profiles` | 4 | User-Profile (Bankroll, risk_profile) |
-| `odds_snapshots` | 3 | Manual snapshots — kein Auto-Cron |
+| `bets` | 3 | User-Bets (klein — wenig usage so far) |
+| `rate_limits` | 3 | API rate-limit tracking |
 
 ### Empty Tabellen (dormant — Schema existiert, no data)
 
