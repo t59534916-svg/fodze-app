@@ -189,6 +189,12 @@ export function buildRows(league, season, csvRows) {
       home_team: home,
       away_team: away,
       psch, pscd, psca,
+      // Pinnacle PRE-MATCH (early-week) odds — pairs with PSCH/D/A closing
+      // for line-movement computation. CSVs from football-data.co.uk have
+      // captured PSH/PSD/PSA since ~2018. NULL on older seasons.
+      psh: numOrNull(r.PSH),
+      psd: numOrNull(r.PSD),
+      psa: numOrNull(r.PSA),
       psc_over25: numOrNull(r["PSC>2.5"]),
       psc_under25: numOrNull(r["PSC<2.5"]),
       pscahh: numOrNull(r.PSCAHH),
