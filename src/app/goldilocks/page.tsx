@@ -4,7 +4,29 @@ import Link from "next/link";
 import { useApp } from "@/contexts/AppContext";
 import AppShell from "@/components/layout/AppShell";
 import { LEAGUES, vigAdjustBest } from "@/lib/dixon-coles";
-import { computeEngineProbs, classifyEdgeSource, type EdgeSource } from "@/lib/goldilocks-engine";
+import { matchKey as canonicalMatchKey } from "@/lib/format";
+import {
+  validatedEngineFor,
+  hasValidatedEdge,
+  leagueEdgeRecord,
+  expectedROIperStake,
+  type ValidatedEngine,
+} from "@/lib/bet-edge-policy";
+import {
+  computeEngineProbs,
+  classifyEdgeSource,
+  evaluateLatentTopology,
+  type EdgeSource,
+  type LatentSignals,
+  type LatentTopology,
+  type EpistemicTrail,
+} from "@/lib/goldilocks-engine";
+import {
+  buildCsdVetoes,
+  shieldVetoToTrail,
+  isFilterShieldLoaded,
+  type ShieldVeto,
+} from "@/lib/filter-shield";
 import { fuzzyTeamMatch, resolveTeam, canonicalizeTeamName } from "@/lib/team-resolver";
 import { color, fontSize, fontWeight, space, radius } from "@/styles/tokens";
 import { card, badge } from "@/styles/components";
@@ -44,6 +66,52 @@ interface GoldilocksBet {
   grade: "A" | "B" | "C";
   // Which source(s) detected this edge inside the Goldilocks zone.
   source: EdgeSource;
+  // v1.1 Asymmetric Negation — match-level topology. Same value across every
+  // market row that belongs to the same match (it's a property of the match,
+  // not the market). UI surfaces vetoes + a stake-multiplier pill so users
+  // see "this in-zone edge is overlaid with a Possession Trap" before sizing.
+  topology?: LatentTopology;
+  // v1.2 Filter-Shield — CSD regime-shift vetoes per match. Like topology,
+  // this is match-level (same across all market rows for the same match).
+  // Filtered to vetoes that affect the THIS bet's market (home → home+draw,
+  // away → away+draw). Empty array when no veto fires for this market.
+  csdVetoes?: ShieldVeto[];
+  // Effective Kelly multiplier from CSD shield for this bet's market.
+  // 1.0 = no veto. <1.0 = haircut applied. Composes with topology multiplier
+  // when both fire (min-pool across all veto-sources).
+  csdMult?: number;
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────
+
+/**
+ * EWMA with span=3 (α=0.5). Input is oldest-first (the shape `loadTeamXGHistory`
+ * returns after its `.reverse()`). Weights for [oldest_of_3, mid, most_recent]
+ * are [0.25, 0.5, 1.0] = 0.5^(k-1) with k=3,2,1. Returns null if <3 values.
+ * Matches the SQL formula in `tools/v4/queries/strict_lagging.sql`.
+ */
+function ewma3(values: number[]): number | null {
+  if (values.length < 3) return null;
+  const last3 = values.slice(-3);
+  const w = [0.25, 0.5, 1.0];
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < 3; i++) {
+    num += last3[i] * w[i];
+    den += w[i];
+  }
+  return num / den;
+}
+
+/**
+ * Mean of non-null numbers, requiring at least `minSamples` valid values
+ * (default 3) so a single-row possession reading can't fire the M5 Heckman
+ * gate on what's effectively noise. Returns null if fewer samples are valid.
+ */
+function safeMean(values: Array<number | null | undefined>, minSamples = 3): number | null {
+  const ok = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (ok.length < minSamples) return null;
+  return ok.reduce((s, v) => s + v, 0) / ok.length;
 }
 
 // ─── Styles ─────────────────────────────────────────────────────────
@@ -156,11 +224,52 @@ const SOURCE_TOOLTIP: Record<EdgeSource, string> = {
   engine: "Nur FODZE-Engine sieht Edge — Pinnacle preist es nicht so. In Top-Ligen eher Modell-Fehler, in Liga 3 / Greek SL real möglich",
 };
 
+// v1.1 Asymmetric Negation Protocol · veto-trap explanations. Manager-bounce
+// vetoes carry the matches-since-change in the label (`MANAGER_BOUNCE_REGIME_2`),
+// so we strip the suffix before lookup.
+const VETO_TOOLTIP: Record<string, string> = {
+  POSSESSION_TRAP:
+    "Heimteam dominiert Possession (>15 pp) erzeugt aber weniger xG als es kassiert UND liegt unter 85% der Liga-Baseline. Tier-A-Liga only. Empirisch -19.8pp vs Engine-Prognose.",
+  MANAGER_BOUNCE_REGIME:
+    "Trainerwechsel-Regime aktiv. Erste 0-1 Spiele: 0.85× Kelly (Shake-up-Noise). Spiele 2-3: 0.92× (Honeymoon-Fade). Ab Spiel 4 wieder neutral.",
+};
+
+function vetoTooltip(veto: string): string {
+  // MANAGER_BOUNCE_REGIME_2 → MANAGER_BOUNCE_REGIME for lookup
+  const base = veto.replace(/_\d+$/, "");
+  return VETO_TOOLTIP[base] || veto;
+}
+
+// v1.2 Filter-Shield · CSD-veto explanations. ShieldVeto.name format:
+// "CSD_REGIME_SHIFT:persistent_reversal:home" → display "CSD pers-rev (home)"
+const CSD_REGIME_TOOLTIP: Record<string, string> = {
+  persistent_reversal:
+    "Letzte 10 Spiele oszillierten (rho_1 < -0.30) UND haben Sign-Flip zwischen den letzten 3 vs vorigen 7. Empirisch +0.043 Brier-Hit in OOT-Validation (n=355) — 50 % Kelly-Haircut.",
+  catastrophic:
+    "Hohe Volatilität (|rho_1| < 0.30) + Sign-Flip + großes |delta_mu| > 0.50. Shadow-Mode bis 200 Production-Firings die Brier-evidence bestätigen. Stake NICHT reduziert.",
+};
+
+function csdBadgeLabel(vetoName: string): string {
+  // "CSD_REGIME_SHIFT:persistent_reversal:home" → "🛡 CSD pers-rev"
+  const parts = vetoName.split(":");
+  const regime = parts[1] || "?";
+  const short = regime === "persistent_reversal" ? "pers-rev" : regime;
+  return `🛡 CSD ${short}`;
+}
+
+function csdBadgeTooltip(veto: ShieldVeto): string {
+  const parts = veto.name.split(":");
+  const regime = parts[1] || "?";
+  const teamSide = parts[2] || "?";
+  const base = CSD_REGIME_TOOLTIP[regime] || veto.reason;
+  return `${base}\n\nTeam-Seite: ${teamSide}. ${veto.reason}`;
+}
+
 const MARKET_LABELS: Record<string, string> = {
   "1": "Heim", "X": "Remis", "2": "Gast", "Ü2.5": "Über 2.5", "U2.5": "Unter 2.5",
 };
 
-type FilterType = "all" | "A" | "B" | "1X2" | "OU" | "consensus";
+type FilterType = "all" | "A" | "B" | "1X2" | "OU" | "consensus" | "veto-free" | "validated";
 
 // ─── Component ──────────────────────────────────────────────────────
 
@@ -186,6 +295,9 @@ export default function GoldilocksPage() {
       const allBets: GoldilocksBet[] = [];
       let totalLiveOddsMatches = 0;
       let totalWithEngine = 0;
+      // Trail-batches collected across all leagues — flushed once at the end
+      // to a single POST /api/persist-trails (idempotent server-side upsert).
+      const trailBatches: Array<{ matchKey: string; league: string | null; trails: EpistemicTrail[] }> = [];
 
       await Promise.all(leagueKeys.map(async (league) => {
         try {
@@ -304,6 +416,123 @@ export default function GoldilocksPage() {
 
             if (enginePr) totalWithEngine++;
 
+            // ── v1.1 Asymmetric Negation · evaluateLatentTopology ─────────
+            // Match-level (not per-market). Cheap pure function; runs even
+            // when enginePr is null (returns mult=1.0 because every gated
+            // trap requires real signals). Trails are collected for a
+            // single batched POST after the Promise.all.
+            //
+            // Self-review guard: SKIP if commence_time is missing. Otherwise
+            // matchKey would float (yyyymmdd derived from Date.now()) and
+            // the unique constraint (trap_kind, match_key, detected_at)
+            // would never collapse re-emissions across page-reloads.
+            let topology: LatentTopology | undefined;
+            if (ld && enginePr && o.commence_time) {
+              const hHist = histByKey.get(`H:${o.home_team}`) || [];
+              const aHist = histByKey.get(`A:${o.away_team}`) || [];
+
+              // Possession EWMA: mean of last 5 venue-specific possession_pct
+              // values (which is what `team_xg_history` carries since the
+              // 2026-05-07 Sofa-bridge for 16 premium tier leagues). Null in
+              // un-covered leagues — the M5 Heckman gate is gated on Tier-A
+              // anyway, so a null here just short-circuits the trap-check.
+              const homePoss = safeMean(hHist.slice(-5).map((m) => m.possession_pct ?? null));
+              const awayPoss = safeMean(aHist.slice(-5).map((m) => m.possession_pct ?? null));
+              const possessionDiff =
+                homePoss !== null && awayPoss !== null ? homePoss - awayPoss : null;
+
+              // xG EWMA(3) — both raw home xG and (xG − xGA) differential.
+              // span=3, weights 0.5^(k-1). Matches the SQL formula in
+              // tools/v4/queries/strict_lagging.sql; both backends agree.
+              const homeXg = hHist.map((m) => Number(m.xg) || 0);
+              const homeXgDiff = hHist.map((m) => (Number(m.xg) || 0) - (Number(m.xga) || 0));
+              const xgEwma3 = ewma3(homeXg);
+              const xgDiffEwma3 = ewma3(homeXgDiff);
+
+              const signals: LatentSignals = {
+                possessionDiff,
+                xgDiffEwma3,
+                xgEwma3,
+                // matchSinceManagerChange + tacticalWidth: not yet wired —
+                // sofascore_match_managers join (M4 manager-bounce regime)
+                // is a follow-up sprint. Until then the manager-bounce trap
+                // is dormant for any match (multiplier stays 1.0 here).
+                matchSinceManagerChange: null,
+                tacticalWidth: null,
+                engineHWRate: enginePr.h,
+                leagueBaselineXg: ld.avg,
+              };
+
+              // Augment with match-identity for the trail record. matchKey
+              // MUST match the codebase canonical format (src/lib/format.ts)
+              // — same string the bets table + odds_closing_history rows use.
+              // Else the CLV-decay cron's `epistemic_trails × odds_closing_history`
+              // join (by match_key) silently returns nothing forever.
+              const kickoffMs = new Date(o.commence_time).getTime();
+              // Store kickoff in Unix SECONDS to match the migration's
+              // `match_kickoff BIGINT  -- Unix epoch (sec)` and the CLV-decay
+              // cron's `match_kickoff=lt.${nowUnixSec}` comparison.
+              const kickoffSec = Math.floor(kickoffMs / 1000);
+              const matchKey = canonicalMatchKey(league, o.home_team, o.away_team);
+              // Topology only reads matchKey/kickoff/league; the rest of
+              // RawMatch is unused. A minimal literal avoids re-plumbing
+              // `synthMatch` (computed in the engine-block above) into this
+              // scope, and decouples topology from any specific match shape.
+              const matchAug = {
+                home: { name: o.home_team },
+                away: { name: o.away_team },
+                tags: [],
+                matchKey,
+                kickoff: kickoffSec,
+                league,
+              } as unknown as RawMatch & { matchKey: string; kickoff: number; league: string };
+
+              topology = evaluateLatentTopology(matchAug, signals);
+
+              if (topology.epistemicTrails.length > 0) {
+                trailBatches.push({
+                  matchKey,
+                  league,
+                  trails: topology.epistemicTrails,
+                });
+              }
+            }
+
+            // v1.2 Filter-Shield · per-match CSD vetoes. Same data as v1.1
+            // topology (matchKey/kickoff/league) but driven by per-team last-10
+            // goal_diff series instead of possession+xG-EWMA. Vetoes can fire
+            // even when topology doesn't (no possession data) and vice versa
+            // — they're orthogonal signals stacked via MIN-pool at Kelly time.
+            let csdVetoes: ShieldVeto[] = [];
+            if (isFilterShieldLoaded() && o.commence_time && enginePr) {
+              const hHist = histByKey.get(`H:${o.home_team}`) || [];
+              const aHist = histByKey.get(`A:${o.away_team}`) || [];
+              // Goal-diff series across BOTH venues (different bucketing than
+              // possession's venue-specific slice). buildCsdVetoes returns []
+              // when series is too short — same passthrough semantics as v1.1.
+              const homeSeries = hHist.slice(-10).map((m) =>
+                (Number(m.goals_for) || 0) - (Number(m.goals_against) || 0),
+              );
+              const awaySeries = aHist.slice(-10).map((m) =>
+                (Number(m.goals_for) || 0) - (Number(m.goals_against) || 0),
+              );
+              const matchKeyCsd = canonicalMatchKey(league, o.home_team, o.away_team);
+              csdVetoes = buildCsdVetoes(homeSeries, awaySeries, matchKeyCsd);
+
+              if (csdVetoes.length > 0) {
+                const kickoffMs = new Date(o.commence_time).getTime();
+                const kickoffSec = Math.floor(kickoffMs / 1000);
+                const csdTrails: EpistemicTrail[] = csdVetoes.map((v) =>
+                  shieldVetoToTrail(v, matchKeyCsd, kickoffSec, enginePr.h),
+                );
+                trailBatches.push({
+                  matchKey: matchKeyCsd,
+                  league,
+                  trails: csdTrails,
+                });
+              }
+            }
+
             // Each market: compute BOTH edges, classify, emit row only if
             // at least one source places it in the Goldilocks zone.
             type MarketEntry = {
@@ -353,6 +582,23 @@ export default function GoldilocksPage() {
               const grade: "A" | "B" | "C" =
                 displayEdge >= EDGE_GRADE_A ? "A" : displayEdge >= EDGE_GRADE_B ? "B" : "C";
 
+              // v1.2 Filter-Shield: route CSD vetoes to the bet's market side.
+              // 1/H/Heim → "home", X → "draw", 2/A → "away", Ü2.5 → "over",
+              // U2.5 → "under". Min-pool active multipliers — shadow vetoes
+              // surface in the badge but don't reduce csdMult.
+              const csdSideMap: Record<string, string[]> = {
+                "1": ["home"], "X": ["draw"], "2": ["away"],
+                "Ü2.5": ["over"], "U2.5": ["under"],
+              };
+              const relevantSides = csdSideMap[mkt.key] || [];
+              const marketCsdVetoes = csdVetoes.filter((v) =>
+                v.appliesTo.some((s: string) => relevantSides.includes(s)),
+              );
+              const activeMults = marketCsdVetoes
+                .filter((v) => !v.shadow)
+                .map((v) => v.multiplier);
+              const csdMult = activeMults.length > 0 ? Math.min(...activeMults) : 1.0;
+
               allBets.push({
                 league, leagueName: ld?.name || league,
                 homeTeam: o.home_team, awayTeam: o.away_team,
@@ -366,6 +612,9 @@ export default function GoldilocksPage() {
                 engineEdge,
                 grade,
                 source,
+                topology,
+                csdVetoes: marketCsdVetoes,
+                csdMult,
               });
             }
           }
@@ -386,6 +635,21 @@ export default function GoldilocksPage() {
       setEngineCoverage({ withEngine: totalWithEngine, total: totalLiveOddsMatches });
       setLastFetch(new Date().toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }));
       setLoading(false);
+
+      // Persist trails (fire-and-forget, idempotent on the server). Failures
+      // are observability-only — silently no-op so a Supabase hiccup never
+      // blocks the user's matchday view. Trail-batches are de-duped server-
+      // side via UNIQUE (trap_kind, match_key, detected_at).
+      if (trailBatches.length > 0) {
+        fetch("/api/persist-trails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batches: trailBatches }),
+        }).catch((err) => {
+          // eslint-disable-next-line no-console
+          console.warn("[goldilocks] trail persistence failed (non-fatal):", err);
+        });
+      }
     })();
   }, [supabase, leagueStatus]);
 
@@ -396,22 +660,42 @@ export default function GoldilocksPage() {
       if (filter === "1X2") return ["1", "X", "2"].includes(b.market);
       if (filter === "OU") return ["Ü2.5", "U2.5"].includes(b.market);
       if (filter === "consensus") return b.source === "consensus";
+      // veto-free = no trap fired → topology either absent (no engine signal)
+      // or empty vetoes[] AND no active CSD shield vetoes. Both states are
+      // "no asymmetric-negation veto" so we accept both. Shadow signals
+      // never block — they're observability.
+      if (filter === "veto-free") {
+        const noTopologyVeto = !b.topology || b.topology.vetoes.length === 0;
+        const noCsdVeto = !b.csdVetoes || b.csdVetoes.filter(v => !v.shadow).length === 0;
+        return noTopologyVeto && noCsdVeto;
+      }
+      // validated = league has cross-season + cross-engine validated edge
+      // (per 2026-05-21 Money-Eval investigation). 5 leagues qualify:
+      // dev-03: serie_a/scottish_prem/epl; v2: la_liga/serie_b. All others
+      // showed reversed or net-negative ROI across 23/24 + 25/26.
+      if (filter === "validated") return hasValidatedEdge(b.league);
       return true;
     });
   }, [bets, filter]);
 
-  const { gradeA, gradeB, gradeC, count1X2, countOU, avgEdge, countConsensus } = useMemo(() => {
-    let a = 0, b = 0, c = 0, c1 = 0, co = 0, sum = 0, cons = 0;
+  const { gradeA, gradeB, gradeC, count1X2, countOU, avgEdge, countConsensus, countVetoed, countVetoFree, countValidated } = useMemo(() => {
+    let a = 0, b = 0, c = 0, c1 = 0, co = 0, sum = 0, cons = 0, vetoed = 0, vetoFree = 0, validated = 0;
     for (const bet of bets) {
       if (bet.grade === "A") a++; else if (bet.grade === "B") b++; else c++;
       if (bet.market === "1" || bet.market === "X" || bet.market === "2") c1++;
       else if (bet.market === "Ü2.5" || bet.market === "U2.5") co++;
       if (bet.source === "consensus") cons++;
+      const hasTopologyVeto = bet.topology && bet.topology.vetoes.length > 0;
+      const hasCsdVeto = bet.csdVetoes && bet.csdVetoes.filter(v => !v.shadow).length > 0;
+      if (hasTopologyVeto || hasCsdVeto) vetoed++;
+      else vetoFree++;
+      if (hasValidatedEdge(bet.league)) validated++;
       sum += bet.edge;
     }
     return {
       gradeA: a, gradeB: b, gradeC: c,
       count1X2: c1, countOU: co, countConsensus: cons,
+      countVetoed: vetoed, countVetoFree: vetoFree, countValidated: validated,
       avgEdge: bets.length ? sum / bets.length : 0,
     };
   }, [bets]);
@@ -447,7 +731,9 @@ export default function GoldilocksPage() {
       <div style={S.chips} role="tablist" aria-label="Filter">
         {([
           ["all", `Alle (${bets.length})`],
+          ["validated", `🎯 Validated Edge (${countValidated})`],
           ["consensus", `Konsens (${countConsensus})`],
+          ["veto-free", `Veto-frei (${countVetoFree})`],
           ["A", `Grade A (${gradeA})`],
           ["B", `Grade B (${gradeB})`],
           ["1X2", `1X2 (${count1X2})`],
@@ -483,6 +769,30 @@ export default function GoldilocksPage() {
               <div style={S.cardHeader}>
                 <div style={S.league}>{bet.leagueName}</div>
                 <div style={{ display: "flex", gap: space[2], alignItems: "center" }}>
+                  {(() => {
+                    // Cross-season-validated-edge badge (2026-05-21 Money-Eval).
+                    // Shows ✅ when the bet's league has a stable cross-season +
+                    // cross-engine validated edge, ⚠ otherwise.
+                    const engine = validatedEngineFor(bet.league);
+                    const rec = leagueEdgeRecord(bet.league);
+                    const eroi = expectedROIperStake(bet.league);
+                    if (engine) {
+                      const tooltip = `${rec?.reason ?? ""}\nExpected ROI/stake: ${((eroi ?? 0) * 100).toFixed(1)}% (cross-season avg)\nEngine: ${engine}`;
+                      return (
+                        <div style={badge("value")} title={tooltip}>
+                          🎯 {engine === "dev-03" ? "Dev-03" : "v2"}
+                        </div>
+                      );
+                    }
+                    if (rec) {
+                      return (
+                        <div style={badge("neutral")} title={rec.reason}>
+                          ⚠ Unvalidiert
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   <div style={SOURCE_BADGE[bet.source]} title={SOURCE_TOOLTIP[bet.source]}>
                     {SOURCE_LABEL[bet.source]}
                   </div>
@@ -490,6 +800,80 @@ export default function GoldilocksPage() {
                 </div>
               </div>
               <div style={S.matchName}>{bet.homeTeam} vs {bet.awayTeam}</div>
+              {bet.topology && bet.topology.vetoes.length > 0 && (
+                <div
+                  style={{
+                    display: "flex", gap: space[2], flexWrap: "wrap" as const,
+                    alignItems: "center", marginBottom: space[3],
+                  }}
+                  aria-label={`Asymmetric-Negation Veto: Kelly × ${bet.topology.stakeMultiplier.toFixed(2)}`}
+                >
+                  {bet.topology.vetoes.map((v) => (
+                    <span key={v} style={badge("warn")} title={vetoTooltip(v)}>
+                      ⚠ {v.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                  <span
+                    style={{
+                      fontSize: fontSize.xs, color: color.warn,
+                      fontFamily: "Georgia, serif", fontWeight: fontWeight.semibold,
+                    }}
+                    title="Kelly-Multiplier nach v1.1 Asymmetric Negation (≤ 1.0 garantiert — Filter-as-Shield, kein Boost)"
+                  >
+                    Kelly × {bet.topology.stakeMultiplier.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {bet.topology && bet.topology.shadowSignals.length > 0 && bet.topology.vetoes.length === 0 && (
+                <div
+                  style={{
+                    fontSize: fontSize.xs, color: color.textFaint,
+                    marginBottom: space[3], fontStyle: "italic",
+                  }}
+                  title="Quarantänierter Schatten-Signal (200-Match-Burn-in läuft, beeinflusst Stake nicht)"
+                >
+                  Shadow: {bet.topology.shadowSignals.join(", ")}
+                </div>
+              )}
+              {/* v1.2 Filter-Shield CSD vetoes — active firings reduce Kelly stake. */}
+              {bet.csdVetoes && bet.csdVetoes.filter(v => !v.shadow).length > 0 && (
+                <div
+                  style={{
+                    display: "flex", gap: space[2], flexWrap: "wrap" as const,
+                    alignItems: "center", marginBottom: space[3],
+                  }}
+                  aria-label={`CSD Filter-Shield: Kelly × ${bet.csdMult?.toFixed(2) ?? "1.00"}`}
+                >
+                  {bet.csdVetoes.filter(v => !v.shadow).map((v) => (
+                    <span key={v.name} style={badge("warn")} title={csdBadgeTooltip(v)}>
+                      {csdBadgeLabel(v.name)}
+                    </span>
+                  ))}
+                  {bet.csdMult != null && bet.csdMult < 1.0 && (
+                    <span
+                      style={{
+                        fontSize: fontSize.xs, color: color.warn,
+                        fontFamily: "Georgia, serif", fontWeight: fontWeight.semibold,
+                      }}
+                      title="Kelly-Multiplier nach v1.2 Filter-Shield (empirisch kalibrierte CSD regime-shift detection)"
+                    >
+                      Kelly × {bet.csdMult.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              )}
+              {/* Shadow-mode CSD vetoes — surfaced as italic line for transparency. */}
+              {bet.csdVetoes && bet.csdVetoes.filter(v => v.shadow).length > 0 && bet.csdVetoes.filter(v => !v.shadow).length === 0 && (
+                <div
+                  style={{
+                    fontSize: fontSize.xs, color: color.textFaint,
+                    marginBottom: space[3], fontStyle: "italic",
+                  }}
+                  title="CSD-Veto im Shadow-Mode (Burn-in läuft, Stake nicht reduziert)"
+                >
+                  Shadow CSD: {bet.csdVetoes.filter(v => v.shadow).map(v => csdBadgeLabel(v.name)).join(", ")}
+                </div>
+              )}
               <div style={S.betRow}>
                 <div>
                   <div style={S.betLabel}>{MARKET_LABELS[bet.market] || bet.market}</div>
@@ -536,6 +920,35 @@ export default function GoldilocksPage() {
           &nbsp;<strong style={{ color: color.gold }}>Konsens:</strong> beide sehen Edge — statistisch das robusteste Signal und unser Haupt-Filter für Wetten mit echter Confidence.
           Engine-Edges ohne Konsens in Top-Ligen sind vorsichtig zu behandeln (Pinnacle ist dort meist scharf);
           in unteren Ligen (Liga 3, Greek SL, League Two) kann Engine allein aber echte Fehler im Markt aufzeigen.
+        </div>
+        <div style={{ ...S.footerTitle, marginTop: space[4] }}>🎯 Cross-Season Validated Edge</div>
+        <div style={S.footerText}>
+          Der <strong style={{ color: color.value }}>🎯 Filter</strong> zeigt nur Liga mit empirisch bewiesenem Edge:
+          5 Liga überstanden eine 5-Test-Money-Validation (2026-05-21) mit positivem ROI auf BEIDE
+          Saisons (23/24 + 25/26) mit dem passenden Engine.
+          {" "}
+          <strong style={{ color: color.gold }}>dev-03+m6_benter</strong> für Serie A, Scottish Premiership, EPL
+          (cross-season +3 bis +32% ROI/stake).
+          {" "}
+          <strong style={{ color: color.gold }}>v2_production</strong> für La Liga + Serie B
+          (cross-season +4 bis +32% ROI/stake).
+          {" "}
+          <strong style={{ color: color.warn }}>Andere Liga</strong> zeigten Reversals oder konsistent
+          negative Edges — diese sind als "⚠ Unvalidiert" gekennzeichnet. Real-Money-Bets sollten
+          die validierten 5 favorisieren. Die Empfehlungen werden bei jedem Saison-Wechsel + neuer
+          Backtest-Daten re-validiert.
+        </div>
+        <div style={{ ...S.footerTitle, marginTop: space[4] }}>v1.1 Asymmetric Negation — was tun die Vetos?</div>
+        <div style={S.footerText}>
+          Die <strong style={{ color: color.warn }}>⚠ Veto-Badges</strong> zeigen Trap-Muster aus dem Latent-Topology-Audit.
+          Sie ändern <em>nichts</em> an Edge oder Grade — die Wette bleibt sichtbar — aber sie schlagen einen
+          Kelly-Haircut vor (Multiplier ≤ 1.0, niemals darüber: <em>asymmetrisch</em>).
+          {" "}
+          <strong style={{ color: color.gold }}>Possession-Trap:</strong> nur Tier-A-Ligen, Brentford-Style toxische Dominanz.
+          {" "}
+          <strong style={{ color: color.gold }}>Manager-Bounce:</strong> diskrete Regime nach Trainerwechsel.
+          {" "}
+          Der <strong>Veto-frei</strong>-Filter blendet alle Matches mit aktiven Traps aus.
         </div>
       </div>
     </AppShell>

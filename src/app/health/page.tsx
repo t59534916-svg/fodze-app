@@ -145,6 +145,18 @@ export default function HealthPage() {
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [bets, setBets] = useState<{ total: number; settled: number; withClv: number; pending: number; lastSettled?: string } | null>(null);
   const [brier, setBrier] = useState<BrierSnapshot[] | null>(null);
+  // v1.2 Filter-Shield firing-rate (last 7d). Counts ACTIVE vs SHADOW vetoes
+  // per regime + per league, plus burn-in progress for catastrophic (which
+  // ships in shadow-mode until 200 firings confirm Brier-evidence).
+  const [shield, setShield] = useState<{
+    total7d: number;
+    active7d: number;
+    shadow7d: number;
+    perRegime: Record<string, { active: number; shadow: number; meanMult: number }>;
+    perLeague: Record<string, number>;
+    catastrophicBurnIn: { fired: number; target: number };
+    meanActiveMult: number;
+  } | null>(null);
   const [v2Coverage, setV2Coverage] = useState<{
     total_ended: number;
     fully_done: number;
@@ -354,6 +366,74 @@ export default function HealthPage() {
         const pending = total - settled;
         const lastSettled = betRows.find(b => b.settled_at)?.settled_at;
         if (!cancelled) setBets({ total, settled, withClv, pending, lastSettled });
+      }
+
+      // v1.2 Filter-Shield firing-rate (last 7d). Reads epistemic_trails for
+      // CSD_REGIME_SHIFT:* trap_kinds, aggregates by regime + league. Burn-in
+      // counter watches the catastrophic regime which is shadow-only until
+      // 200 firings empirically confirm the Brier-lift translates to Kelly-PnL.
+      try {
+        const sevenDaysAgo = Date.now() - 7 * 86400_000;
+        const { data: shieldRows } = await supabase
+          .from("epistemic_trails")
+          .select("trap_kind, league, shadow, raw_signals, detected_at")
+          .like("trap_kind", "CSD_REGIME_SHIFT:%")
+          .gte("detected_at", sevenDaysAgo)
+          .order("detected_at", { ascending: false })
+          .limit(2000);
+        if (shieldRows && !cancelled) {
+          let active7d = 0, shadow7d = 0;
+          const perRegime: Record<string, { active: number; shadow: number; meanMult: number; multSum: number }> = {};
+          const perLeague: Record<string, number> = {};
+          let activeMultSum = 0, activeMultCount = 0;
+          for (const r of shieldRows) {
+            const trapKind = String(r.trap_kind);
+            // "CSD_REGIME_SHIFT:persistent_reversal" → "persistent_reversal"
+            const regime = trapKind.split(":")[1] || "unknown";
+            if (r.shadow) shadow7d++; else active7d++;
+            if (r.league) perLeague[r.league] = (perLeague[r.league] ?? 0) + 1;
+            if (!perRegime[regime]) {
+              perRegime[regime] = { active: 0, shadow: 0, meanMult: 0, multSum: 0 };
+            }
+            if (r.shadow) perRegime[regime].shadow++;
+            else perRegime[regime].active++;
+            const mult = (r.raw_signals as Record<string, unknown> | null)?.multiplier;
+            if (typeof mult === "number") {
+              perRegime[regime].multSum += mult;
+              if (!r.shadow) {
+                activeMultSum += mult;
+                activeMultCount++;
+              }
+            }
+          }
+          for (const k of Object.keys(perRegime)) {
+            const r = perRegime[k];
+            const n = r.active + r.shadow;
+            r.meanMult = n > 0 ? r.multSum / n : 1.0;
+          }
+          // Total catastrophic firings (all-time, for burn-in counter). Single
+          // additional query — head/count only, no row data.
+          const { count: catastrophicAllTime } = await supabase
+            .from("epistemic_trails")
+            .select("*", { head: true, count: "exact" })
+            .eq("trap_kind", "CSD_REGIME_SHIFT:catastrophic");
+          setShield({
+            total7d: shieldRows.length,
+            active7d, shadow7d,
+            perRegime: Object.fromEntries(
+              Object.entries(perRegime).map(([k, v]) => [
+                k, { active: v.active, shadow: v.shadow, meanMult: v.meanMult },
+              ]),
+            ),
+            perLeague,
+            catastrophicBurnIn: { fired: catastrophicAllTime ?? 0, target: 200 },
+            meanActiveMult: activeMultCount > 0 ? activeMultSum / activeMultCount : 1.0,
+          });
+        }
+      } catch (e) {
+        // Schema not yet migrated or no firings yet — silent. The section
+        // renders an empty-state hint when shield is null.
+        console.warn("[FODZE health] shield aggregation failed:", (e as Error).message);
       }
 
       // Live Brier monitor — most recent snapshot per engine (overall row).
@@ -606,6 +686,84 @@ export default function HealthPage() {
               Empirische Brier auf Matches die nach Prediction settlten. Static OOT-Baseline (n=6691):
               v2_dirichlet 0.6083, v1 0.6518. Sample &lt; 30 = statistisch zu klein für Engine-Vergleich;
               warten bis n ≥ 100 pro Engine für aussagekräftigen Vote.
+            </div>
+          </>
+        )}
+      </Section>
+
+      {/* v1.2 Filter-Shield firing-rate. Live observability for the CSD
+          regime-shift veto. persistent_reversal fires ACTIVE (multiplier 0.50),
+          catastrophic SHADOW until 200-firing burn-in completes. Empty until
+          the Goldilocks page-load batch starts hitting /api/persist-trails. */}
+      <Section title="FILTER-SHIELD (CSD VETO)" subtitle={
+        shield ? `${shield.total7d} firings · last 7d` : "no trail data yet"
+      }>
+        {!shield ? (
+          <div style={{ fontSize: 11, color: "#c4a26560", padding: 8 }}>
+            Keine epistemic_trails Einträge für CSD_REGIME_SHIFT.* in den letzten 7 Tagen.
+            Trails werden vom /goldilocks Page-Load via /api/persist-trails geschrieben —
+            erscheinen sobald der erste User die Page öffnet (oder ein Cron einen
+            synthetischen Run macht).
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <Stat label="Active (7d)" value={shield.active7d.toString()} />
+              <Stat label="Shadow (7d)" value={shield.shadow7d.toString()} />
+              <Stat label="Mean Active Mult"
+                value={shield.meanActiveMult.toFixed(2)}
+                warn={shield.meanActiveMult > 0.95} />
+              <Stat label="Burn-In (catastrophic)"
+                value={`${shield.catastrophicBurnIn.fired} / ${shield.catastrophicBurnIn.target}`}
+                warn={shield.catastrophicBurnIn.fired < shield.catastrophicBurnIn.target} />
+            </div>
+            {Object.keys(shield.perRegime).length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={labelStyle}>per-regime breakdown · active/shadow · mean multiplier</div>
+                {Object.entries(shield.perRegime).map(([regime, r]) => (
+                  <div key={regime} style={{
+                    display: "grid", gridTemplateColumns: "1fr auto auto auto",
+                    gap: 10, padding: "6px 0", borderBottom: "1px solid #c4a26510",
+                    alignItems: "center",
+                  }}>
+                    <span style={{ fontSize: 12, color: "#ede4d4", fontFamily: "monospace" }}>{regime}</span>
+                    <span style={{ fontSize: 11, color: "#d4b86a", fontFamily: "monospace" }}>
+                      {r.active} active
+                    </span>
+                    <span style={{ fontSize: 11, color: "#c4a26580", fontFamily: "monospace" }}>
+                      {r.shadow} shadow
+                    </span>
+                    <span style={{ fontSize: 12, color: "#d4b86a", fontFamily: "monospace",
+                                   fontVariantNumeric: "tabular-nums", minWidth: 60, textAlign: "right" }}>
+                      × {r.meanMult.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {Object.keys(shield.perLeague).length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={labelStyle}>per-Liga firing counts (last 7d)</div>
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 6, marginTop: 6 }}>
+                  {Object.entries(shield.perLeague)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 12)
+                    .map(([lg, n]) => (
+                      <span key={lg} style={{
+                        padding: "3px 8px", background: "#1a0f0a", border: "1px solid #c4a26530",
+                        borderRadius: 4, fontSize: 11, color: "#ede4d4", fontFamily: "monospace",
+                      }}>
+                        {lg} <span style={{ color: "#d4b86a" }}>{n}</span>
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+            <div style={{ marginTop: 8, fontSize: 9, color: "#c4a26560", lineHeight: 1.5 }}>
+              CSD-Veto kalibriert auf v2-OOT 2026-05-21: persistent_reversal n=355 Brier-lift +0.0427
+              (CI [+0.017, +0.069]) → 0.5× Kelly active. catastrophic n=2173 Brier-lift +0.0203 →
+              shadow bis 200 production-firings die direction-positive Money-Eval bestätigen.
+              Diagnostic: tools/v4/diagnostics/csd_veto_calibration.json.
             </div>
           </>
         )}
