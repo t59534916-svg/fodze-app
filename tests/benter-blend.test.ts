@@ -293,3 +293,58 @@ describe("benterBlend — invariants across inputs", () => {
     }
   });
 });
+
+// ─── dev-03 double-blend prevention (regression for 2026-05-21 self-eval bug) ─
+
+describe("benterBlend — dev-03 engine passes through (no double-blend)", () => {
+  beforeEach(() => {
+    resetBenterBlend();
+    setBenterMode("on");
+    loadBenterWeights(mockWeights);
+  });
+
+  it('engine="dev-03" returns passthrough (dev_03_uses_runtime_blend guard)', () => {
+    // dev-03 applies its OWN per-Liga benter blend in dev03-engine.ts via
+    // dev03BenterBlend(). calculateBetsEnhanced must NOT apply a second
+    // blend on top — that would silently distort Goldilocks edges.
+    // Defense-in-depth: hard early-return guard in benterBlend, not just
+    // schema-reservation. See benter-blend.ts comment.
+    const modelProbs = { H: 0.4, D: 0.3, A: 0.3 };
+    const pinnImplied = { H: 0.5, D: 0.25, A: 0.25 };
+    const out = benterBlend(modelProbs, pinnImplied, "dev-03", "bundesliga");
+    expect(out.applied).toBe(false);
+    expect(out.reason).toBe("dev_03_uses_runtime_blend");
+    // Probs are identical to input — no blend was applied
+    expect(out.H).toBe(modelProbs.H);
+    expect(out.D).toBe(modelProbs.D);
+    expect(out.A).toBe(modelProbs.A);
+  });
+
+  it('engine="dev-03" STILL passes through even if "dev-03" weights exist (defense-in-depth)', () => {
+    // Defense-in-depth contract (2026-05-21): if someone accidentally ships
+    // benter-weights.json with a "dev-03" key — or a future tool auto-fits
+    // one — the early-return guard in benterBlend MUST prevent double-blend.
+    // This is the STRONGER guarantee than schema-reservation: even with
+    // populated weights, the engine path refuses to blend.
+    const customWeights = {
+      ...mockWeights,
+      engines: {
+        ...mockWeights.engines,
+        "dev-03": { global: { beta1: 0.6, beta2: 0.4 }, leagues: {} },
+      },
+    };
+    loadBenterWeights(customWeights as any);
+    const out = benterBlend(
+      { H: 0.4, D: 0.3, A: 0.3 },
+      { H: 0.5, D: 0.25, A: 0.25 },
+      "dev-03", "bundesliga",
+    );
+    // Even with explicit weights, blend is REFUSED
+    expect(out.applied).toBe(false);
+    expect(out.reason).toBe("dev_03_uses_runtime_blend");
+    // Probs identical to input
+    expect(out.H).toBe(0.4);
+    expect(out.D).toBe(0.3);
+    expect(out.A).toBe(0.3);
+  });
+});

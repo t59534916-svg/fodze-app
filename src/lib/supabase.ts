@@ -679,7 +679,7 @@ export interface MatchPrediction {
   home_team: string;
   away_team: string;
   kickoff?: string | null;
-  engine: "ensemble-v1" | "poisson-ml" | "poisson-ml-v2" | "poisson-ml-v3";
+  engine: "ensemble-v1" | "poisson-ml" | "poisson-ml-v2" | "poisson-ml-v3" | "poisson-ml-dev03";
   prob_h: number;
   prob_d: number;
   prob_a: number;

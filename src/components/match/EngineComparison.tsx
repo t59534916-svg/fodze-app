@@ -18,6 +18,7 @@ interface AllEnginesMk {
   "poisson-ml": EngineMk | null;
   "poisson-ml-v2": EngineMk | null;
   "poisson-ml-v3": EngineMk | null;
+  "poisson-ml-dev03": EngineMk | null;
   "footbayes-hierarchical": EngineMk | null;
 }
 
@@ -28,7 +29,7 @@ const DIVERGENCE_PP = 0.08; // 8pp threshold
 
 function maxDivergence(all: AllEnginesMk): number {
   const engines: EngineMk[] = [];
-  for (const key of ["ensemble-v1", "poisson-ml", "poisson-ml-v2", "poisson-ml-v3", "footbayes-hierarchical"] as const) {
+  for (const key of ["ensemble-v1", "poisson-ml", "poisson-ml-v2", "poisson-ml-v3", "poisson-ml-dev03", "footbayes-hierarchical"] as const) {
     if (all[key]) engines.push(all[key]!);
   }
   if (engines.length < 2) return 0;

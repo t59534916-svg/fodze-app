@@ -28,6 +28,7 @@ import { eloPrediction } from "./ensemble";
 import { poissonLambdaPredict } from "./poisson-regression";
 import { applySoSAdjustment, type SoSRatings } from "./sos";
 import { calcAbsenceImpact, type PlayerProfile } from "./player-impact";
+import type { ShieldVeto } from "./filter-shield";
 import { getLeagueLiquidityTier } from "./league-liquidity";
 import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
 
@@ -91,6 +92,10 @@ interface PoissonMLInput {
   sosRatings?: SoSRatings;
   // Player absences (xG share-weighted impact on lambda)
   absences?: { home: PlayerProfile[]; away: PlayerProfile[] };
+  // v1.2 Filter-Shield: CSD vetoes pre-computed by MatchdayContext.calcMatch.
+  // When provided, calculateBetsEnhanced applies min-pool stake haircut per
+  // bet-side. Forwarded as-is; engine wrapper does not inspect or mutate.
+  shieldVetoes?: readonly ShieldVeto[];
   // Advanced options
   options?: {
     rhoModel?: RhoModelCoefficients;
@@ -363,7 +368,7 @@ export function calcMatchPoissonML(input: PoissonMLInput): MatchCalc | null {
   const pinOdds = sh && sh.h != null && sh.d != null && sh.a != null
     ? { sharp_h: sh.h, sharp_d: sh.d, sharp_a: sh.a }
     : undefined;
-  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v1");
+  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v1", 1, input.shieldVetoes);
 
   // ── 12b. Value Cap Guardrail ──────────────────────────────────
   // Compare model edge against vig-free Pinnacle odds (if available).

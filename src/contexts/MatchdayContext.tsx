@@ -8,6 +8,7 @@ import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
 import { resolveBucket as resolveXGBucket } from "@/lib/xg-history-resolver";
 import { canonicalizeTeamName } from "@/lib/team-resolver";
 import { ensemblePrediction, type EnsembleResult } from "@/lib/ensemble";
+import { buildCsdVetoes, isFilterShieldLoaded } from "@/lib/filter-shield";
 import {
   LEAGUES, getHomeFactor, calculateBetsEnhanced, vigAdjustBest,
   validateXGData, calcMatchEnhanced, isCalibrationActive,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
+import { calcMatchDev03 } from "@/lib/dev03-engine";
 import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
@@ -65,7 +67,7 @@ export function useMatchdayContext() {
 }
 
 export function MatchdayProvider({ children }: { children: React.ReactNode }) {
-  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded, engine, userBets } = useApp();
+  const { supabase, user, league, leagueConfig, kellyFraction, effectiveBudget, calLoaded, filterShieldLoaded, engine, userBets } = useApp();
   // Per-league Kelly multiplier — re-computed when bets list or league
   // changes. Returns 1.0 unless 30-day rolling CLV z-score < -1.0 with
   // ≥40 settled bets in this league (volume gate).
@@ -158,6 +160,25 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           byTeamVenue.set(key, arr.slice(-8));
         }
 
+        // v1.2 Filter-Shield input: per-team last-10 goal_diff series across
+        // BOTH venues. Different bucketing than byTeamVenue (which slices per
+        // venue to 8). CSD signal looks at general regime stability, not
+        // venue-conditional patterns. Used by calcMatch via the CSD veto.
+        const byTeamGoalDiff = new Map<string, number[]>();
+        const allByTeam = new Map<string, TeamXGMatch[]>();
+        for (const m of allLeagueXG) {
+          if (!allByTeam.has(m.team)) allByTeam.set(m.team, []);
+          allByTeam.get(m.team)!.push(m);
+        }
+        for (const [team, arr] of allByTeam) {
+          arr.sort((a, b) => a.match_date.localeCompare(b.match_date));
+          const last10 = arr.slice(-10);
+          byTeamGoalDiff.set(
+            team,
+            last10.map(m => (m.goals_for ?? 0) - (m.goals_against ?? 0)),
+          );
+        }
+
         // Fuzzy resolver lives in src/lib/xg-history-resolver.ts so the
         // matching behavior can be unit-tested without spinning up React +
         // Supabase; it mirrors loadTeamXGHistory (exact Understat-name
@@ -183,6 +204,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
               match.home.xga_h8 = +fallbackXGA.toFixed(2);
               match.home.games = 8;
             }
+            // v1.2 Filter-Shield: attach last-10 goal_diff series. Underscore
+            // prefix keeps it out of any serialization-sensitive contract.
+            // Empty array (no history) → CSD veto returns insufficient_n → mult 1.0.
+            const homeCanon = canonicalizeTeamName(match.home.name, lg);
+            (match.home as unknown as Record<string, unknown>)._csdSeries =
+              byTeamGoalDiff.get(homeCanon) ?? byTeamGoalDiff.get(match.home.name) ?? [];
           }
           if (match.away?.name && !match.away.xg_a_history?.length) {
             const awayCanonical = canonicalizeTeamName(match.away.name, lg);
@@ -199,6 +226,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
               match.away.xga_a8 = +fallbackXG.toFixed(2);
               match.away.games = 8;
             }
+            const awayCanon = canonicalizeTeamName(match.away.name, lg);
+            (match.away as unknown as Record<string, unknown>)._csdSeries =
+              byTeamGoalDiff.get(awayCanon) ?? byTeamGoalDiff.get(match.away.name) ?? [];
           }
         }
       }
@@ -338,6 +368,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     v1Calc: MatchCalc | null;
     v2Calc: MatchCalc | null;
     v3Calc: MatchCalc | null;
+    dev03Calc: MatchCalc | null;
     bayesCalc: MatchCalc | null;
   } | null {
     const h = match.home, a = match.away;
@@ -370,6 +401,17 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // No options: the ML engines accept { rhoModel, overdispersion,
     //   restDaysDiff }; none are set here, and `league` is already passed
     //   as a top-level field above, so an options object would be dead.
+    // v1.2 Filter-Shield: build CSD vetoes from per-team last-10 goal_diff
+    // series attached during loadCached. Empty array when config not loaded
+    // or insufficient history — buildCsdVetoes returns [] gracefully. Pass
+    // through mlInputs so all 4 engines (v1, v2, dev-03, ensemble) get the
+    // same vetoes applied per-bet-side at the Kelly stake step.
+    const homeSeries = ((h as unknown as Record<string, unknown>)._csdSeries as number[] | undefined) ?? [];
+    const awaySeries = ((a as unknown as Record<string, unknown>)._csdSeries as number[] | undefined) ?? [];
+    const shieldVetoes = isFilterShieldLoaded()
+      ? buildCsdVetoes(homeSeries, awaySeries, matchKey(league, h.name, a.name))
+      : [];
+
     const mlInputs = {
       xgHS: h.xg_h8, xgaHC: h.xga_h8 || 0, hGames: h.games || 8,
       xgAS: a.xg_a8, xgaAC: a.xga_a8 || 0, aGames: a.games || 8,
@@ -381,6 +423,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       sharpOdds: o._sharp,
       sosRatings: sosRatings || undefined,
       absences,
+      shieldVetoes,
     };
 
     // Per-engine isolation: a broken v2 model file or runtime error should
@@ -389,6 +432,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     let v2Calc: MatchCalc | null = null;
     let v1Calc: MatchCalc | null = null;
     let v3Calc: MatchCalc | null = null;
+    let dev03Calc: MatchCalc | null = null;
     let bayesCalc: MatchCalc | null = null;
     try { v2Calc = calcMatchPoissonMLv2(mlInputs); }
     catch (e) { console.warn("[FODZE] poisson-ml-v2 failed:", (e as Error).message); }
@@ -400,6 +444,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       try { v3Calc = calcMatchPoissonMLv3(mlInputs); }
       catch (e) { console.warn("[FODZE] poisson-ml-v3 failed:", (e as Error).message); }
     }
+    // dev-03 (v4 specialist): returns null when either /dev03-model.json or
+    // /dev03-feature-cache.json failed to load — its internal guards in
+    // calcMatchDev03 check both, no need to gate here. Same try/catch
+    // isolation as the other engines so a broken artifact doesn't crash
+    // the whole computation pipeline.
+    try { dev03Calc = calcMatchDev03(mlInputs); }
+    catch (e) { console.warn("[FODZE] poisson-ml-dev03 failed:", (e as Error).message); }
     // footBayes (Phase 2.2) — returns null until posteriors are ingested
     // from services/footbayes/. Handled below after enh is built so we can
     // swap its λ-pair into the standard matrix pipeline.
@@ -452,7 +503,10 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     const ensemblePin = o._sharp && o._sharp.h != null && o._sharp.d != null && o._sharp.a != null
       ? { sharp_h: o._sharp.h, sharp_d: o._sharp.d, sharp_a: o._sharp.a }
       : undefined;
-    const ensembleBets = calculateBetsEnhanced(ensembleMk, enh.mk_low, enh.mk_high, no, frac, ensemblePin, undefined, league, "ensemble", leagueKellyMultiplier);
+    const ensembleBets = calculateBetsEnhanced(
+      ensembleMk, enh.mk_low, enh.mk_high, no, frac, ensemblePin, undefined,
+      league, "ensemble", leagueKellyMultiplier, shieldVetoes,
+    );
 
     const ensembleCalc: MatchCalc = {
       lambdaH: enh.lambdaH, lambdaA: enh.lambdaA,
@@ -479,7 +533,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       // we don't multiply weight-file bloat. A dedicated "bayes" entry can
       // be added to benter-weights.json post-validation if it ships.
       const bayesBets = calculateBetsEnhanced(
-        bayesMk, enh.mk_low, enh.mk_high, no, frac, bayesPin, undefined, league, "ensemble", leagueKellyMultiplier,
+        bayesMk, enh.mk_low, enh.mk_high, no, frac, bayesPin, undefined, league, "ensemble", leagueKellyMultiplier, shieldVetoes,
       );
       bayesCalc = {
         lambdaH: bayesLambdas.lambdaH, lambdaA: bayesLambdas.lambdaA,
@@ -490,7 +544,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       } as MatchCalc;
     }
 
-    return { ensembleCalc, v1Calc, v2Calc, v3Calc, bayesCalc };
+    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -504,7 +558,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -522,8 +576,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // Include leagueKellyMultiplier so per-league CLV-feedback dampening
     // changes (e.g., new bet settlement flips the trigger) invalidate the
     // engine cache and re-compute Kelly stakes immediately.
-    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${sosKey}|pxg${playerXgIndex.size}|lkm${leagueKellyMultiplier}|${matchIds}`;
-  }, [league, ld.avg, ld.hf, frac, calLoaded, sosRatings, data, playerXgIndex, leagueKellyMultiplier]);
+    // Include filterShieldLoaded so once /filter-shield-config.json arrives
+    // (async after first render), the memo invalidates and CSD vetoes start
+    // firing for already-loaded matches. Without this, first-render matches
+    // would silently skip vetoes forever (race-condition fix 2026-05-22).
+    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${filterShieldLoaded}|${sosKey}|pxg${playerXgIndex.size}|lkm${leagueKellyMultiplier}|${matchIds}`;
+  }, [league, ld.avg, ld.hf, frac, calLoaded, filterShieldLoaded, sosRatings, data, playerXgIndex, leagueKellyMultiplier]);
 
   const allEngineCalcs = useMemo(() => {
     // Clear inline before lookups — useEffect fires AFTER render, which
@@ -561,7 +619,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       match_key: string; league: string;
       home_team: string; away_team: string;
       kickoff: string | null;
-      engine_variant: "ensemble" | "poisson-ml" | "poisson-ml-v2" | "poisson-ml-v3" | "footbayes-hierarchical";
+      engine_variant: "ensemble" | "poisson-ml" | "poisson-ml-v2" | "poisson-ml-v3" | "poisson-ml-dev03" | "footbayes-hierarchical";
       prob_h: number; prob_d: number; prob_a: number;
       prob_o25: number | null;
       feature_version: string;
@@ -599,6 +657,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
         // resolved v3 predictions in live_brier_snapshots we can decide
         // whether to flip preview→primary.
         { v: "poisson-ml-v3", c: calcs.v3Calc },
+        // dev-03 added 2026-05-21 — v4 cross-season-validated specialist.
+        // Logged for shadow-Brier comparison vs ensemble + v2.
+        { v: "poisson-ml-dev03", c: calcs.dev03Calc },
         { v: "footbayes-hierarchical", c: calcs.bayesCalc },
       ];
       for (const { v, c } of variants) {
@@ -668,6 +729,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           // v3 added 2026-04-26 — preview engine, but its predictions
           // are captured for retrospective Brier comparison via /backtest.
           { engine: "poisson-ml-v3", c: calcs.v3Calc },
+          // dev-03 added 2026-05-21 — v4 specialist. Captured for /backtest
+          // so we can A/B vs v2 on the 3 cross-season-validated leagues.
+          { engine: "poisson-ml-dev03", c: calcs.dev03Calc },
         ];
         for (const { engine, c } of variants) {
           if (!c?.mk) continue;
@@ -713,6 +777,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const all = allEngineCalcs[i];
       if (!all) return { ...m, idx: i, calc: null };
       const chosen =
+        engine === "poisson-ml-dev03" && all.dev03Calc ? all.dev03Calc :
         engine === "poisson-ml-v3" && all.v3Calc ? all.v3Calc :
         engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
         engine === "poisson-ml" && all.v1Calc ? all.v1Calc :
@@ -725,6 +790,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           "poisson-ml": all.v1Calc?.mk || null,
           "poisson-ml-v2": all.v2Calc?.mk || null,
           "poisson-ml-v3": all.v3Calc?.mk || null,
+          "poisson-ml-dev03": all.dev03Calc?.mk || null,
           "footbayes-hierarchical": all.bayesCalc?.mk || null,
         },
       };

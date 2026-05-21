@@ -154,6 +154,13 @@ export interface BetCalc {
   valueTrap?: boolean;
   valueTrapEdge?: number;
   valueTrapReason?: string;
+  // v1.2 Filter-Shield (CSD veto) — Kelly haircut applied to `kelly` field.
+  // 1.0 = no veto fired (or shield not loaded). <1.0 = haircut applied.
+  // `shieldActive` lists active veto names; `shieldShadow` lists shadow-mode
+  // vetoes that fired but DID NOT alter `kelly` (kept for burn-in observability).
+  shieldMult?: number;
+  shieldActive?: string[];
+  shieldShadow?: string[];
 }
 
 // ─── Engine Output: Top Score ────────────────────────────────────────
@@ -264,6 +271,7 @@ export interface MatchCalc extends LambdaEstimates {
     "poisson-ml": MarketProbs | null;
     "poisson-ml-v2": MarketProbs | null;
     "poisson-ml-v3": MarketProbs | null;
+    "poisson-ml-dev03": MarketProbs | null;
     "footbayes-hierarchical": MarketProbs | null;
   };
 }

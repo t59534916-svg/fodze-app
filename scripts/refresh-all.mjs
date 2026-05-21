@@ -351,6 +351,26 @@ const phases = [
     abortOnFail: false,
   },
   {
+    name: "dev03-cache",
+    emoji: "🧠",
+    description: "dev-03 feature cache (Elo + Momentum + League-Constants snapshot)",
+    // Skip when venv missing (production envs without Python). The cache is
+    // optional — dev-03 engine falls back to ensemble when cache absent.
+    // Only refresh in :full mode (engine artifacts shouldn't churn on every
+    // 4-hour odds-pull cron; weekly cadence matches dev-03's stale-tolerant
+    // semantics — Elo + Momentum drift ~10 points / week).
+    skip: () => SKIP_MATCHDAY || !existsSync(resolve(REPO_ROOT, "tools/venv/bin/python3")),
+    run: () => runScript(
+      "tools/venv/bin/python3",
+      ["tools/v4/export_feature_cache.py"],
+      "dev03-cache",
+    ),
+    // Idempotent — cache regeneration just rewrites the JSON. Failure
+    // means previous-week cache stays in place; dev-03 still routes,
+    // just with slightly-older Elo + Momentum (matches Python prod).
+    abortOnFail: false,
+  },
+  {
     name: "retro-enrich",
     emoji: "✨",
     description: "Form + Tags auf latest Matchdays nachfüllen",

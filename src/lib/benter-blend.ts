@@ -40,6 +40,13 @@ export interface BenterWeightsJSON {
     v2?: BenterWeightsEngine;
     v1?: BenterWeightsEngine;
     ensemble?: BenterWeightsEngine;
+    // dev-03 has its OWN benter weights baked into public/dev03-model.json
+    // (see dev03-runtime.ts::dev03BenterBlend). This key is reserved here
+    // ONLY to give getBetas a structural place to return null for it via
+    // the existing "no-key → return null → passthrough" path. We never
+    // populate benter-weights.json with a "dev-03" entry — that would
+    // cause double-blending vs the runtime's per-Liga weights.
+    "dev-03"?: BenterWeightsEngine;
   };
 }
 
@@ -79,7 +86,7 @@ export function resetBenterBlend(): void {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function getBetas(engine: "v1" | "v2" | "ensemble", leagueCode?: string): BetaPair | null {
+function getBetas(engine: "v1" | "v2" | "ensemble" | "dev-03", leagueCode?: string): BetaPair | null {
   if (!WEIGHTS) return null;
   const e = WEIGHTS.engines[engine];
   if (!e) return null;
@@ -121,13 +128,25 @@ function softmax3(a: number, b: number, c: number): { H: number; D: number; A: n
 export function benterBlend(
   modelProbs: { H: number; D: number; A: number },
   pinnacleImplied: { H: number; D: number; A: number } | null,
-  engine: "v1" | "v2" | "ensemble" = "v2",
+  engine: "v1" | "v2" | "ensemble" | "dev-03" = "v2",
   leagueCode?: string,
 ): BenterBlendResult {
   const passthrough = (reason: string): BenterBlendResult => ({
     H: modelProbs.H, D: modelProbs.D, A: modelProbs.A, applied: false, reason,
   });
 
+  // ── Defense-in-Depth Guard für dev-03 (2026-05-21 self-eval fix) ──
+  // dev-03 applies its OWN per-Liga benter blend via dev03BenterBlend in
+  // dev03-runtime.ts (weights baked into public/dev03-model.json). If a
+  // user accidentally ships benter-weights.json with a "dev-03" key — or
+  // any future tooling auto-fits one — this would silently double-blend
+  // already-blended probs, distorting Goldilocks edges.
+  //
+  // The schema-reservation in BenterWeightsJSON ("don't populate this
+  // field") is contract-based; this early-return makes the protection
+  // ENFORCED at code-level so a future accident can't silently break
+  // dev-03's calibration.
+  if (engine === "dev-03") return passthrough("dev_03_uses_runtime_blend");
   if (MODE === "off") return passthrough("mode_off");
   if (!WEIGHTS) return passthrough("no_weights");
   if (!pinnacleImplied) return passthrough("no_pinnacle");

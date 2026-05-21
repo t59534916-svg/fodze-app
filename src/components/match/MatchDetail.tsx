@@ -484,6 +484,18 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
                       back to the All-Markets table to find the quote. */}
                   {br > 0 && (
                     <span style={{ fontSize: 13, fontWeight: 600, color: color.gold, fontFamily: "'SF Mono', Consolas, monospace", fontVariantNumeric: "tabular-nums" }}>
+                      {/* v1.2 Filter-Shield indicator: shows when a CSD veto
+                          reduced this stake. Without the prefix the user sees
+                          a smaller €-amount than expected with no explanation.
+                          Tooltip surfaces active veto names + multiplier. */}
+                      {b.shieldMult != null && b.shieldMult < 1.0 && (
+                        <span
+                          style={{ color: color.warn, marginRight: 4 }}
+                          title={`Filter-Shield: Kelly × ${b.shieldMult.toFixed(2)} — ${(b.shieldActive || []).join(", ")}`}
+                        >
+                          🛡
+                        </span>
+                      )}
                       €{(b.kelly * br).toFixed(0)}
                       {b.quote ? <span style={{ color: `${color.goldMid}80`, fontWeight: 500, marginLeft: 4 }}>@ {b.quote.toFixed(2)}</span> : null}
                     </span>

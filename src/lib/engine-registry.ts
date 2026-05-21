@@ -10,6 +10,7 @@ export type PredictionEngine =
   | "poisson-ml"
   | "poisson-ml-v2"
   | "poisson-ml-v3"
+  | "poisson-ml-dev03"
   | "footbayes-hierarchical";
 
 export interface EngineInfo {
@@ -43,6 +44,11 @@ export const ENGINES: EngineInfo[] = [
     name: "@annafrick13 v3",
     description: "Lean 20-Feature LightGBM (xG-EWMA + Elo + SoS + Physis + Discipline). Trained 2026-04-25 on 78k Supabase rows. Brier 0.6536 (v2 baseline 0.5844 on different test corpus) — preview only, route to v2 internally until per-Liga calibration drift is fixed.",
     preview: true,
+  },
+  {
+    id: "poisson-ml-dev03",
+    name: "v4 dev-03",
+    description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Cross-season-validated Money-Edge for serie_a (+3.4→+8.2%), scottish_prem (+17→+32%), epl (+4.7→+32%) — see bet-edge-policy.ts. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
   },
   {
     id: "footbayes-hierarchical",

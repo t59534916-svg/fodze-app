@@ -14,6 +14,7 @@ import { anchorToPinnacle, hasPinnacleData, pinnacleImpliedProbs, type PinnacleO
 import { benterBlend } from "./benter-blend";
 import { conformalKellyFactor } from "./conformal-gate";
 import { normalizedCIWidth } from "./backtest";
+import { applyFilterShield, type ShieldVeto, type BetSide } from "./filter-shield";
 
 export const LEAGUES: Record<string, { name: string; hf: number; avg: number }> = {
   bundesliga:    { name: "Bundesliga",        hf: 1.28, avg: 1.38 },
@@ -949,6 +950,28 @@ export interface BetCalc {
 export interface EnhancedBetCalc extends BetCalc {
   pModel_low:number;pModel_high:number;edge_low:number;edge_high:number;
   edgeSignificant:boolean;confidence:"HIGH"|"MEDIUM"|"LOW"|"NONE";
+  /** v1.2 Filter-Shield: effective Kelly multiplier applied to this bet.
+   *  1.0 = no veto fired. <1.0 = haircut applied (e.g. CSD persistent_reversal
+   *  → 0.5x). Diagnostic — already baked into `kelly`. */
+  shieldMult?:number;
+  /** Active vetoes whose multiplier affected `kelly` (excludes shadow-mode). */
+  shieldActive?:string[];
+  /** Shadow vetoes logged for burn-in (multiplier NOT applied to kelly). */
+  shieldShadow?:string[];
+}
+
+/** Map Markets-key → ShieldVeto BetSide. Centralized so future market additions
+ *  pick up shield routing without forgetting the mapping. */
+function _marketKeyToBetSide(key:keyof Markets):BetSide|null {
+  switch(key){
+    case "H":return "home";
+    case "D":return "draw";
+    case "A":return "away";
+    case "O25":return "over";
+    case "U25":return "under";
+    case "BY":return "btts_yes";
+    default:return null;
+  }
 }
 
 export function calculateBetsEnhanced(
@@ -956,8 +979,12 @@ export function calculateBetsEnhanced(
   odds:Record<string,number>,fraction:number,
   pinnacleOdds?:PinnacleOdds,anchorConfig?:Partial<AnchorConfig>,
   league?:string,
-  engine:"v1"|"v2"|"ensemble"="ensemble",
+  engine:"v1"|"v2"|"ensemble"|"dev-03"="ensemble",
   leagueKellyMultiplier:number=1,
+  /** v1.2 Filter-Shield: optional CSD-veto array. When provided, min-pool
+   *  multiplier is applied to each bet's Kelly stake post-CLV-dampening.
+   *  Pass empty array or omit for backwards-compatible passthrough. */
+  shieldVetoes?:readonly ShieldVeto[],
 ):EnhancedBetCalc[] {
   const has1X2=odds.h>0&&odds.d>0&&odds.a>0;
   const vig=has1X2?vigAdjustBest([odds.h,odds.d,odds.a]):null;
@@ -1033,11 +1060,34 @@ export function calculateBetsEnhanced(
     const varianceHaircut = Math.max(0.5, Math.min(1, 1 - 0.5 * ciWidth));
     // Per-league CLV-feedback dampening passed via leagueKellyMultiplier.
     // Default 1.0 = no dampening; 0.5 when 30-day league CLV z-score < -1.
-    const k=kellyFraction(pModel,q,fraction,varianceHaircut,leagueKellyMultiplier)*kellyDamp*conformalFactor;
+    let k=kellyFraction(pModel,q,fraction,varianceHaircut,leagueKellyMultiplier)*kellyDamp*conformalFactor;
+    // v1.2 Filter-Shield: post-CLV, pre-final-clamp. MIN-pool stacking with
+    // other shield layers. Empirically calibrated 2026-05-22 — persistent_
+    // reversal regime → 0.5x stake (Brier-lift +0.043 in OOT n=355).
+    // Shield diagnostics carry through to UI for badge rendering + trail logging.
+    let shieldMult=1.0;
+    let shieldActive:string[]=[];
+    let shieldShadow:string[]=[];
+    if(shieldVetoes&&shieldVetoes.length>0){
+      const betSide=_marketKeyToBetSide(m.key);
+      if(betSide){
+        const sr=applyFilterShield(shieldVetoes,betSide);
+        shieldMult=sr.effectiveMultiplier;
+        shieldActive=sr.appliedVetoes.map(v=>v.name);
+        shieldShadow=sr.shadowVetoes.map(v=>v.name);
+        k=k*shieldMult;
+      }
+    }
     const eLow=pLow-pMarket, eHigh=pHigh-pMarket, sig=eLow>0;
     let conf:"HIGH"|"MEDIUM"|"LOW"|"NONE";
     if(sig&&edge>0.05)conf="HIGH";else if(sig)conf="MEDIUM";else if(edge>0)conf="LOW";else conf="NONE";
-    return {label:m.label,pModel,pMarket,quote:q,edge,ev,kelly:k,isValue:edge>=0.03&&ev>0,pModel_low:pLow,pModel_high:pHigh,edge_low:eLow,edge_high:eHigh,edgeSignificant:sig,confidence:conf};
+    return {
+      label:m.label,pModel,pMarket,quote:q,edge,ev,kelly:k,
+      isValue:edge>=0.03&&ev>0,
+      pModel_low:pLow,pModel_high:pHigh,edge_low:eLow,edge_high:eHigh,
+      edgeSignificant:sig,confidence:conf,
+      shieldMult,shieldActive,shieldShadow,
+    };
   }).sort((a,b)=>b.edge-a.edge);
 }
 

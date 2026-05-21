@@ -7,11 +7,14 @@ import { loadEnsembleModel } from "@/lib/ensemble";
 import { loadPoissonModel } from "@/lib/poisson-regression";
 import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
 import { loadV3Model } from "@/lib/poisson-ml-engine-v3";
+import { loadDev03Model, validateDev03GoldenTests } from "@/lib/dev03-runtime";
+import { loadFeatureCache } from "@/lib/dev03-features";
 import { loadBenterWeights, setBenterMode } from "@/lib/benter-blend";
 import { loadFootBayesPosteriors } from "@/lib/footbayes-engine";
 import { loadConformalQuantiles, setConformalMode } from "@/lib/conformal-gate";
 import { loadPlayerPropsPosteriors } from "@/lib/player-props-engine";
 import { loadOverdispersionConfig } from "@/lib/neg-binomial";
+import { loadFilterShieldConfig } from "@/lib/filter-shield";
 import { type PredictionEngine, DEFAULT_ENGINE, isValidEngine, ENGINES } from "@/lib/engine-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ProfileData, PlacedBet, LeagueConfig, LeagueStatus } from "@/types/match";
@@ -30,6 +33,11 @@ interface AppContextValue {
   effectiveBudget: number;
   kellyFraction: number;
   calLoaded: boolean;
+  /** v1.2 Filter-Shield (CSD veto) config-load complete. MatchdayContext must
+   *  include this in its allEngineCalcs memo dependencies so cached engine
+   *  results recompute once the config arrives — otherwise vetoes are silently
+   *  skipped forever on first-render matches (race-condition fix 2026-05-22). */
+  filterShieldLoaded: boolean;
   modelErrors: string[];
   hasApi: boolean | null;
   engine: PredictionEngine;
@@ -53,6 +61,7 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const [profile, setProfile] = useState<ProfileData>({ risk_profile: "M", bankroll: 0, display_name: "" });
   const [dayBudget, setDayBudget] = useState("");
   const [calLoaded, setCalLoaded] = useState(false);
+  const [filterShieldLoaded, setFilterShieldLoaded] = useState(false);
   const [modelErrors, setModelErrors] = useState<string[]>([]);
   const [engine, setEngineState] = useState<PredictionEngine>(DEFAULT_ENGINE);
   const [hasApi, setHasApi] = useState<boolean | null>(null);
@@ -98,6 +107,23 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     // analysis.
     loadModel("/lgbm-model-v3.json", "lgbm-v3", model => {
       loadV3Model(model);
+    });
+    // dev-03 (FODZE/v4 cross-season-validated specialist) — optional engine
+    // for the 3 leagues with cross-engine cross-season-validated Money-Edge
+    // (serie_a, scottish_prem, epl). Two artifacts:
+    //   /dev03-model.json         — 5 bagged LightGBM Tweedie home+away + m6_benter
+    //   /dev03-feature-cache.json — precomputed Elo + Momentum + League constants
+    // Both must load successfully for calcMatchDev03 to produce output.
+    loadModel("/dev03-model.json", "dev03-model", model => {
+      if (loadDev03Model(model)) {
+        const golden = validateDev03GoldenTests(1e-4);
+        if (golden.failed > 0) {
+          console.warn(`[FODZE] dev-03 golden test failures: ${golden.failed}/${golden.passed + golden.failed}`);
+        }
+      }
+    });
+    loadModel("/dev03-feature-cache.json", "dev03-cache", cache => {
+      loadFeatureCache(cache);
     });
     // Benter blend weights — optional. Default NEXT_PUBLIC_BENTER_BLEND=off
     // keeps pre-upgrade pipeline behavior. Set to "on" (or "shadow" when
@@ -196,6 +222,18 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     loadModel("/overdispersion.json", "overdispersion", config => {
       loadOverdispersionConfig(config);
     });
+
+    // v1.2 Filter-Shield (CSD veto) — empirically calibrated 2026-05-22.
+    // Loaded JSON drives both the runtime classification thresholds and the
+    // active-vs-shadow regime flags. Failure-safe: when the loader returns
+    // false (schema mismatch or fetch failure), computeCsdVeto falls back
+    // to passthrough multiplier 1.0 — bets are NOT silently haircutted.
+    // See public/filter-shield-config.json for empirical provenance.
+    loadModel("/filter-shield-config.json", "filter-shield", cfg => {
+      const ok = loadFilterShieldConfig(cfg);
+      if (!ok) throw new Error("filter-shield-config.json: schema mismatch");
+      setFilterShieldLoaded(true);  // gate MatchdayContext memo invalidation
+    });
   }, []);
 
   // Load user profile + bets + API check + league status
@@ -243,11 +281,11 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const value = useMemo(() => ({
     user, supabase, league, setLeague, leagueConfig, profile, saveProf,
     bankroll, dayBudget, setDayBudget, effectiveBudget, kellyFraction,
-    calLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
+    calLoaded, filterShieldLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
     engine, setEngine,
   }), [user, supabase, league, leagueConfig, profile, saveProf,
     bankroll, dayBudget, effectiveBudget, kellyFraction,
-    calLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
+    calLoaded, filterShieldLoaded, modelErrors, hasApi, userBets, refreshBets, leagueStatus,
     engine, setEngine]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

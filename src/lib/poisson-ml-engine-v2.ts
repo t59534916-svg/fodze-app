@@ -28,6 +28,7 @@ import { eloPrediction } from "./ensemble";
 import { lgbmPredict, getLGBMRho, getTeamSeasonFeatures } from "./lgbm-runtime";
 import { applySoSAdjustment, type SoSRatings } from "./sos";
 import { calcAbsenceImpact, type PlayerProfile } from "./player-impact";
+import type { ShieldVeto } from "./filter-shield";
 import { dualTrackCalibrate } from "./calibration";
 import { getLeagueLiquidityTier } from "./league-liquidity";
 import type { MatchCalc, MarketProbs, BetCalc } from "@/types/match";
@@ -184,6 +185,8 @@ export interface PoissonMLv2Input {
   fraction: number;
   sosRatings?: SoSRatings;
   absences?: { home: PlayerProfile[]; away: PlayerProfile[] };
+  // v1.2 Filter-Shield: see PoissonMLInput for contract
+  shieldVetoes?: readonly ShieldVeto[];
   // motivationDiff removed — leakage risk with reconstructed standings
   options?: {
     overdispersion?: OverdispersionConfig;
@@ -442,7 +445,7 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   const pinOdds = shV2 && shV2.h != null && shV2.d != null && shV2.a != null
     ? { sharp_h: shV2.h, sharp_d: shV2.d, sharp_a: shV2.a }
     : undefined;
-  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v2");
+  const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v2", 1, input.shieldVetoes);
 
   // ── 9b. Goldilocks Guard (dual-track) ─────────────────────────
   // Use Track B (isotonic-calibrated) for edge calculation vs Pinnacle.
