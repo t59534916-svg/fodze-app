@@ -67,6 +67,7 @@ const MAX_CHUNKS  = parseInt(val("max-chunks") ?? "0", 10);  // 0 = unlimited
 const COOLDOWN_MS = parseInt(val("cooldown") ?? "30", 10) * 1000;
 const TIER        = val("tier");
 const LEAGUE      = val("league");
+const LEAGUES     = val("leagues");  // comma-list for parallel partitioning
 const SEASON      = val("season") ?? "25/26";
 const DRY         = flag("dry");
 // Forward --use-tor to sync-sofascore-extras.mjs → fetch_match_extras.py.
@@ -82,14 +83,28 @@ const USE_TOR     = flag("use-tor");
 // IPs aren't on Cloudflare's blocklist. Recommended for active backfill;
 // chunk-size can stay higher (~50) than Tor (~25).
 const USE_WEBSHARE = flag("use-webshare");
+const USE_TLS_REQUESTS = flag("use-tls-requests");
+// --skip-player-stats forwarded to load_extras_to_supabase.py via sync wrapper.
+// Storage-saver mode for free-tier Supabase: skips per-player match stats
+// inserts (36 KB/game), keeps DB under 500 MB. Activate via flag OR env-var
+// FODZE_SKIP_PLAYER_STATS=1.
+const SKIP_PLAYER_STATS = flag("skip-player-stats")
+  || process.env.FODZE_SKIP_PLAYER_STATS === "1";
+const NO_SUPABASE = flag("no-supabase")
+  || process.env.FODZE_NO_SUPABASE === "1";
+const SKIP_CACHED = flag("skip-cached")
+  || process.env.FODZE_SKIP_CACHED === "1"
+  || NO_SUPABASE;
 
 const FAIL_BACKOFF_MS = [5 * 60_000, 15 * 60_000, 60 * 60_000];  // 5m, 15m, 1h
 
-const scopeArg = LEAGUE
-  ? ["--league", LEAGUE]
-  : TIER
-    ? ["--tier", TIER]
-    : ["--all-tiers"];
+const scopeArg = LEAGUES
+  ? ["--leagues", LEAGUES]
+  : LEAGUE
+    ? ["--league", LEAGUE]
+    : TIER
+      ? ["--tier", TIER]
+      : ["--all-tiers"];
 
 // ─── progress ──────────────────────────────────────────────────────
 let chunksRun = 0;
@@ -123,9 +138,13 @@ function runChunk() {
     "--season", SEASON,
     "--max", String(CHUNK),
   ];
-  if (DRY)          cliArgs.push("--dry");
-  if (USE_TOR)      cliArgs.push("--use-tor");
-  if (USE_WEBSHARE) cliArgs.push("--use-webshare");
+  if (DRY)                cliArgs.push("--dry");
+  if (USE_TOR)            cliArgs.push("--use-tor");
+  if (USE_WEBSHARE)       cliArgs.push("--use-webshare");
+  if (USE_TLS_REQUESTS)   cliArgs.push("--use-tls-requests");
+  if (SKIP_PLAYER_STATS)  cliArgs.push("--skip-player-stats");
+  if (NO_SUPABASE)        cliArgs.push("--no-supabase");
+  if (SKIP_CACHED)        cliArgs.push("--skip-cached");
 
   const r = spawnSync("node", cliArgs, {
     stdio: "inherit",

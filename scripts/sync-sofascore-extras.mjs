@@ -59,6 +59,7 @@ function val(name) {
 const tier = val("tier") ?? "A";
 const allTiers = flag("all-tiers");
 const league = val("league");
+const leagues = val("leagues");  // comma-list, splits workload for parallel runs
 const max = val("max");
 const dry = flag("dry");
 const skipFetch = flag("skip-fetch");
@@ -74,13 +75,37 @@ const useTor = flag("use-tor");
 // IPs are NOT on Cloudflare's anti-Tor blocklist. Mutually exclusive with
 // --use-tor (Webshare wins). Hardcoded proxy creds in fetch_match_extras.py.
 const useWebshare = flag("use-webshare");
+// --use-tls-requests: use bogdanfinn tls-client fingerprint instead of
+// curl_cffi chrome124. Bypasses CF blocks targeting chrome124. Verified
+// 2026-05-10 to work without proxy from user's home IP.
+const useTlsRequests = flag("use-tls-requests");
+// --skip-player-stats skips loading sofascore_player_match_stats (the dominant
+// storage cost — 36 KB/game = 60% of v1+v2 footprint). Engine doesn't currently
+// read this table; bridge-sofascore-extras-to-team-xg.mjs uses match_statistics.
+// Recommended for free-tier Supabase to keep DB under 500 MB. JSONs stay on
+// disk in tools/sofascore/data/extras/ for future re-ingest if needed.
+const skipPlayerStats = flag("skip-player-stats")
+  || process.env.FODZE_SKIP_PLAYER_STATS === "1";
+// --no-supabase: load step writes ONLY to local SQLite, skips all Supabase calls.
+// Use when Supabase is overloaded (Disk IO budget exhausted) — fetch new JSONs
+// fast without waiting on slow upserts. Run a separate load pass later when
+// Supabase recovers to push to cloud.
+const noSupabase = flag("no-supabase")
+  || process.env.FODZE_NO_SUPABASE === "1";
+// --skip-cached: fetch step skips games whose JSON exists on disk. Required
+// when --no-supabase is on (state-table won't get updated, so otherwise we'd
+// re-fetch the same games every run). Forces JSON existence as the dedup key.
+const skipCached = flag("skip-cached")
+  || process.env.FODZE_SKIP_CACHED === "1"
+  || noSupabase;  // implied by no-supabase
 
 function run(name, py, extraArgs) {
   console.log(`\n━━━ ${name} ━━━`);
   const t0 = Date.now();
-  const r = spawnSync(VENV_PY, [py, ...extraArgs], {
+  const r = spawnSync(VENV_PY, ["-u", py, ...extraArgs], {
     stdio: "inherit",
     cwd: REPO_ROOT,
+    env: { ...process.env, PYTHONUNBUFFERED: "1" },
   });
   const sec = ((Date.now() - t0) / 1000).toFixed(1);
   if (r.status !== 0) {
@@ -100,21 +125,35 @@ console.log(`🔍 Sofascore extras sync · ${scopeDesc} · season ${SEASON}${dry
 // 1. Fetch (network → tools/sofascore/data/extras/<gid>.json)
 if (!skipFetch) {
   const fetchArgs = ["--season", SEASON];
-  if (allTiers)      fetchArgs.push("--all-tiers");
+  if (leagues)       fetchArgs.push("--leagues", leagues);
+  else if (allTiers) fetchArgs.push("--all-tiers");
   else if (league)   fetchArgs.push("--league", league);
   else               fetchArgs.push("--tier", tier);
   if (max)           fetchArgs.push("--max", max);
   if (dry)           fetchArgs.push("--dry");
   if (useTor)        fetchArgs.push("--use-tor");
   if (useWebshare)   fetchArgs.push("--use-webshare");
+  if (useTlsRequests) fetchArgs.push("--use-tls-requests");
+  if (skipCached)    fetchArgs.push("--skip-cached");
   run("fetch_match_extras", FETCH_PY, fetchArgs);
 }
 
 // 2. Load (JSON → Supabase)
+// --since-mtime 1800 (30 min) skips re-loading already-projected JSONs that are
+// older than the current fetch window. Without this, each chunk re-processes
+// all N cached JSONs = O(chunk_count²) total work; with it, each chunk only
+// processes its ~50 newly-fetched JSONs = O(N) total. On bulk backfill, this
+// is the difference between 30h and 60h. To do a one-shot full re-load, run
+// `python3 tools/sofascore/load_extras_to_supabase.py --all` directly.
+// Override via env: FODZE_LOAD_SINCE_MTIME=0 to disable filter (full --all).
+const sinceMtimeSec = process.env.FODZE_LOAD_SINCE_MTIME ?? "1800";
 if (!dry) {
-  run("load_extras_to_supabase", LOAD_PY, ["--all"]);
+  const loadArgs = ["--all", "--since-mtime", sinceMtimeSec];
+  if (skipPlayerStats) loadArgs.push("--skip-player-stats");
+  if (noSupabase)      loadArgs.push("--no-supabase");
+  run("load_extras_to_supabase", LOAD_PY, loadArgs);
 } else {
-  console.log("\n[DRY] Would run: load_extras_to_supabase.py --all");
+  console.log("\n[DRY] Would run: load_extras_to_supabase.py --all --since-mtime " + sinceMtimeSec);
 }
 
 console.log(`\n✓ Sofascore extras sync complete`);
