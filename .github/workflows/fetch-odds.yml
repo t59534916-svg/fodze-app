@@ -1,9 +1,19 @@
 name: Fetch Live Odds
 
 on:
-  # Run every 4 hours on matchdays (Fri-Sun) + Wednesday (CL/EL)
+  # Run every 12 hours on matchdays (Fri-Sun) + Wednesday (CL/EL).
+  # Reduced from 4h → 12h on 2026-05-21 after Odds-API budget exhaustion:
+  # K1+K2 exhausted (500/500 used), only K3 has 468 credits.
+  # Budget math:
+  #   - Old 4h × 4 active days/week × 4 runs/day = 64 runs/month × ~30 credits = ~1920/month
+  #     → required 4 keys = needed 4 × 500 = 2000 budget (over what we have)
+  #   - New 12h × 4 active days/week × 2 runs/day = 32 runs/month × ~30 credits = ~960/month
+  #     → sustainable on 2 working keys (1000 budget) with margin
+  # Tradeoff: pre-match odds slightly less fresh between runs (max 12h gap).
+  # For high-frequency monitoring of live in-play moves, consider Sofa-odds
+  # endpoint sprint (see CLAUDE.md areas-to-watch: dev-03 auto-routing gap).
   schedule:
-    - cron: "17 6,10,14,18 * * 0,3,5,6"  # Sun, Wed, Fri, Sat at 06:17, 10:17, 14:17, 18:17 UTC
+    - cron: "17 6,18 * * 0,3,5,6"  # Sun, Wed, Fri, Sat at 06:17 and 18:17 UTC
   # Allow manual trigger from GitHub UI
   workflow_dispatch:
     inputs:

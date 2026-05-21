@@ -175,6 +175,27 @@ async function auditLiveOdds(league) {
   return { league, count: odds.length, withSharp, withBest, latestFetch, hoursOld };
 }
 
+/**
+ * Returns the count of upcoming fixtures + next-match-date per league.
+ * Used to disambiguate "live_odds stale because cron broken" vs
+ * "live_odds stale because season is over — nothing to fetch". Added
+ * 2026-05-21 after user feedback that audit alarmed on season-end leagues.
+ */
+async function auditUpcomingFixtures(league) {
+  const nowIso = new Date().toISOString();
+  const fixtures = await rows(
+    "upcoming_fixtures",
+    `select=commence_time&league=eq.${league}&commence_time=gte.${nowIso}&order=commence_time.asc`,
+    100,
+  );
+  return {
+    league,
+    upcomingCount: fixtures.length,
+    nextMatch: fixtures[0]?.commence_time ?? null,
+    seasonActive: fixtures.length > 0,
+  };
+}
+
 // ─── Global audits ────────────────────────────────────────────────
 
 async function auditBets() {
@@ -400,7 +421,11 @@ function renderSofascoreExtras(extras) {
 }
 
 function renderReport(data) {
-  const { xg, matchdays, liveOdds, bets, snapshots, sofaExtras } = data;
+  const { xg, matchdays, liveOdds, upcoming, bets, snapshots, sofaExtras } = data;
+  // Build (league → seasonActive) lookup for season-aware issue filtering
+  const seasonActiveByLeague = Object.fromEntries(
+    (upcoming || []).map(u => [u.league, u.seasonActive]),
+  );
 
   console.log("\n═══════════════════════════════════════════════════════════════════");
   console.log("  FODZE DATA-QUALITY AUDIT");
@@ -509,18 +534,31 @@ function renderReport(data) {
       }
     }
   }
-  // P1: matchdays stale
+  // P1: matchdays stale — but ONLY for active-season leagues
   for (const m of matchdays) {
+    if (!seasonActiveByLeague[m.league]) continue; // off-season → expected stale
     const liveRow = liveOdds.find((l) => l.league === m.league);
     if (liveRow && liveRow.count > 0 && m.daysOld != null && m.daysOld > 14) {
       issues.push(`P1  ${LEAGUES[m.league]?.name || m.league}: Matchday ${m.daysOld}d alt — Injuries/Kontext veraltet`);
     }
   }
-  // P1: live_odds cron not running
+  // P1: live_odds cron not running — also season-aware (off-season has no
+  // upcoming events to refresh, so fetch-odds correctly skips those leagues)
   for (const l of liveOdds) {
+    if (!seasonActiveByLeague[l.league]) continue;
     if (l.count > 0 && l.hoursOld != null && l.hoursOld > 12) {
       issues.push(`P1  ${LEAGUES[l.league]?.name || l.league}: live_odds ${l.hoursOld}h alt — fetch-odds Cron läuft nicht?`);
     }
+  }
+  // Informational (NOT counted as issue): leagues currently in off-season.
+  // These are EXPECTED to look "stale" in matchdays + live_odds — no bug.
+  const offSeason = (upcoming || [])
+    .filter(u => !u.seasonActive)
+    .map(u => LEAGUES[u.league]?.name || u.league);
+  if (offSeason.length > 0) {
+    console.log(`  ℹ Off-season (no upcoming fixtures, stale-warnings would be false-positive):`);
+    console.log(`    ${offSeason.join(", ")}`);
+    console.log("");
   }
   // P2: CLV coverage low
   if (bets.settled > 20 && bets.settledCoverage.clvCoverage < 0.3) {
@@ -542,16 +580,17 @@ function renderReport(data) {
 async function main() {
   console.error(`[audit] Scanning ${leagueKeys.length} leagues...`);
 
-  const [xg, matchdays, liveOdds, bets, snapshots, sofaExtras] = await Promise.all([
+  const [xg, matchdays, liveOdds, upcoming, bets, snapshots, sofaExtras] = await Promise.all([
     Promise.all(leagueKeys.map(auditLeagueXG)),
     Promise.all(leagueKeys.map(auditMatchdays)),
     Promise.all(leagueKeys.map(auditLiveOdds)),
+    Promise.all(leagueKeys.map(auditUpcomingFixtures)),
     auditBets(),
     auditOddsSnapshots(),
     auditSofascoreExtras(),
   ]);
 
-  const data = { xg, matchdays, liveOdds, bets, snapshots, sofaExtras };
+  const data = { xg, matchdays, liveOdds, upcoming, bets, snapshots, sofaExtras };
 
   if (asJson) {
     console.log(JSON.stringify(data, null, 2));

@@ -24,7 +24,15 @@
   <array>
     <string>/bin/zsh</string>
     <string>-c</string>
-    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; npm run refresh:full</string>
+    <!-- `--skip-odds` (2026-05-21): GitHub Actions fetch-odds.yml runs
+         Sun/Wed/Fri/Sat 06:17+18:17 UTC = 08:17+20:17 CEST. This launchd
+         job at Tue+Fri 19:00 CEST overlaps with the Fri GitHub Actions
+         run (~1h gap). Tue isn't a GitHub-Actions-day but Wed 06:17 GHA
+         picks up odds-prep for midweek games. Skipping odds here avoids
+         double-burning credits — matchday-regen + 25-min TM-injuries
+         scrape (the actual work) still runs. See budget math in
+         fetch-odds.yml header. -->
+    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; node scripts/refresh-all.mjs --injuries --skip-odds</string>
   </array>
 
   <key>WorkingDirectory</key>

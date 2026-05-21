@@ -40,8 +40,14 @@
     <string>-c</string>
     <!-- `source` the full env into the shell, then cd into the repo and
          run refresh. npm, node, and git must be in PATH — see install.sh
-         for how we build a minimal PATH that covers Homebrew + nvm. -->
-    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; npm run refresh</string>
+         for how we build a minimal PATH that covers Homebrew + nvm.
+
+         `--skip-odds` (2026-05-21): GitHub Actions fetch-odds.yml owns
+         live_odds refresh (twice daily on matchdays). Running it here too
+         would double-burn The-Odds-API credits. This launchd job's only
+         responsibility now is matchday-regeneration + audit. See budget
+         math in the fetch-odds.yml header. -->
+    <string>source ~/.zshrc 2>/dev/null; cd '__REPO_PATH__' &amp;&amp; node scripts/refresh-all.mjs --skip-odds</string>
   </array>
 
   <key>WorkingDirectory</key>
