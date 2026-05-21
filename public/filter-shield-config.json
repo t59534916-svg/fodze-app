@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "calibrated_at": "2026-05-21",
+  "calibration_source": "tools/v4/diagnostics/csd_veto_calibration.json",
+  "_doc": "Single source of truth for Python (tools/v4/modules/m9_filter_shield/) and TS (src/lib/filter-shield.ts). Empirically calibrated on n=6525 v2-OOT matches. See diagnostic JSON for full per-config Brier-lift table.",
+  "csd_veto": {
+    "signal": "goal_diff",
+    "_signal_rationale": "Empirically beats residuals (goals - xG) on Brier-lift. Hypothesis residuals would isolate process-change failed: residuals signal has CI crossing 0 for all configs.",
+    "window": 10,
+    "min_obs": 8,
+    "recent_block": 3,
+    "leakage_offset_sec": 14400,
+    "sign_flip_min_abs": 0.10,
+    "_thresholds_source": "loose threshold_set in calibration sweep",
+    "regimes": {
+      "persistent_reversal": {
+        "acf_max": -0.30,
+        "_detection": "rho_1 < -0.30 AND sign_flip",
+        "multiplier": 0.50,
+        "active": true,
+        "_empirical": "n=355, Brier lift +0.0427, CI [+0.0169, +0.0693]",
+        "_kelly_haircut_pct": 50.0
+      },
+      "catastrophic": {
+        "acf_max_abs": 0.30,
+        "delta_min_abs": 0.50,
+        "_detection": "|rho_1| < 0.30 AND sign_flip AND |delta_mu| > 0.50",
+        "multiplier": 0.75,
+        "active": false,
+        "_shadow_only_burn_in": 200,
+        "_empirical": "n=2173, Brier lift +0.0203, CI [+0.0053, +0.0343] — below +0.030 gate but large-N and CI > 0",
+        "_kelly_haircut_pct": 25.0,
+        "_status": "SHADOW_LOG_ONLY until 200-firing burn-in confirms in production"
+      }
+    }
+  },
+  "_rejected_layers": {
+    "travel_fatigue_veto": {
+      "rejection_date": "2026-05-21",
+      "diagnostic": "tools/v4/diagnostics/travel_fatigue_calibration.json",
+      "rationale": "Stadium-coverage gap (62 percent MNAR) confounds signal with league-tier. Detected-fatigue-state has NEGATIVE Brier lift (-0.063) — model performs BETTER on these matches because they are Tier-A leagues with better data. Would have applied haircut to systematically better predictions."
+    },
+    "per_league_isotonic_calibration": {
+      "rejection_date": "2026-05-21",
+      "diagnostic": "tools/v4/diagnostics/per_league_calibration_report.json",
+      "rationale": "Walk-forward 5-fold CV: all 3 target leagues fail acceptance gate. EPL closest (Brier-delta -0.003 with CI [-0.005, +0.0002], ECE +14.2 pct) — needs multi-season window to clear -0.005 gate. La_liga2 and primeira_liga: per-league iso DEGRADES (ECE -6.4 pct and -1.1 pct). Conformal-coverage drift does not translate to Brier-improvability via isotonic. Deferred to backlog after 22/23+23/24 OOT v2-predictions backfill."
+    }
+  }
+}
