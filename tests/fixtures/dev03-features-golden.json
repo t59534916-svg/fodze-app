@@ -1,0 +1,871 @@
+{
+  "version": "dev-03-golden-1",
+  "generated_at": "2026-05-21T13:37:36Z",
+  "tolerance_note": "TS port must match within 1e-6 for all numeric features.",
+  "fixtures": [
+    {
+      "name": "epl_Aston_Villa_vs_Liverpool",
+      "input": {
+        "homeTeam": "Aston Villa",
+        "awayTeam": "Liverpool",
+        "league": "epl",
+        "match_date": "2026-06-16T00:00:00",
+        "hHistory": [
+          {
+            "xg": 2.4,
+            "xga": 1.57,
+            "goals_for": 4,
+            "goals_against": 2,
+            "date": "2026-05-15",
+            "opponent": "Liverpool"
+          },
+          {
+            "xg": 0.32,
+            "xga": 0.99,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-05-03",
+            "opponent": "Tottenham Hotspur"
+          },
+          {
+            "xg": 0.93,
+            "xga": 1.23,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-04-25",
+            "opponent": "Fulham"
+          },
+          {
+            "xg": 2.84,
+            "xga": 1.73,
+            "goals_for": 4,
+            "goals_against": 3,
+            "date": "2026-04-19",
+            "opponent": "Sunderland"
+          },
+          {
+            "xg": 1.03,
+            "xga": 1.2,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-04-12",
+            "opponent": "Nottingham Forest"
+          },
+          {
+            "xg": 1.74,
+            "xga": 0.85,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-03-22",
+            "opponent": "West Ham United"
+          },
+          {
+            "xg": 1.01,
+            "xga": 1.1,
+            "goals_for": 1,
+            "goals_against": 3,
+            "date": "2026-03-15",
+            "opponent": "Manchester United"
+          },
+          {
+            "xg": 0.8,
+            "xga": 3.6,
+            "goals_for": 1,
+            "goals_against": 4,
+            "date": "2026-03-04",
+            "opponent": "Chelsea"
+          },
+          {
+            "xg": 1.03,
+            "xga": 0.86,
+            "goals_for": 0,
+            "goals_against": 2,
+            "date": "2026-02-27",
+            "opponent": "Wolverhampton Wanderers"
+          },
+          {
+            "xg": 1.46,
+            "xga": 1.39,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-02-21",
+            "opponent": "Leeds United"
+          },
+          {
+            "xg": 0.72,
+            "xga": 0.56,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-02-11",
+            "opponent": "Brighton & Hove Albion"
+          },
+          {
+            "xg": 0.59,
+            "xga": 2.08,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-02-07",
+            "opponent": "AFC Bournemouth"
+          },
+          {
+            "xg": 2.42,
+            "xga": 0.38,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-02-01",
+            "opponent": "Brentford"
+          },
+          {
+            "xg": 1.16,
+            "xga": 2.18,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-01-25",
+            "opponent": "Newcastle United"
+          },
+          {
+            "xg": 1.44,
+            "xga": 0.51,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-01-18",
+            "opponent": "Everton"
+          },
+          {
+            "xg": 1.74,
+            "xga": 1.51,
+            "goals_for": 0,
+            "goals_against": 0,
+            "date": "2026-01-07",
+            "opponent": "Crystal Palace"
+          }
+        ],
+        "aHistory": [
+          {
+            "xg": 1.57,
+            "xga": 2.4,
+            "goals_for": 2,
+            "goals_against": 4,
+            "date": "2026-05-15",
+            "opponent": "Aston Villa"
+          },
+          {
+            "xg": 0.56,
+            "xga": 0.5,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-05-09",
+            "opponent": "Chelsea"
+          },
+          {
+            "xg": 0.89,
+            "xga": 2.34,
+            "goals_for": 2,
+            "goals_against": 3,
+            "date": "2026-05-03",
+            "opponent": "Manchester United"
+          },
+          {
+            "xg": 1.15,
+            "xga": 2.29,
+            "goals_for": 3,
+            "goals_against": 1,
+            "date": "2026-04-25",
+            "opponent": "Crystal Palace"
+          },
+          {
+            "xg": 1.45,
+            "xga": 1.01,
+            "goals_for": 2,
+            "goals_against": 1,
+            "date": "2026-04-19",
+            "opponent": "Everton"
+          },
+          {
+            "xg": 1.66,
+            "xga": 1.04,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-04-11",
+            "opponent": "Fulham"
+          },
+          {
+            "xg": 0.88,
+            "xga": 2.18,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-03-21",
+            "opponent": "Brighton & Hove Albion"
+          },
+          {
+            "xg": 1.7,
+            "xga": 1.18,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-03-15",
+            "opponent": "Tottenham Hotspur"
+          },
+          {
+            "xg": 2.56,
+            "xga": 0.48,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-03-03",
+            "opponent": "Wolverhampton Wanderers"
+          },
+          {
+            "xg": 1.84,
+            "xga": 1.75,
+            "goals_for": 5,
+            "goals_against": 2,
+            "date": "2026-02-28",
+            "opponent": "West Ham United"
+          },
+          {
+            "xg": 1.81,
+            "xga": 1.19,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-02-22",
+            "opponent": "Nottingham Forest"
+          },
+          {
+            "xg": 2.53,
+            "xga": 0.63,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-02-11",
+            "opponent": "Sunderland"
+          },
+          {
+            "xg": 1.0,
+            "xga": 2.75,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-02-08",
+            "opponent": "Manchester City"
+          },
+          {
+            "xg": 2.28,
+            "xga": 0.37,
+            "goals_for": 4,
+            "goals_against": 1,
+            "date": "2026-01-31",
+            "opponent": "Newcastle United"
+          },
+          {
+            "xg": 0.93,
+            "xga": 2.5,
+            "goals_for": 2,
+            "goals_against": 3,
+            "date": "2026-01-24",
+            "opponent": "AFC Bournemouth"
+          },
+          {
+            "xg": 3.18,
+            "xga": 0.4,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-01-17",
+            "opponent": "Burnley"
+          }
+        ]
+      },
+      "expected_features": {
+        "home_attack_ratio": 0.9841956506419115,
+        "home_defense_ratio": 0.9813742530494723,
+        "away_attack_ratio": 1.0602927632640178,
+        "away_defense_ratio": 1.0827799348537308,
+        "home_ess": 13.858535648420158,
+        "away_ess": 13.858535648420158,
+        "league_home_avg": 1.5004140127388534,
+        "league_away_avg": 1.2897460317460316,
+        "league_home_advantage": 0.2106679809928218,
+        "lambda_h_naive": 1.5989421535666697,
+        "lambda_a_naive": 1.3420375187973912,
+        "attack_defense_ratio_h": 1.0656673024853742,
+        "attack_defense_ratio_a": 1.0405440185619865,
+        "elo_diff": -76.27251990431841,
+        "lineup_quality_diff": -0.09763690152132981,
+        "form_streak_diff": -0.5793464000304129,
+        "league": "epl"
+      }
+    },
+    {
+      "name": "serie_a_Udinese_vs_Cremonese",
+      "input": {
+        "homeTeam": "Udinese",
+        "awayTeam": "Cremonese",
+        "league": "serie_a",
+        "match_date": "2026-06-16T00:00:00",
+        "hHistory": [
+          {
+            "xg": 0.35,
+            "xga": 0.47,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-05-17",
+            "opponent": "Cremonese"
+          },
+          {
+            "xg": 2.47,
+            "xga": 1.48,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-05-09",
+            "opponent": "Cagliari"
+          },
+          {
+            "xg": 2.01,
+            "xga": 0.83,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-05-02",
+            "opponent": "Torino"
+          },
+          {
+            "xg": 1.98,
+            "xga": 2.59,
+            "goals_for": 3,
+            "goals_against": 3,
+            "date": "2026-04-27",
+            "opponent": "Lazio"
+          },
+          {
+            "xg": 1.23,
+            "xga": 1.1,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-04-18",
+            "opponent": "Parma"
+          },
+          {
+            "xg": 1.19,
+            "xga": 2.08,
+            "goals_for": 3,
+            "goals_against": 0,
+            "date": "2026-04-11",
+            "opponent": "AC Milan"
+          },
+          {
+            "xg": 0.94,
+            "xga": 0.67,
+            "goals_for": 0,
+            "goals_against": 0,
+            "date": "2026-04-06",
+            "opponent": "Como 1907"
+          },
+          {
+            "xg": 1.03,
+            "xga": 1.19,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-03-20",
+            "opponent": "Genoa"
+          },
+          {
+            "xg": 0.69,
+            "xga": 3.34,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-03-14",
+            "opponent": "Juventus"
+          },
+          {
+            "xg": 0.68,
+            "xga": 1.67,
+            "goals_for": 2,
+            "goals_against": 2,
+            "date": "2026-03-07",
+            "opponent": "Atalanta"
+          },
+          {
+            "xg": 1.58,
+            "xga": 0.73,
+            "goals_for": 3,
+            "goals_against": 0,
+            "date": "2026-03-02",
+            "opponent": "Fiorentina"
+          },
+          {
+            "xg": 0.6,
+            "xga": 1.53,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-02-23",
+            "opponent": "Bologna"
+          },
+          {
+            "xg": 0.5,
+            "xga": 1.33,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-02-15",
+            "opponent": "US Sassuolo"
+          },
+          {
+            "xg": 0.89,
+            "xga": 1.47,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-02-08",
+            "opponent": "Lecce"
+          },
+          {
+            "xg": 0.54,
+            "xga": 0.74,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-02-02",
+            "opponent": "Roma"
+          },
+          {
+            "xg": 1.69,
+            "xga": 0.87,
+            "goals_for": 3,
+            "goals_against": 1,
+            "date": "2026-01-26",
+            "opponent": "Hellas Verona"
+          }
+        ],
+        "aHistory": [
+          {
+            "xg": 0.47,
+            "xga": 0.35,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-05-17",
+            "opponent": "Udinese"
+          },
+          {
+            "xg": 0.56,
+            "xga": 0.96,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-05-04",
+            "opponent": "Lazio"
+          },
+          {
+            "xg": 0.28,
+            "xga": 3.16,
+            "goals_for": 0,
+            "goals_against": 4,
+            "date": "2026-04-24",
+            "opponent": "Napoli"
+          },
+          {
+            "xg": 0.64,
+            "xga": 0.17,
+            "goals_for": 0,
+            "goals_against": 0,
+            "date": "2026-04-19",
+            "opponent": "Torino"
+          },
+          {
+            "xg": 0.31,
+            "xga": 1.17,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-04-11",
+            "opponent": "Cagliari"
+          },
+          {
+            "xg": 1.34,
+            "xga": 1.14,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-04-05",
+            "opponent": "Bologna"
+          },
+          {
+            "xg": 0.8,
+            "xga": 0.36,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-03-21",
+            "opponent": "Parma"
+          },
+          {
+            "xg": 1.44,
+            "xga": 1.69,
+            "goals_for": 1,
+            "goals_against": 4,
+            "date": "2026-03-16",
+            "opponent": "Fiorentina"
+          },
+          {
+            "xg": 1.09,
+            "xga": 1.54,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-03-08",
+            "opponent": "Lecce"
+          },
+          {
+            "xg": 1.07,
+            "xga": 3.64,
+            "goals_for": 0,
+            "goals_against": 2,
+            "date": "2026-03-01",
+            "opponent": "AC Milan"
+          },
+          {
+            "xg": 0.15,
+            "xga": 2.04,
+            "goals_for": 0,
+            "goals_against": 3,
+            "date": "2026-02-22",
+            "opponent": "Roma"
+          },
+          {
+            "xg": 1.94,
+            "xga": 1.34,
+            "goals_for": 0,
+            "goals_against": 0,
+            "date": "2026-02-15",
+            "opponent": "Genoa"
+          },
+          {
+            "xg": 0.99,
+            "xga": 1.78,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-02-09",
+            "opponent": "Atalanta"
+          },
+          {
+            "xg": 0.72,
+            "xga": 1.41,
+            "goals_for": 0,
+            "goals_against": 2,
+            "date": "2026-02-01",
+            "opponent": "Inter Milan"
+          },
+          {
+            "xg": 0.66,
+            "xga": 1.07,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-01-25",
+            "opponent": "US Sassuolo"
+          },
+          {
+            "xg": 0.7,
+            "xga": 0.49,
+            "goals_for": 0,
+            "goals_against": 0,
+            "date": "2026-01-19",
+            "opponent": "Hellas Verona"
+          }
+        ]
+      },
+      "expected_features": {
+        "home_attack_ratio": 0.9926926834794765,
+        "home_defense_ratio": 1.0987097608635916,
+        "away_attack_ratio": 0.6078825633162425,
+        "away_defense_ratio": 1.0668593238177604,
+        "home_ess": 13.858535648420158,
+        "away_ess": 13.858535648420158,
+        "league_home_avg": 1.3501768488745982,
+        "league_away_avg": 1.1542215088282504,
+        "league_home_advantage": 0.19595534004634785,
+        "lambda_h_naive": 1.429922945003652,
+        "lambda_a_naive": 0.7708889704208819,
+        "attack_defense_ratio_h": 1.0590634450557523,
+        "attack_defense_ratio_a": 0.6678865057743358,
+        "elo_diff": 129.35139309260376,
+        "lineup_quality_diff": 2.3816748453004375,
+        "form_streak_diff": 2.879271594509614,
+        "league": "serie_a"
+      }
+    },
+    {
+      "name": "liga3_VfB_Stuttgart_II_U21_vs_VfL_Osnabr\u00fcck",
+      "input": {
+        "homeTeam": "VfB Stuttgart II U21",
+        "awayTeam": "VfL Osnabr\u00fcck",
+        "league": "liga3",
+        "match_date": "2026-06-16T00:00:00",
+        "hHistory": [
+          {
+            "xg": 1.29,
+            "xga": 0.91,
+            "goals_for": 3,
+            "goals_against": 4,
+            "date": "2026-05-16",
+            "opponent": "VfL Osnabr\u00fcck"
+          },
+          {
+            "xg": 2.97,
+            "xga": 1.85,
+            "goals_for": 3,
+            "goals_against": 5,
+            "date": "2026-05-09",
+            "opponent": "F.C. Hansa Rostock"
+          },
+          {
+            "xg": 2.08,
+            "xga": 1.45,
+            "goals_for": 6,
+            "goals_against": 1,
+            "date": "2026-05-02",
+            "opponent": "Rot-Weiss Essen"
+          },
+          {
+            "xg": 1.34,
+            "xga": 1.62,
+            "goals_for": 2,
+            "goals_against": 3,
+            "date": "2026-04-26",
+            "opponent": "TSV Havelse"
+          },
+          {
+            "xg": 1.43,
+            "xga": 1.55,
+            "goals_for": 2,
+            "goals_against": 2,
+            "date": "2026-04-19",
+            "opponent": "Erzgebirge Aue"
+          },
+          {
+            "xg": 1.04,
+            "xga": 2.35,
+            "goals_for": 1,
+            "goals_against": 3,
+            "date": "2026-04-11",
+            "opponent": "Alemannia Aachen"
+          },
+          {
+            "xg": 0.93,
+            "xga": 1.34,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-04-08",
+            "opponent": "SSV Ulm 1846"
+          },
+          {
+            "xg": 1.2,
+            "xga": 2.21,
+            "goals_for": 3,
+            "goals_against": 1,
+            "date": "2026-04-04",
+            "opponent": "SSV Jahn Regensburg"
+          },
+          {
+            "xg": 1.15,
+            "xga": 2.37,
+            "goals_for": 1,
+            "goals_against": 3,
+            "date": "2026-03-21",
+            "opponent": "1. FC Schweinfurt 05"
+          },
+          {
+            "xg": 3.34,
+            "xga": 0.9,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-03-15",
+            "opponent": "TSG 1899 Hoffenheim II"
+          },
+          {
+            "xg": 1.1,
+            "xga": 0.76,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-03-07",
+            "opponent": "SV Wehen Wiesbaden"
+          },
+          {
+            "xg": 1.06,
+            "xga": 3.86,
+            "goals_for": 1,
+            "goals_against": 2,
+            "date": "2026-03-03",
+            "opponent": "Energie Cottbus"
+          },
+          {
+            "xg": 0.92,
+            "xga": 2.06,
+            "goals_for": 0,
+            "goals_against": 2,
+            "date": "2026-02-28",
+            "opponent": "FC Viktoria K\u00f6ln"
+          },
+          {
+            "xg": 2.04,
+            "xga": 1.47,
+            "goals_for": 3,
+            "goals_against": 1,
+            "date": "2026-02-20",
+            "opponent": "SV Waldhof Mannheim"
+          },
+          {
+            "xg": 1.58,
+            "xga": 1.49,
+            "goals_for": 0,
+            "goals_against": 2,
+            "date": "2026-02-14",
+            "opponent": "1. FC Saarbr\u00fccken"
+          },
+          {
+            "xg": 1.43,
+            "xga": 2.12,
+            "goals_for": 2,
+            "goals_against": 1,
+            "date": "2026-02-07",
+            "opponent": "TSV 1860 M\u00fcnchen"
+          }
+        ],
+        "aHistory": [
+          {
+            "xg": 0.91,
+            "xga": 1.29,
+            "goals_for": 4,
+            "goals_against": 3,
+            "date": "2026-05-16",
+            "opponent": "VfB Stuttgart II U21"
+          },
+          {
+            "xg": 1.42,
+            "xga": 1.74,
+            "goals_for": 1,
+            "goals_against": 1,
+            "date": "2026-05-09",
+            "opponent": "SSV Ulm 1846"
+          },
+          {
+            "xg": 2.88,
+            "xga": 0.98,
+            "goals_for": 2,
+            "goals_against": 3,
+            "date": "2026-05-03",
+            "opponent": "SV Wehen Wiesbaden"
+          },
+          {
+            "xg": 1.09,
+            "xga": 1.09,
+            "goals_for": 3,
+            "goals_against": 0,
+            "date": "2026-04-25",
+            "opponent": "SC Verl"
+          },
+          {
+            "xg": 1.55,
+            "xga": 0.5,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-04-18",
+            "opponent": "FC Ingolstadt 04"
+          },
+          {
+            "xg": 0.7,
+            "xga": 0.79,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-04-12",
+            "opponent": "Energie Cottbus"
+          },
+          {
+            "xg": 0.56,
+            "xga": 1.31,
+            "goals_for": 0,
+            "goals_against": 1,
+            "date": "2026-04-07",
+            "opponent": "MSV Duisburg"
+          },
+          {
+            "xg": 2.66,
+            "xga": 0.68,
+            "goals_for": 4,
+            "goals_against": 0,
+            "date": "2026-04-04",
+            "opponent": "1. FC Schweinfurt 05"
+          },
+          {
+            "xg": 1.73,
+            "xga": 0.69,
+            "goals_for": 1,
+            "goals_against": 0,
+            "date": "2026-03-22",
+            "opponent": "TSG 1899 Hoffenheim II"
+          },
+          {
+            "xg": 2.95,
+            "xga": 0.89,
+            "goals_for": 4,
+            "goals_against": 1,
+            "date": "2026-03-14",
+            "opponent": "SV Waldhof Mannheim"
+          },
+          {
+            "xg": 1.16,
+            "xga": 0.7,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-03-07",
+            "opponent": "SSV Jahn Regensburg"
+          },
+          {
+            "xg": 1.18,
+            "xga": 1.1,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-03-03",
+            "opponent": "FC Viktoria K\u00f6ln"
+          },
+          {
+            "xg": 2.08,
+            "xga": 0.66,
+            "goals_for": 3,
+            "goals_against": 1,
+            "date": "2026-02-28",
+            "opponent": "Erzgebirge Aue"
+          },
+          {
+            "xg": 2.02,
+            "xga": 2.05,
+            "goals_for": 3,
+            "goals_against": 0,
+            "date": "2026-02-21",
+            "opponent": "Rot-Weiss Essen"
+          },
+          {
+            "xg": 1.27,
+            "xga": 1.33,
+            "goals_for": 2,
+            "goals_against": 2,
+            "date": "2026-02-14",
+            "opponent": "F.C. Hansa Rostock"
+          },
+          {
+            "xg": 1.69,
+            "xga": 1.87,
+            "goals_for": 2,
+            "goals_against": 0,
+            "date": "2026-02-07",
+            "opponent": "TSV Havelse"
+          }
+        ]
+      },
+      "expected_features": {
+        "home_attack_ratio": 1.029815695670511,
+        "home_defense_ratio": 1.087672348851889,
+        "away_attack_ratio": 1.007397546036243,
+        "away_defense_ratio": 0.6982792989002389,
+        "home_ess": 13.858535648420158,
+        "away_ess": 13.858535648420158,
+        "league_home_avg": 1.6862391930835734,
+        "league_away_avg": 1.4327062228654124,
+        "league_home_advantage": 0.253532970218161,
+        "lambda_h_naive": 1.2125728871030743,
+        "lambda_a_naive": 1.5698426491658763,
+        "attack_defense_ratio_h": 0.7190989819692661,
+        "attack_defense_ratio_a": 1.0957184551248693,
+        "elo_diff": -161.7399219035658,
+        "lineup_quality_diff": -0.9128212095205183,
+        "form_streak_diff": 0.0,
+        "league": "liga3"
+      }
+    }
+  ]
+}
