@@ -1,6 +1,6 @@
 {
   "version": "dev-03-golden-1",
-  "generated_at": "2026-05-21T13:37:36Z",
+  "generated_at": "2026-05-22T02:06:10Z",
   "tolerance_note": "TS port must match within 1e-6 for all numeric features.",
   "fixtures": [
     {
