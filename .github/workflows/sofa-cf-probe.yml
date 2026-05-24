@@ -1,0 +1,16 @@
+name: Sofa CF Probe
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install curl_cffi
+        run: pip install curl_cffi==0.7.4
+      - name: Runner IP
+        run: curl -sS https://api.ipify.org && echo
+      - name: TLS-spoofed probe
+        run: python3 scripts/sofa_cf_probe.py
