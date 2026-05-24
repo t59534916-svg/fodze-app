@@ -1,9 +1,7 @@
 name: Sofa Phase 2 Extras Fetch
-# Test if GitHub Actions runner IPs bypass Sofa CF.
-# Our Mac IP gets HTTP 403 on per-event endpoints; GH runners are
-# Azure-based and CF typically trusts cloud-provider IPs.
-#
-# Run: gh workflow run sofa-extras-fetch.yml -f season=22/23 -f max=10
+# Test curl_cffi (chrome TLS fingerprint) from GitHub Actions runner.
+# Standard curl gets 403 (OpenSSL fingerprint). curl_cffi mimics chrome
+# at TLS-level which may bypass CF.
 
 on:
   workflow_dispatch:
@@ -12,42 +10,37 @@ on:
         description: 'Season (e.g. 22/23)'
         required: true
         default: '22/23'
-      max:
-        description: 'Max games (0 = unlimited)'
-        required: false
-        default: '10'
 
 jobs:
   probe:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Identify runner IP
-        run: |
-          echo "Runner IP: $(curl -sS https://api.ipify.org)"
-          echo "Runner region: $(curl -sS https://ipapi.co/json 2>/dev/null | jq -r '.country_code + " " + .city' 2>/dev/null || echo unknown)"
+      - name: Install curl_cffi
+        run: pip install curl_cffi==0.7.4
 
-      - name: CF probe — direct curl to Sofa per-event endpoint
-        run: |
-          # Test 3 different games' statistics endpoint
-          for game in 10388349 10388346 10388343; do
-            code=$(curl -sS -o /tmp/probe_$game.json -w "%{http_code}" \
-                   -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-                   -H "Accept: */*" \
-                   -H "Accept-Language: en-US,en;q=0.9,de;q=0.8" \
-                   "https://api.sofascore.com/api/v1/event/$game/statistics")
-            size=$(wc -c < /tmp/probe_$game.json)
-            preview=$(head -c 150 /tmp/probe_$game.json)
-            echo "game=$game  HTTP $code  size=$size bytes"
-            echo "  preview: $preview"
-            echo "---"
-          done
+      - name: Runner IP
+        run: echo "Runner IP: $(curl -sS https://api.ipify.org)"
 
-      - name: Upload probe results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cf-probe-results
-          path: /tmp/probe_*.json
-          retention-days: 1
-          if-no-files-found: warn
+      - name: TLS-spoofed probe via curl_cffi
+        run: |
+          python3 <<'EOF'
+          import curl_cffi.requests as cc
+          import json
+
+          for game_id in [10388349, 10388346, 10388343]:
+              for endpoint in ['statistics', 'lineups', 'incidents', 'managers']:
+                  url = f"https://api.sofascore.com/api/v1/event/{game_id}/{endpoint}"
+                  try:
+                      r = cc.get(url, impersonate="chrome124", timeout=15)
+                      size = len(r.content)
+                      status = "✓" if r.status_code == 200 else "✗"
+                      print(f"{status} game={game_id}/{endpoint:<14} HTTP {r.status_code}  size={size}")
+                      if r.status_code == 200:
+                          # Confirm real data
+                          data = r.json()
+                          keys = list(data.keys())[:3]
+                          print(f"    keys: {keys}")
+                  except Exception as e:
+                      print(f"✗ game={game_id}/{endpoint:<14} EXCEPTION: {type(e).__name__}: {e}")
+          EOF
