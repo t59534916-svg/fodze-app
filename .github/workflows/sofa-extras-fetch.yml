@@ -1,85 +1,53 @@
 name: Sofa Phase 2 Extras Fetch
-# Manually-triggered backfill that runs our existing fetcher from
-# GitHub Actions infrastructure (Azure-based IPs). Our Mac IP is
-# CF-blocked for per-event endpoints; GitHub runners typically pass.
+# Test if GitHub Actions runner IPs bypass Sofa CF.
+# Our Mac IP gets HTTP 403 on per-event endpoints; GH runners are
+# Azure-based and CF typically trusts cloud-provider IPs.
 #
-# Run via: gh workflow run sofa-extras-fetch.yml -f season=22/23 -f max=500
-# Or: gh workflow run sofa-extras-fetch.yml --ref main -f season=23/24 -f max=2000
-#
-# Downloads artifact: gh run download <RUN_ID> --name sofa-extras-<season>
+# Run: gh workflow run sofa-extras-fetch.yml -f season=22/23 -f max=10
 
 on:
   workflow_dispatch:
     inputs:
       season:
-        description: 'Season to backfill (e.g. 22/23, 23/24, 24/25)'
+        description: 'Season (e.g. 22/23)'
         required: true
         default: '22/23'
       max:
-        description: 'Max games per run (cap for CI time-limit; 0 = unlimited)'
+        description: 'Max games (0 = unlimited)'
         required: false
-        default: '2000'
-      pace:
-        description: 'Seconds between games'
-        required: false
-        default: '1.0'
+        default: '10'
 
 jobs:
-  fetch:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 350  # GitHub Actions max for free tier
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install deps
-        run: |
-          pip install --upgrade pip
-          pip install curl_cffi requests wrapper-tls-requests tls-requests \
-                      pandas python-dotenv
-
-      - name: Show runner IP (helps identify if CF blocks)
+      - name: Identify runner IP
         run: |
           echo "Runner IP: $(curl -sS https://api.ipify.org)"
+          echo "Runner region: $(curl -sS https://ipapi.co/json 2>/dev/null | jq -r '.country_code + " " + .city' 2>/dev/null || echo unknown)"
 
-      - name: Smoke probe
-        env:
-          SOFA_TEST_GAME_ID: 10388349
+      - name: CF probe — direct curl to Sofa per-event endpoint
         run: |
-          # Try direct Sofa API to see if CF blocks GitHub runner IP
-          curl -sS -o /tmp/probe.json -w "HTTP %{http_code}\n" \
-               -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" \
-               "https://api.sofascore.com/api/v1/event/${SOFA_TEST_GAME_ID}/statistics" || true
-          echo "Probe response (first 500 bytes):"
-          head -c 500 /tmp/probe.json
+          # Test 3 different games' statistics endpoint
+          for game in 10388349 10388346 10388343; do
+            code=$(curl -sS -o /tmp/probe_$game.json -w "%{http_code}" \
+                   -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+                   -H "Accept: */*" \
+                   -H "Accept-Language: en-US,en;q=0.9,de;q=0.8" \
+                   "https://api.sofascore.com/api/v1/event/$game/statistics")
+            size=$(wc -c < /tmp/probe_$game.json)
+            preview=$(head -c 150 /tmp/probe_$game.json)
+            echo "game=$game  HTTP $code  size=$size bytes"
+            echo "  preview: $preview"
+            echo "---"
+          done
 
-      - name: Fetch extras (CI mode — no Supabase, JSON-only)
-        env:
-          SOFA_SEASON: ${{ inputs.season }}
-          SOFA_MAX: ${{ inputs.max }}
-          SOFA_PACE: ${{ inputs.pace }}
-          # No Supabase secrets in CI — fetcher will fail the pending-list query
-          # and fall back to needing explicit game-id list. We need a different
-          # approach: pass game-ids via input or generated list.
-        run: |
-          mkdir -p tools/sofascore/data/extras
-          # Since fetcher queries Supabase for pending list, we need an alternative.
-          # Use a static game-id list checked into the repo or passed via input.
-          # For now, do a probe-only run to confirm CF state.
-          echo "WARNING: fetcher needs Supabase credentials for pending-list query."
-          echo "This workflow probes CF state only. Real backfill needs Supabase secrets."
-
-      - name: Upload extras as artifact
+      - name: Upload probe results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sofa-extras-${{ inputs.season }}
-          path: |
-            tools/sofascore/data/extras/
-            /tmp/probe.json
-          retention-days: 7
+          name: cf-probe-results
+          path: /tmp/probe_*.json
+          retention-days: 1
           if-no-files-found: warn
