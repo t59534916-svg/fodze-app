@@ -1,0 +1,686 @@
+{
+  "joined_n": 12579,
+  "elapsed_s": 7.3,
+  "tests": [
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "AGGREGATE",
+      "n": 12579,
+      "r_raw": 0.2625,
+      "r_residual": 0.0195,
+      "p_residual": 0.0439,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "bundesliga",
+      "n": 857,
+      "r_raw": 0.252,
+      "r_residual": -0.0007,
+      "p_residual": 0.986,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "bundesliga2",
+      "n": 188,
+      "r_raw": 0.0909,
+      "r_residual": 0.0012,
+      "p_residual": 0.996,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "championship",
+      "n": 961,
+      "r_raw": 0.1527,
+      "r_residual": -0.0088,
+      "p_residual": 0.7884,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "epl",
+      "n": 1028,
+      "r_raw": 0.3039,
+      "r_residual": 0.0225,
+      "p_residual": 0.493,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "eredivisie",
+      "n": 826,
+      "r_raw": 0.3647,
+      "r_residual": 0.0136,
+      "p_residual": 0.6766,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "greek_sl",
+      "n": 592,
+      "r_raw": 0.3642,
+      "r_residual": 0.0224,
+      "p_residual": 0.5768,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "jupiler_pro",
+      "n": 704,
+      "r_raw": 0.2456,
+      "r_residual": 0.0414,
+      "p_residual": 0.2335,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "la_liga",
+      "n": 724,
+      "r_raw": 0.2484,
+      "r_residual": 0.0074,
+      "p_residual": 0.8263,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "la_liga2",
+      "n": 838,
+      "r_raw": 0.0694,
+      "r_residual": -0.0417,
+      "p_residual": 0.2136,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "ligue_1",
+      "n": 827,
+      "r_raw": 0.2462,
+      "r_residual": 0.0015,
+      "p_residual": 0.9701,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "ligue_2",
+      "n": 912,
+      "r_raw": 0.147,
+      "r_residual": 0.0094,
+      "p_residual": 0.7385,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "primeira_liga",
+      "n": 671,
+      "r_raw": 0.4099,
+      "r_residual": 0.0541,
+      "p_residual": 0.1776,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "scottish_prem",
+      "n": 641,
+      "r_raw": 0.4021,
+      "r_residual": 0.0292,
+      "p_residual": 0.485,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "serie_a",
+      "n": 1054,
+      "r_raw": 0.2568,
+      "r_residual": 0.0326,
+      "p_residual": 0.2675,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "serie_b",
+      "n": 1021,
+      "r_raw": 0.1158,
+      "r_residual": 0.0177,
+      "p_residual": 0.5649,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_xg_diff",
+      "target": "home_win",
+      "level": "super_lig",
+      "n": 735,
+      "r_raw": 0.3293,
+      "r_residual": 0.1007,
+      "p_residual": 0.008,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "AGGREGATE",
+      "n": 12579,
+      "r_raw": 0.2283,
+      "r_residual": 0.0145,
+      "p_residual": 0.0878,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "bundesliga",
+      "n": 857,
+      "r_raw": 0.2504,
+      "r_residual": 0.0162,
+      "p_residual": 0.6387,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "bundesliga2",
+      "n": 188,
+      "r_raw": 0.0566,
+      "r_residual": -0.0181,
+      "p_residual": 0.7904,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "championship",
+      "n": 961,
+      "r_raw": 0.119,
+      "r_residual": -0.009,
+      "p_residual": 0.7984,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "epl",
+      "n": 1028,
+      "r_raw": 0.2777,
+      "r_residual": -0.0024,
+      "p_residual": 0.9481,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "eredivisie",
+      "n": 826,
+      "r_raw": 0.3524,
+      "r_residual": 0.0417,
+      "p_residual": 0.1976,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "greek_sl",
+      "n": 592,
+      "r_raw": 0.3063,
+      "r_residual": 0.0076,
+      "p_residual": 0.8483,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "jupiler_pro",
+      "n": 704,
+      "r_raw": 0.1878,
+      "r_residual": 0.0104,
+      "p_residual": 0.7964,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "la_liga",
+      "n": 724,
+      "r_raw": 0.2212,
+      "r_residual": -0.0149,
+      "p_residual": 0.7146,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "la_liga2",
+      "n": 838,
+      "r_raw": 0.0805,
+      "r_residual": 0.0069,
+      "p_residual": 0.8523,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "ligue_1",
+      "n": 827,
+      "r_raw": 0.2572,
+      "r_residual": 0.0386,
+      "p_residual": 0.2475,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "ligue_2",
+      "n": 912,
+      "r_raw": 0.0869,
+      "r_residual": -0.0166,
+      "p_residual": 0.6287,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "primeira_liga",
+      "n": 671,
+      "r_raw": 0.322,
+      "r_residual": 0.0145,
+      "p_residual": 0.7086,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "scottish_prem",
+      "n": 641,
+      "r_raw": 0.285,
+      "r_residual": -0.0154,
+      "p_residual": 0.7046,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "serie_a",
+      "n": 1054,
+      "r_raw": 0.274,
+      "r_residual": 0.014,
+      "p_residual": 0.6387,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "serie_b",
+      "n": 1021,
+      "r_raw": 0.1098,
+      "r_residual": 0.0285,
+      "p_residual": 0.3812,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "fs_ppg_diff",
+      "target": "home_win",
+      "level": "super_lig",
+      "n": 735,
+      "r_raw": 0.2929,
+      "r_residual": 0.0622,
+      "p_residual": 0.1158,
+      "verdict": "\u274c NOISE (p > 0.05)"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "AGGREGATE",
+      "n": 12579,
+      "r_raw": 0.1261,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "bundesliga",
+      "n": 857,
+      "r_raw": 0.0492,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "bundesliga2",
+      "n": 188,
+      "r_raw": 0.0492,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "championship",
+      "n": 961,
+      "r_raw": 0.0266,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "epl",
+      "n": 1028,
+      "r_raw": 0.0885,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "eredivisie",
+      "n": 826,
+      "r_raw": 0.0677,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "greek_sl",
+      "n": 592,
+      "r_raw": 0.0757,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "jupiler_pro",
+      "n": 704,
+      "r_raw": 0.0473,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "la_liga",
+      "n": 724,
+      "r_raw": 0.1186,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "la_liga2",
+      "n": 838,
+      "r_raw": 0.0803,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "ligue_1",
+      "n": 827,
+      "r_raw": 0.1073,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "ligue_2",
+      "n": 912,
+      "r_raw": -0.0045,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "primeira_liga",
+      "n": 671,
+      "r_raw": 0.1337,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "scottish_prem",
+      "n": 641,
+      "r_raw": 0.0772,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "serie_a",
+      "n": 1054,
+      "r_raw": 0.052,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "serie_b",
+      "n": 1021,
+      "r_raw": 0.0064,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "total_goals",
+      "level": "super_lig",
+      "n": 735,
+      "r_raw": 0.0421,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "AGGREGATE",
+      "n": 12579,
+      "r_raw": 0.0382,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "bundesliga",
+      "n": 857,
+      "r_raw": 0.0215,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "bundesliga2",
+      "n": 188,
+      "r_raw": 0.051,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "championship",
+      "n": 961,
+      "r_raw": 0.0103,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "epl",
+      "n": 1028,
+      "r_raw": 0.0234,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "eredivisie",
+      "n": 826,
+      "r_raw": 0.0176,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "greek_sl",
+      "n": 592,
+      "r_raw": -0.0816,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "jupiler_pro",
+      "n": 704,
+      "r_raw": 0.0102,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "la_liga",
+      "n": 724,
+      "r_raw": 0.1096,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u2705 STRONG"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "la_liga2",
+      "n": 838,
+      "r_raw": 0.0393,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "ligue_1",
+      "n": 827,
+      "r_raw": 0.0392,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "ligue_2",
+      "n": 912,
+      "r_raw": 0.0377,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "primeira_liga",
+      "n": 671,
+      "r_raw": -0.019,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "scottish_prem",
+      "n": 641,
+      "r_raw": 0.0326,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "serie_a",
+      "n": 1054,
+      "r_raw": 0.0547,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe2 MODERATE"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "serie_b",
+      "n": 1021,
+      "r_raw": -0.0198,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\u274c NOISE (|r| < 0.02)"
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts_real",
+      "level": "super_lig",
+      "n": 735,
+      "r_raw": -0.0231,
+      "r_residual": null,
+      "p_residual": null,
+      "verdict": "\ud83d\udfe1 WEAK"
+    }
+  ]
+}
