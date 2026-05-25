@@ -1,0 +1,130 @@
+{
+  "phases": {
+    "A": {
+      "phase": "A",
+      "lost_n": 16992,
+      "lost_pct": 35.0,
+      "verdict": "ACCEPTABLE",
+      "bias_findings": [
+        {
+          "dim": "position",
+          "value": "Midfielder",
+          "landed_pct": 31.95,
+          "lost_pct": 31.54,
+          "diff_pp": -0.41
+        },
+        {
+          "dim": "position",
+          "value": "Defender",
+          "landed_pct": 31.14,
+          "lost_pct": 31.23,
+          "diff_pp": 0.09
+        },
+        {
+          "dim": "position",
+          "value": "Forward",
+          "landed_pct": 25.8,
+          "lost_pct": 26.28,
+          "diff_pp": 0.47
+        },
+        {
+          "dim": "position",
+          "value": "Goalkeeper",
+          "landed_pct": 10.71,
+          "lost_pct": 10.75,
+          "diff_pp": 0.04
+        }
+      ],
+      "ks_minutes_p": 0.0
+    },
+    "B": {
+      "phase": "B",
+      "joined_n": 5589,
+      "features": [
+        {
+          "feature": "xg_diff",
+          "n": 5589,
+          "r_raw": 0.2745,
+          "r_residual": 0.0605,
+          "spearman": 0.2714,
+          "mutual_info": 0.0366,
+          "verdict": "\ud83d\udfe1 WEAK"
+        },
+        {
+          "feature": "npxg_diff",
+          "n": 5589,
+          "r_raw": 0.2695,
+          "r_residual": 0.0587,
+          "spearman": 0.2678,
+          "mutual_info": 0.0393,
+          "verdict": "\ud83d\udfe1 WEAK"
+        },
+        {
+          "feature": "xa_diff",
+          "n": 5589,
+          "r_raw": 0.2825,
+          "r_residual": 0.0704,
+          "spearman": 0.2824,
+          "mutual_info": 0.0515,
+          "verdict": "\ud83d\udfe1 WEAK"
+        },
+        {
+          "feature": "top3_xg_share_diff",
+          "n": 5281,
+          "r_raw": -0.0066,
+          "r_residual": 0.0119,
+          "spearman": 0.0011,
+          "mutual_info": 0.0051,
+          "verdict": "\u274c NOISE"
+        },
+        {
+          "feature": "regulars_diff",
+          "n": 5589,
+          "r_raw": -0.0024,
+          "r_residual": -0.0131,
+          "spearman": -0.0126,
+          "mutual_info": 0.0004,
+          "verdict": "\u274c NOISE"
+        },
+        {
+          "feature": "mean_age_diff",
+          "n": 5453,
+          "r_raw": -0.0019,
+          "r_residual": -0.0084,
+          "spearman": -0.0101,
+          "mutual_info": 0.0053,
+          "verdict": "\u274c NOISE"
+        },
+        {
+          "feature": "def_count_diff",
+          "n": 5589,
+          "r_raw": -0.0089,
+          "r_residual": -0.021,
+          "spearman": 0.0044,
+          "mutual_info": 0.007,
+          "verdict": "\u274c NOISE"
+        },
+        {
+          "feature": "interceptions_diff",
+          "n": 5589,
+          "r_raw": 0.0091,
+          "r_residual": 0.0117,
+          "spearman": 0.0035,
+          "mutual_info": 0.0076,
+          "verdict": "\u274c NOISE"
+        }
+      ],
+      "verdict": "SIGNAL"
+    },
+    "C": {
+      "phase": "C",
+      "n": 12962,
+      "brier_constant": 0.2516,
+      "brier_baseline": 0.24695,
+      "brier_fsxg": 0.24442,
+      "delta_brier_pp": 0.253,
+      "verdict": "\ud83d\udfe1 MARGINAL (small improvement)"
+    }
+  },
+  "elapsed_s": 36.8
+}
