@@ -685,16 +685,34 @@ match_prematch_signals — FootyStats CSV value-adds (NEU 2026-05-25). 38.696 ro
                      home/away_prematch_xg (FS-Model pre-match xG-Forecast,
                      3rd xG source neben Sofa shotmap + Understat) + prematch_btts/
                      o15/o25/o35/o45_pct (FS pre-match % forecasts) + avg_corners/
-                     avg_cards + attendance + stadium. NICHT capturiert: xG/goals/
-                     shots/possession (Sofa hat das besser) + closing odds (FS nicht
-                     Pinnacle-sourced — würde Benter blend korrumpieren). UNIQUE
-                     (league, match_date, home_team, away_team) + canonical
-                     `match_key` für joins gegen bets/odds_closing_history. Importer:
-                     `scripts/import-footystats-valueadds.mjs`, migration:
-                     `scripts/migration-match-prematch-signals.sql`. Caveat: Game
-                     Week 1 jeder Saison hat zeros (kein prior — "no data" not 0%).
-                     avg_home_xg systematisch fallend 21/22→24/25 alle Ligen — wenn
-                     als Feature: per-Liga × Saison normalisieren.
+                     avg_cards + attendance + stadium. **+ 9 bookmaker_odds_*
+                     columns (added 2026-05-25 evening migration `add_bookmaker_
+                     odds_to_match_prematch_signals`)**: bookmaker_odds_home/draw/
+                     away + over15/25/35/45 + btts_yes/no + bookmaker_source.
+                     99.8% populated from FS CSVs (NOT Pinnacle-sharp — use only
+                     as PROXY market baseline for Goals/BTTS falsification testing
+                     until live-snapshot accumulates Pinnacle psc_over25 going
+                     forward). UNIQUE (league, match_date, home_team, away_team) +
+                     canonical `match_key` für joins gegen bets/odds_closing_history.
+                     Importers: `scripts/import-footystats-valueadds.mjs` (initial
+                     value-adds) + `scripts/import-footystats-bookmaker-odds.mjs`
+                     (odds backfill). Migration: `scripts/migration-match-prematch-
+                     signals.sql`. Caveat: Game Week 1 jeder Saison hat zeros (kein
+                     prior — "no data" not 0%). avg_home_xg systematisch fallend
+                     21/22→24/25 alle Ligen — wenn als Feature: per-Liga × Saison
+                     normalisieren.
+sofascore_lineups_cache — NEU 2026-05-25 (lokal-only SQLite, NOT Supabase).
+                     Cache für Sofa /lineups endpoint von UPCOMING matches.
+                     Schema: game_id PRIMARY KEY · fetched_at · kickoff_unix ·
+                     league · home/away_team · home/away_formation ·
+                     home/away_starters (JSON array of player names) · confirmed
+                     boolean · raw_json. Fetcher: `tools/sofascore/fetch_upcoming_
+                     lineups.py` (reuses Webshare proxy infra). Exports
+                     `tools/sofascore/data/lineups_upcoming.json` for engine reads.
+                     MVP: code functional, runtime pending (a) fresh Sofa schedule
+                     data in local sofascore_match table, (b) Webshare proxy pool
+                     recovery from current CF-burn. Future-enables lineup-aware
+                     engine features (per docs/LINEUP-INTEGRATION.md).
 live_wp_snapshots  — ⚠ EMPTY (0 rows). Phase 3.3 dormant — braucht Betfair-API-Key.
 corners_odds_history — ⚠ EMPTY (0 rows). Phase 3.1 dormant — braucht UI-Tab.
 player_props_posteriors — ⚠ EMPTY (0 rows). Phase 3.2 dormant — braucht R-service.
