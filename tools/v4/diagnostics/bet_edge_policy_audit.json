@@ -1,0 +1,250 @@
+{
+  "current_policy_audit": [
+    {
+      "league": "serie_a",
+      "engine": "dev-03",
+      "old_claimed_avg": 5.8,
+      "new_25_26": 16.269407355553973,
+      "new_24_25": -14.46056664260284,
+      "verdict": "\u274c REVERSED"
+    },
+    {
+      "league": "scottish_prem",
+      "engine": "dev-03",
+      "old_claimed_avg": 24.65,
+      "new_25_26": 65.29957135049693,
+      "new_24_25": 7.0457333831730775,
+      "verdict": "\u2705 HOLDS"
+    },
+    {
+      "league": "epl",
+      "engine": "dev-03",
+      "old_claimed_avg": 18.45,
+      "new_25_26": 1.0072327819171354,
+      "new_24_25": -34.539475792431006,
+      "verdict": "\u274c REVERSED"
+    },
+    {
+      "league": "la_liga",
+      "engine": "v2",
+      "old_claimed_avg": 22.65,
+      "new_25_26": 6.1768169747446455,
+      "new_24_25": 66.35846622286311,
+      "verdict": "\u2705 HOLDS"
+    },
+    {
+      "league": "serie_b",
+      "engine": "v2",
+      "old_claimed_avg": 15.8,
+      "new_25_26": 31.808100724100637,
+      "new_24_25": -13.128717240441903,
+      "verdict": "\u274c REVERSED"
+    }
+  ],
+  "new_validated_set": [
+    {
+      "league": "bundesliga",
+      "engine": "dev-03",
+      "roi25_26": 53.75228976357619,
+      "roi24_25": 6.553552147302392,
+      "n25": 24,
+      "n24": 18,
+      "mean_roi": 30.15
+    },
+    {
+      "league": "eredivisie",
+      "engine": "dev-03",
+      "roi25_26": 27.85481765952291,
+      "roi24_25": 7.959025908303912,
+      "n25": 36,
+      "n24": 14,
+      "mean_roi": 17.91
+    },
+    {
+      "league": "greek_sl",
+      "engine": "dev-03",
+      "roi25_26": 10.837661071695635,
+      "roi24_25": 16.179346642194997,
+      "n25": 12,
+      "n24": 6,
+      "mean_roi": 13.51
+    },
+    {
+      "league": "la_liga",
+      "engine": "dev-03",
+      "roi25_26": 6.1768169747446455,
+      "roi24_25": 66.35846622286311,
+      "n25": 59,
+      "n24": 46,
+      "mean_roi": 36.27
+    },
+    {
+      "league": "primeira_liga",
+      "engine": "dev-03",
+      "roi25_26": 3.3681187616265316,
+      "roi24_25": 51.270820485176394,
+      "n25": 31,
+      "n24": 22,
+      "mean_roi": 27.32
+    },
+    {
+      "league": "scottish_prem",
+      "engine": "dev-03",
+      "roi25_26": 65.29957135049693,
+      "roi24_25": 7.0457333831730775,
+      "n25": 34,
+      "n24": 16,
+      "mean_roi": 36.17
+    }
+  ],
+  "aggregate_25_26": {
+    "win_rate": 0.3639291465378422,
+    "mean_edge_pct": 4.014073422043293,
+    "median_edge_pct": 3.8460869118140506,
+    "mean_stake_pct": 1.6241908176402011,
+    "roi_pct_single_trajectory": 5.414070665255755,
+    "roi_bootstrap_ci_lo_pct": -4.980125741466271,
+    "roi_bootstrap_ci_median_pct": 5.701882562195712,
+    "roi_bootstrap_ci_hi_pct": 16.955065714972804
+  },
+  "aggregate_24_25": {
+    "win_rate": 0.3808411214953271,
+    "mean_edge_pct": 4.009765806713269,
+    "median_edge_pct": 3.8277245268075855,
+    "mean_stake_pct": 1.7950994307335506,
+    "roi_pct_single_trajectory": 3.3563540736364104,
+    "roi_bootstrap_ci_lo_pct": -8.40690557504238,
+    "roi_bootstrap_ci_median_pct": 3.2698822502385525,
+    "roi_bootstrap_ci_hi_pct": 16.01777293300038
+  },
+  "holm_survivors": [
+    "la_liga",
+    "scottish_prem",
+    "primeira_liga",
+    "bundesliga"
+  ],
+  "per_league_holm_table": [
+    {
+      "league": "la_liga",
+      "p_raw": 2.5225155297903257e-11,
+      "mean_roi": 36.27,
+      "n_total": 105,
+      "p_adj": 3.7837732946854885e-10,
+      "significant": true
+    },
+    {
+      "league": "scottish_prem",
+      "p_raw": 3.0689652794624322e-06,
+      "mean_roi": 36.17,
+      "n_total": 50,
+      "p_adj": 4.296551391247405e-05,
+      "significant": true
+    },
+    {
+      "league": "primeira_liga",
+      "p_raw": 0.00021914173056136743,
+      "mean_roi": 27.32,
+      "n_total": 53,
+      "p_adj": 0.0028488424972977766,
+      "significant": true
+    },
+    {
+      "league": "bundesliga",
+      "p_raw": 0.00027570713476698927,
+      "mean_roi": 30.15,
+      "n_total": 42,
+      "p_adj": 0.0033084856172038712,
+      "significant": true
+    },
+    {
+      "league": "eredivisie",
+      "p_raw": 0.012598623986907365,
+      "mean_roi": 17.91,
+      "n_total": 50,
+      "p_adj": 0.138584863855981,
+      "significant": false
+    },
+    {
+      "league": "serie_b",
+      "p_raw": 0.13402784534374146,
+      "mean_roi": 9.34,
+      "n_total": 45,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "serie_a",
+      "p_raw": 0.4427927195251118,
+      "mean_roi": 0.9,
+      "n_total": 81,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "bundesliga2",
+      "p_raw": 0.5,
+      "mean_roi": -8.14,
+      "n_total": 40,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "championship",
+      "p_raw": 0.5,
+      "mean_roi": -6.13,
+      "n_total": 121,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "epl",
+      "p_raw": 0.5,
+      "mean_roi": -16.77,
+      "n_total": 58,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "jupiler_pro",
+      "p_raw": 0.5,
+      "mean_roi": -2.3,
+      "n_total": 43,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "la_liga2",
+      "p_raw": 0.5,
+      "mean_roi": -2.47,
+      "n_total": 125,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "ligue_1",
+      "p_raw": 0.5,
+      "mean_roi": -1.9,
+      "n_total": 83,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "ligue_2",
+      "p_raw": 0.5,
+      "mean_roi": -4.83,
+      "n_total": 48,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "league": "super_lig",
+      "p_raw": 0.5,
+      "mean_roi": -2.67,
+      "n_total": 87,
+      "p_adj": 0.5,
+      "significant": false
+    }
+  ],
+  "current_policy_pass_rate": "2/5",
+  "recommendation": "SHRINK to survivors"
+}
