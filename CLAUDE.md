@@ -134,6 +134,31 @@ python3 tools/statsbomb/parse.py                     # events → aggregates.csv
 python3 tools/statsbomb/parse.py --only-competition "1. Bundesliga"
 ```
 
+### Sofa Phase 2 Extras Tooling (NEU 2026-05-25, lokal-only)
+```bash
+# FREE incidents fetcher — NO proxy, NO CF block (web-page SSR path)
+# Extracts incidents from www.sofascore.com/event/<id> __NEXT_DATA__ JSON
+# Sustained 1.4-2.5 games/sec, covers 1/7 endpoints (incidents only)
+python3 tools/sofascore/fetch_incidents_webpage.py --season 22/23 --pace 0.5
+python3 tools/sofascore/fetch_incidents_webpage.py --season 24/25 --max 1000  # batch
+
+# Full 7-endpoint fetcher (needs Webshare proxy rotation for CF-bypass)
+# Use --skip-cached to skip games with all 7 endpoints already present
+# (fixed 2026-05-25: was naive file-exists, now requires all 7 endpoints
+# in JSON — see fetch_match_extras.py::already_cached)
+python3 tools/sofascore/fetch_match_extras.py \
+  --season 22/23 --all-tiers --use-webshare --skip-cached --pace 1.5
+
+# Load JSONs to LOCAL SQLite mirror only (skip Supabase entirely)
+python3 tools/sofascore/load_extras_to_supabase.py --all --no-supabase
+```
+
+**Webshare proxy rotation pattern (empirical 2026-05-25):**
+- 20-IP residential pool burns ~1,500 games per ~30-60min before CF blocks pool
+- After block: TCP-level dead (ProxyError) — need new IPs OR 6-12h cooldown
+- Math: ~120 fresh IPs needed for full 8,336 remaining all-7-endpoints games
+- OR Webshare Rotating-Residential plan ($25/mo, unlimited rotation, ~2-4h total)
+
 `tools/statsbomb/aggregates.csv` liefert für Model-Training Event-level aggregates:
 shots (total/SoT/in-box/out-box/under-pressure/head/foot), xG (StatsBomb's kalibriertes Model), goals,
 avg_shot_x/y, xg_per_shot, pct_shots_in_box, passes (total/completed/%), carries, pressures, fouls, offsides.
@@ -532,8 +557,8 @@ Historical entries (dev-04/05/06/07/08 archives, one-time backfill events, Sofa-
 | **Sofascore-features in Engine** | evaluated no-enable 🟡 (2026-05-03) | 3 Integration-Strategien getestet. Beste single-config: Replace feature 19 durch mean_shot_xg = -0.0031 Brier global aber EPL +0.0235 schlechter (Brentford-Effekt). Run-Variance ±0.005 frisst Sofa-Signal. EPL-Blacklist via `SOFA_F19_BLACKLIST`. |
 | **dev-03 Auto-Routing UX** | manual only 🟡 | Validation-Badge in Goldilocks zeigt "🎯 Dev-03" als RECOMMENDATION, aber User muss Engine **manuell** in Settings switchen. Hybrid-Engine-Story aus `bet-edge-policy.ts` bleibt empfehlend, nicht durchgesetzt. |
 | **dev-03 cache-staleness surface** | not monitored 🟡 | `dev03-feature-cache.json.data_window.history_through` existiert, aber UI surface fehlt. Bei Cron-Tod arbeitet User mit N-Wochen-altem Cache ohne Warnung. Future: `/health` Section. |
-| **22/23 + 23/24 Phase 1 Sofa backfill** | DONE (2026-05-22) | Full shotmap+match metadata via fetch_shots.py season-list endpoints (Mac-IP CF-frei, no proxy needed). **22/23**: 22 leagues × ~315m avg = 6,989 matches / 167,781 shots (no Sofa data for liga3 — not in season-catalogue). **23/24**: all 22 leagues = 7,107 matches / 173,443 shots. **Combined new this session**: 9,967 matches + 247,512 shots loaded to Supabase + local SQLite mirror. Bridge to team_xg_history: 42k upserts via scripts/bridge-sofascore-to-team-xg.mjs (Sofa-quality xG now active for Tier-A 22/23+23/24, +3,542 net new rows in team_xg_history). la_liga2/eerste_divisie/league_one/league_two/ligue_2 = volume tier (no Sofa-xG, bridge skips). Phase 1 multi-season corpus ready for dev-03 retrain. |
-| **22/23 + 23/24 Phase 2 Sofa extras** | BLOCKED 🟡 (2026-05-22) | 8,485 games × 7 per-event endpoints (statistics, lineups, incidents, average-positions, managers, pregame-form, team-streaks) hit HTTP 403 on Mac-IP even with `--use-tls-requests`. Webshare proxies return HTTP 0 (dead/exhausted). Smoke test confirmed: 5/5 games × 7 endpoints = 35/35 failed. **Workaround that worked**: Phase 1 alone delivers ~90% of engine value (shots-derived xG features). Phase 2 (managers/streaks/lineups/etc.) is niceto-have, blocks Lineup-Parsing follow-up (#63). Options to unblock: (a) Hetzner VM with fresh European IP, ~16h sprint, (b) functional residential proxy plan, (c) wait days for CF cooldown. |
+| **22/23 + 23/24 + 24/25 Phase 1 Sofa backfill** | DONE (2026-05-25 extended) | Full shotmap+match metadata via fetch_shots.py season-list endpoints (Mac-IP CF-frei for season-list, no proxy needed). **22/23**: 22 leagues = 6,822 ended matches. **23/24**: 22 leagues = 6,949 matches. **24/25** (extended 2026-05-25): added 11 missing leagues (eredivisie, primeira_liga, eerste_divisie, greek_sl, jupiler_pro, super_lig, scottish_prem, austria_bl, swiss_sl, league_one, league_two) = +3,072 new matches → total 7,015. **25/26**: 6,856 (ongoing). Bridge to team_xg_history: 42k+17k upserts via scripts/bridge-sofascore-to-team-xg.mjs (Sofa-quality xG now active for all Tier-A+B-premium 22/23-24/25, ~3,500+ net new rows). la_liga2/eerste_divisie/league_one/league_two/ligue_2 = volume tier (no Sofa-xG, bridge skips). Phase 1 multi-season corpus ready for dev-03 retrain. |
+| **Phase 2 Sofa extras (multi-season)** | PARTIAL (2026-05-25) | Per-event endpoints (statistics, lineups, incidents, average-positions, managers, pregame-form, team-streaks) protected by Sofa Varnish/CF at IP-reputation level. **Coverage achieved through 2026-05-25**: all-7-endpoints complete: 22/23 27.5%, 23/24 81.7%, 24/25 73.3%, 25/26 96.4%. **Incidents-only (1/7) coverage**: ~100% all 4 seasons via FREE alternative path. **Bypass methods empirical-tested 2026-05-25**: (1) Direct API: HTTP 403, (2) Tor exits: 403 (anti-VPN-list), (3) GitHub Actions Azure IPs: 403 (12/12), (4) Playwright Chromium: 403 (same Mac-IP), (5) sofascore-wrapper/ScraperFC/sofascrape/datafc/cloudscraper: all 403, (6) Alternative subdomains (torneo/app/files/widget): 404 different endpoints, (7) `www.sofascore.com/event/X` SSR: **WORKS, returns incidents (52KB) embedded in __NEXT_DATA__** — built `tools/sofascore/fetch_incidents_webpage.py` (free, no proxy, sustained 1.4-2.5/s), (8) Webshare residential 20-IP pool via `--use-webshare`: **WORKS for ~30-60min** then CF blocks the pool (~1,000-1,500 games per cycle before burnout). **Empirical model**: 20 fresh proxies = ~1,500 games per burst. Remaining 8,336 missing-all-7 games would need 6 fresh proxy batches OR Webshare Rotating-Residential plan ($25/mo unlimited IP rotation = ~2-4h total) OR Hetzner VM. **Bug fix 2026-05-25**: `already_cached()` in fetch_match_extras.py was naive file-exists check, marked incidents-only JSONs as fully-cached and skipped them. Now requires all 7 endpoints present (line ~398). |
 
 ### Reference
 
