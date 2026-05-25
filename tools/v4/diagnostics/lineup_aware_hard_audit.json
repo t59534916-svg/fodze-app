@@ -1,0 +1,56 @@
+{
+  "1_brier_sign": {
+    "audit": "1_brier_sign",
+    "result": "NO_BUG",
+    "convention": "delta = baseline - treatment (positive = treatment better)"
+  },
+  "2_holm_bonferroni": {
+    "audit": "2_holm_bonferroni",
+    "m_total": 17,
+    "fwer_at_005": 58.2,
+    "survivors": [],
+    "sh_diff_p_adj": 0.204,
+    "verdict": "NO SIGNAL SURVIVES"
+  },
+  "3_decile_leakage": {
+    "audit": "3_decile_leakage",
+    "code_path": "qcut on TEST-ONLY (no train-leakage)",
+    "but_caveat": "Decile analysis is post-hoc/exploratory, not inferential.",
+    "result": "NO_TRAIN_LEAKAGE_BUT_EXPLORATORY"
+  },
+  "4_power_analysis": {
+    "audit": "4_power_analysis",
+    "n_test": 380,
+    "mean_per_match_diff": -0.001153,
+    "std_per_match_diff": 0.00824,
+    "se_per_match_diff": 0.000423,
+    "n_needed_for_001_uncorrected": 532,
+    "n_needed_for_001_corrected": 832
+  },
+  "5_roi_simulation": {
+    "audit": "5_roi_simulation",
+    "n_test": 380,
+    "vig_overround_pct": 2.93,
+    "roi_pinnacle_raw": {
+      "label": "Pinnacle raw (no value-bet filter)",
+      "n_bets": 0,
+      "roi_pct": 0.0,
+      "profit_per_unit_stake": 0.0
+    },
+    "roi_pinnacle_lr_baseline": {
+      "label": "Pinnacle-LR baseline",
+      "n_bets": 287,
+      "roi_pct": -7.547,
+      "profit_per_unit_stake": -21.66
+    },
+    "roi_pinnacle_lr_plus_shdiff": {
+      "label": "Pinnacle-LR + sh_diff",
+      "n_bets": 285,
+      "roi_pct": -5.923,
+      "profit_per_unit_stake": -16.88
+    },
+    "roi_delta_pp": 1.62,
+    "verdict": "\ud83d\udfe1 Adds value over baseline but still negative ROI"
+  },
+  "elapsed_s": 0.3
+}
