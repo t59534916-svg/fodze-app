@@ -1,0 +1,74 @@
+{
+  "gates": {
+    "1_lag": {
+      "gate": 1,
+      "n_lag": 3057,
+      "r_raw_cur": 0.2778,
+      "r_resid_cur": 0.0603,
+      "r_raw_lag": 0.2304,
+      "r_resid_lag": 0.004,
+      "decay_ratio": 0.066,
+      "per_league": [
+        {
+          "league": "championship",
+          "n_lag": 182,
+          "r_resid_lag": -0.0283,
+          "r_resid_cur": null,
+          "decay_ratio": null
+        },
+        {
+          "league": "greek_sl",
+          "n_lag": 207,
+          "r_resid_lag": -0.0348,
+          "r_resid_cur": -0.0026,
+          "decay_ratio": 13.249
+        },
+        {
+          "league": "jupiler_pro",
+          "n_lag": 555,
+          "r_resid_lag": -0.0471,
+          "r_resid_cur": 0.0464,
+          "decay_ratio": 1.016
+        },
+        {
+          "league": "ligue_2",
+          "n_lag": 382,
+          "r_resid_lag": -0.0154,
+          "r_resid_cur": 0.0246,
+          "decay_ratio": 0.626
+        },
+        {
+          "league": "primeira_liga",
+          "n_lag": 486,
+          "r_resid_lag": 0.0328,
+          "r_resid_cur": 0.0261,
+          "decay_ratio": 1.255
+        },
+        {
+          "league": "scottish_prem",
+          "n_lag": 380,
+          "r_resid_lag": -0.0111,
+          "r_resid_cur": 0.0301,
+          "decay_ratio": 0.367
+        },
+        {
+          "league": "serie_b",
+          "n_lag": 350,
+          "r_resid_lag": -0.0332,
+          "r_resid_cur": 0.0999,
+          "decay_ratio": 0.333
+        },
+        {
+          "league": "super_lig",
+          "n_lag": 515,
+          "r_resid_lag": 0.1061,
+          "r_resid_cur": 0.1354,
+          "decay_ratio": 0.784
+        }
+      ],
+      "verdict": "\u274c FAIL \u2014 lag-signal essentially zero. Original signal was leakage.",
+      "proceed": false
+    }
+  },
+  "elapsed_s": 8.3
+}
