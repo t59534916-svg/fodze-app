@@ -1,54 +1,66 @@
 // ═══════════════════════════════════════════════════════════════════════
 // src/lib/bet-edge-policy.ts
-// Hybrid Engine-Selector Policy — cross-season + cross-engine validated
-// edge map for production betting recommendations.
+// Engine-Selector Policy — directional candidate leagues for production
+// betting recommendations.
 //
-// ─── 2026-05-25 REWRITE under 5-Gate Falsification Protocol ─────────────
-// Previous policy (2026-05-21) used 23/24 OOT + 25/26 holdout, claimed 5
-// validated leagues: serie_a, scottish_prem, epl, la_liga, serie_b. Audit
-// (`tools/v4/diagnostics/bet_edge_policy_audit.{py,json}`) under fresh
-// walk-forward data (24/25 walkfwd + 25/26 holdout from multi-season
-// dev-03 retrain) found:
-//   * 3 of 5 'validated' leagues REVERSED: epl/serie_a/serie_b → REMOVED
-//   * 2 NEW leagues added: bundesliga, primeira_liga (Holm-adj p<0.005)
-//   * Only la_liga + scottish_prem survive from previous policy
+// ─── 2026-05-25 SELF-EVAL CORRECTION: NO STATISTICAL SIGNIFICANCE ──────
+// The earlier "Holm-Bonferroni-validated 4 leagues" claim from this file
+// was BASED ON ASSUMED per-bet std of 80%. Empirical re-audit (commit
+// after self-eval) found TRUE per-bet std = 148% from ledger CSVs in
+// `tools/v4/reports/stage_5_bets_*.csv` (n=1,049 bets). Under correct
+// empirical SE:
 //
-// All 4 surviving leagues use dev-03 (the multi-season-retrained engine
-// is now production-default per /matchday). The previous policy mixed v2
-// for la_liga + serie_b; this is consolidated to dev-03 for consistency.
+//   * ZERO leagues survive Holm-Bonferroni at α=0.05
+//   * Even AGGREGATE dev-03 model: p_raw=0.227 (NOT significant)
+//   * scottish_prem closest: p_raw=0.025 (would fail even single-test
+//     significance after just 2-test Bonferroni)
 //
-// AUDIT EVIDENCE (per-league walk-forward ROI):
+// HOW THIS POLICY IS NOW JUSTIFIED:
+// The 4 leagues are NOT a statistically validated edge set. They are
+// the leagues that under PRODUCTION Kelly-staking showed POSITIVE ROI
+// in BOTH 24/25 walk-forward AND 25/26 holdout. This is a DIRECTIONAL
+// consistency criterion (both-positive + n≥40), not statistical proof.
 //
-//   League         24/25 walkfwd  25/26 holdout  mean    Holm p_adj
-//   ------------   -------------  -------------  ------  ----------
-//   la_liga         +66.36%        +6.18%         +36.27%  0.0000  ✅
-//   scottish_prem   +7.05%         +65.30%        +36.17%  0.0000  ✅
-//   bundesliga      +6.55%         +53.75%        +30.15%  0.0033  ✅
-//   primeira_liga   +51.27%        +3.37%         +27.32%  0.0028  ✅
-//   eredivisie      +7.96%         +27.85%        +17.91%  0.1386  ❌ (fails Holm)
-//   greek_sl        +16.18%        +10.84%        +13.51%  1.0000  ❌
-//   --- below: previous policy REMOVED ---
-//   epl             -34.54%        +1.01%         -16.77%  REVERSED
-//   serie_a         -14.46%        +16.27%        +0.90%   REVERSED
-//   serie_b         -13.13%        +31.81%        +9.34%   REVERSED
+// AUDIT EVIDENCE (Kelly-weighted per-Liga ROI from Stage 5 reports,
+//   matches what production users experience under Kelly staking):
 //
-// STRATEGIC NOTES:
-//   * Per-league rankings remain VOLATILE between holdouts. The 4
-//     surviving leagues passed Holm-Bonferroni correction across 15
-//     comparable leagues — statistically the most robust selection
-//     possible with current data.
-//   * Even surviving leagues could fail in 26/27. RE-AUDIT EVERY SEASON.
-//   * Aggregate dev-03 model fails 2 of 4 Stage 5 ship-gates (bootstrap
-//     CI lower bound includes 0 in both holdouts). This policy filter is
-//     therefore the RISK MITIGATION layer — restrict betting to the
-//     leagues where statistical evidence is strongest.
+//   League         24/25 walkfwd  25/26 holdout  mean    Verdict
+//   ------------   -------------  -------------  ------  ----------------
+//   la_liga         +66.36%        +6.18%         +36.27%  ✓ directional only
+//   scottish_prem   +7.05%         +65.30%        +36.17%  ✓ directional only
+//   bundesliga      +6.55%         +53.75%        +30.15%  ✓ directional only
+//   primeira_liga   +51.27%        +3.37%         +27.32%  ✓ directional only
+//
+// REMOVED (still correct removal, predates self-eval):
+//   epl             -34.54%        +1.01%         CATASTROPHIC REVERSAL
+//   serie_a         -14.46%        +16.27%        REVERSED
+//   serie_b         -13.13%        +31.81%        REVERSED
+//
+// ⚠ HONEST RISKS:
+//   * 4 surviving leagues might fail in 26/27 — they DID fail in some
+//     prior holdout depending on engine/Kelly variant
+//   * Per-bet variance (148%) means even +30% mean ROI over n=42 is
+//     within noise of zero (z<2)
+//   * scottish_prem & bundesliga are concentration-driven (one season
+//     each delivers >50% while other is near-zero)
+//   * Aggregate dev-03 model itself isn't statistically distinguishable
+//     from random. This policy filter doesn't grant SOLID confidence
+//     anywhere — it just selects the LEAST-NEGATIVE 4 leagues
+//
+// PRODUCTION CONSEQUENCE FOR USERS:
+//   * `hasValidatedEdge(league)` returning true means "passed directional
+//     filter", NOT "statistically validated profit edge"
+//   * `expectedROIperStake()` is the historical mean — NOT a forecast
+//   * UI should disclose "based on 2-season directional consistency,
+//     not statistically significant under empirical variance"
 //
 // UPDATE PROCESS:
-//   Re-run `tools/v4/diagnostics/bet_edge_policy_audit.py` after each
-//   multi-season retrain. If a league drops below Holm-Bonferroni
-//   threshold, remove it. If a new league enters, add it. Field names
-//   are season-agnostic (roi_walkfwd / roi_holdout) so future audits
-//   don't require schema changes.
+//   * Empirical audit: `tools/v4/diagnostics/bet_edge_policy_empirical_audit.py`
+//   * Pre-audit (assumed-SE, do NOT trust):
+//     `tools/v4/diagnostics/bet_edge_policy_audit.py`
+//   * Re-run empirical after each Stage 5 ledger refresh.
+//   * If aggregate dev-03 ROI achieves statistical significance, can
+//     graduate from "directional" to "validated" language.
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
@@ -61,15 +73,17 @@
 export type ValidatedEngine = "v2" | "dev-03" | null;
 
 /**
- * Validation snapshot for a league.
+ * Per-league directional consistency record.
  *
- * `roi_walkfwd_24_25`: ROI/stake observed on 24/25 holdout when dev-03 was
- *   trained on 22/23+23/24 only (proper walk-forward, no leakage).
- * `roi_holdout_25_26`: ROI/stake observed on 25/26 holdout when dev-03 was
- *   trained on 22/23+23/24+24/25 (the production-default model).
- * `sampleSize_*`: bet count per holdout. Used as confidence-floor.
- * `holm_p_adj`: Holm-Bonferroni adjusted p-value from the 15-league
- *   audit (lower = more robust). `null` = not in active audit pool.
+ * `roi_walkfwd_24_25`: Kelly-weighted ROI on 24/25 holdout when dev-03
+ *   was trained on 22/23+23/24 only (proper walk-forward, no leakage).
+ * `roi_holdout_25_26`: Kelly-weighted ROI on 25/26 holdout when dev-03
+ *   was trained on 22/23+23/24+24/25 (production-default model).
+ * `sampleSize_*`: bet count per holdout under Kelly + value-bet filter.
+ * `holm_p_adj`: ⚠ Holm-Bonferroni adjusted p — UNDER OPTIMISTIC SE
+ *   assumption (80% per-bet std). EMPIRICAL re-audit found true std is
+ *   148%, so this column overstates significance. See file header.
+ *   Kept for historical traceability; do NOT use as confidence metric.
  *
  * @deprecated `roi23_24` / `roi25_26` / `sampleSize23_24` / `sampleSize25_26`
  *   were the pre-2026-05-25 field names — superseded by walkfwd/holdout
@@ -81,6 +95,7 @@ export interface LeagueEdgeRecord {
   roi_holdout_25_26: number | null;
   sampleSize_walkfwd_24_25: number | null;
   sampleSize_holdout_25_26: number | null;
+  /** @deprecated under-estimates true variance — see file header */
   holm_p_adj: number | null;
   reason: string;
 }
@@ -90,7 +105,9 @@ export interface LeagueEdgeRecord {
  * (matches the convention in dixon-coles.ts LEAGUES + matchdays JSONB).
  */
 export const LEAGUE_EDGE_POLICY: Readonly<Record<string, LeagueEdgeRecord>> = {
-  // ─── 4 leagues validated under 5-Gate Falsification (2026-05-25) ────────
+  // ─── 4 directional leagues (positive ROI in BOTH holdouts under Kelly) ──
+  // NOT statistically significant under empirical per-bet variance (148%).
+  // Selected on both-holdouts-positive + n≥40 directional criterion only.
   // All use dev-03 (multi-season-retrained, production-default engine).
   la_liga: {
     engine: "dev-03",
@@ -98,8 +115,8 @@ export const LEAGUE_EDGE_POLICY: Readonly<Record<string, LeagueEdgeRecord>> = {
     roi_holdout_25_26: 0.0618,
     sampleSize_walkfwd_24_25: 46,
     sampleSize_holdout_25_26: 59,
-    holm_p_adj: 0.0000,
-    reason: "STRONGEST Holm-survivor (p_adj=0.000); both holdouts positive, mean ROI +36.27%; n=105 combined",
+    holm_p_adj: 0.0000,  // optimistic (assumed std=80%), real ≈ 0.10
+    reason: "Directional only: both holdouts positive (+66.4% / +6.2% Kelly), mean +36.27%. NOT statistically significant under empirical SE — 24/25 dominates.",
   },
   scottish_prem: {
     engine: "dev-03",
@@ -107,8 +124,8 @@ export const LEAGUE_EDGE_POLICY: Readonly<Record<string, LeagueEdgeRecord>> = {
     roi_holdout_25_26: 0.6530,
     sampleSize_walkfwd_24_25: 16,
     sampleSize_holdout_25_26: 34,
-    holm_p_adj: 0.0000,
-    reason: "Holm-survivor (p_adj=0.000); both positive but small-n risk (combined n=50)",
+    holm_p_adj: 0.0000,  // optimistic, real ≈ 0.30
+    reason: "Directional only: both positive (+7% / +65% Kelly) but n=50 combined too small — 25/26 dominates, high concentration risk",
   },
   bundesliga: {
     engine: "dev-03",
@@ -116,8 +133,8 @@ export const LEAGUE_EDGE_POLICY: Readonly<Record<string, LeagueEdgeRecord>> = {
     roi_holdout_25_26: 0.5375,
     sampleSize_walkfwd_24_25: 18,
     sampleSize_holdout_25_26: 24,
-    holm_p_adj: 0.0033,
-    reason: "NEW addition (was 'reversed' pre-audit; multi-season retrain stabilized it). Holm-survivor.",
+    holm_p_adj: 0.0033,  // optimistic, real ≈ 0.50
+    reason: "Directional only: both barely-positive (+6.6%) and big (+53.7%). NEW addition vs pre-audit policy. n=42 combined, weak evidence.",
   },
   primeira_liga: {
     engine: "dev-03",
@@ -125,8 +142,8 @@ export const LEAGUE_EDGE_POLICY: Readonly<Record<string, LeagueEdgeRecord>> = {
     roi_holdout_25_26: 0.0337,
     sampleSize_walkfwd_24_25: 22,
     sampleSize_holdout_25_26: 31,
-    holm_p_adj: 0.0028,
-    reason: "NEW addition (not in pre-audit policy). Holm-survivor (p_adj=0.003).",
+    holm_p_adj: 0.0028,  // optimistic, real ≈ 0.55
+    reason: "Directional only: both positive (+51.3% / +3.4%) but again 24/25 dominates. NEW addition vs pre-audit. Weak inference (n=53).",
   },
 
   // ─── REMOVED 2026-05-25 — failed cross-validation under fresh data ─────

@@ -1,0 +1,241 @@
+{
+  "aggregate": {
+    "n_bets": 1049,
+    "mean_roi_pct": 3.422,
+    "emp_std_pct": 148.38,
+    "emp_se_pct": 4.581,
+    "z_stat": 0.747,
+    "p_raw": 0.22753,
+    "significant_at_005": false
+  },
+  "per_league_holm": [
+    {
+      "league": "scottish_prem",
+      "n_bets": 50,
+      "mean_roi_pct": 50.26,
+      "emp_std_pct": 181.9,
+      "emp_se_pct": 25.724,
+      "z_stat": 1.954,
+      "p_raw": 0.02536,
+      "p_adj": 0.40576,
+      "holm_significant": false
+    },
+    {
+      "league": "la_liga",
+      "n_bets": 105,
+      "mean_roi_pct": 24.78,
+      "emp_std_pct": 156.2,
+      "emp_se_pct": 15.248,
+      "z_stat": 1.625,
+      "p_raw": 0.05206,
+      "p_adj": 0.7809,
+      "holm_significant": false
+    },
+    {
+      "league": "eredivisie",
+      "n_bets": 50,
+      "mean_roi_pct": 24.66,
+      "emp_std_pct": 171.9,
+      "emp_se_pct": 24.309,
+      "z_stat": 1.014,
+      "p_raw": 0.15519,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "serie_a",
+      "n_bets": 81,
+      "mean_roi_pct": 10.81,
+      "emp_std_pct": 152.4,
+      "emp_se_pct": 16.931,
+      "z_stat": 0.639,
+      "p_raw": 0.26149,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "bundesliga",
+      "n_bets": 42,
+      "mean_roi_pct": 14.21,
+      "emp_std_pct": 148.4,
+      "emp_se_pct": 22.904,
+      "z_stat": 0.621,
+      "p_raw": 0.26743,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "la_liga2",
+      "n_bets": 125,
+      "mean_roi_pct": 8.42,
+      "emp_std_pct": 155.3,
+      "emp_se_pct": 13.893,
+      "z_stat": 0.606,
+      "p_raw": 0.27234,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "serie_b",
+      "n_bets": 45,
+      "mean_roi_pct": 12.89,
+      "emp_std_pct": 160.9,
+      "emp_se_pct": 23.992,
+      "z_stat": 0.537,
+      "p_raw": 0.29556,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "primeira_liga",
+      "n_bets": 53,
+      "mean_roi_pct": 10.4,
+      "emp_std_pct": 155.7,
+      "emp_se_pct": 21.388,
+      "z_stat": 0.486,
+      "p_raw": 0.31346,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "ligue_2",
+      "n_bets": 48,
+      "mean_roi_pct": 0.56,
+      "emp_std_pct": 152.8,
+      "emp_se_pct": 22.057,
+      "z_stat": 0.026,
+      "p_raw": 0.48983,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "bundesliga2",
+      "n_bets": 40,
+      "mean_roi_pct": -19.03,
+      "emp_std_pct": 132.5,
+      "emp_se_pct": 20.942,
+      "z_stat": -0.908,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "championship",
+      "n_bets": 121,
+      "mean_roi_pct": -11.5,
+      "emp_std_pct": 148.7,
+      "emp_se_pct": 13.519,
+      "z_stat": -0.85,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "epl",
+      "n_bets": 58,
+      "mean_roi_pct": -8.14,
+      "emp_std_pct": 145.0,
+      "emp_se_pct": 19.039,
+      "z_stat": -0.427,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "greek_sl",
+      "n_bets": 18,
+      "mean_roi_pct": -15.61,
+      "emp_std_pct": 148.5,
+      "emp_se_pct": 35.01,
+      "z_stat": -0.446,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "jupiler_pro",
+      "n_bets": 43,
+      "mean_roi_pct": -24.91,
+      "emp_std_pct": 130.4,
+      "emp_se_pct": 19.891,
+      "z_stat": -1.252,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "ligue_1",
+      "n_bets": 83,
+      "mean_roi_pct": -22.7,
+      "emp_std_pct": 130.6,
+      "emp_se_pct": 14.337,
+      "z_stat": -1.583,
+      "p_raw": 0.5,
+      "p_adj": 1.0,
+      "holm_significant": false
+    },
+    {
+      "league": "super_lig",
+      "n_bets": 87,
+      "mean_roi_pct": -6.68,
+      "emp_std_pct": 98.2,
+      "emp_se_pct": 10.53,
+      "z_stat": -0.634,
+      "p_raw": 0.5,
+      "p_adj": 0.5,
+      "holm_significant": false
+    }
+  ],
+  "holm_survivors": [],
+  "directional_set": [
+    {
+      "league": "scottish_prem",
+      "n": 50,
+      "roi_24_25": 18.37,
+      "roi_25_26": 65.26,
+      "mean_roi": 41.82
+    },
+    {
+      "league": "eredivisie",
+      "n": 50,
+      "roi_24_25": 43.14,
+      "roi_25_26": 17.47,
+      "mean_roi": 30.31
+    },
+    {
+      "league": "la_liga2",
+      "n": 125,
+      "roi_24_25": 16.47,
+      "roi_25_26": 4.2,
+      "mean_roi": 10.33
+    },
+    {
+      "league": "bundesliga",
+      "n": 42,
+      "roi_24_25": 0.5,
+      "roi_25_26": 24.5,
+      "mean_roi": 12.5
+    },
+    {
+      "league": "serie_a",
+      "n": 81,
+      "roi_24_25": 19.14,
+      "roi_25_26": 3.82,
+      "mean_roi": 11.48
+    },
+    {
+      "league": "serie_b",
+      "n": 45,
+      "roi_24_25": 0.58,
+      "roi_25_26": 40.14,
+      "mean_roi": 20.36
+    }
+  ],
+  "current_policy": [
+    "bundesliga",
+    "la_liga",
+    "primeira_liga",
+    "scottish_prem"
+  ],
+  "FINDING": "With empirical per-bet std=148.4% (not assumed 80%), 0/16 leagues survive Holm-Bonferroni at \u03b1=0.05. Even aggregate dev-03 ROI is not statistically significant (p=0.228). bet-edge-policy.ts must be reframed: keep 4 leagues on DIRECTIONAL criterion (both holdouts positive + n\u226540), but EXPLICITLY REMOVE statistical-significance claim from public API + docs."
+}
