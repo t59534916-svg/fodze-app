@@ -8,12 +8,16 @@
 //   - existing FODZE pipeline  (Dixon-Coles matrix, Goldilocks Kelly,
 //                                Bets builder, league-liquidity gate)
 //
-// Money-Eval status (2026-05-21): dev-03+m6_benter has cross-season-
-// validated positive ROI in 3 leagues — see `bet-edge-policy.ts`:
-//   • serie_a       (23/24 +3.4% → 25/26 +8.2%, n=142+64)
-//   • scottish_prem (+17%  → +32%, n=192+36)
-//   • epl           (+4.7% → +32%, n=78+44)
-// For other leagues the engine still produces predictions but the
+// Money-Eval status (2026-05-25 audit, REVISED under 5-Gate Falsification):
+// dev-03 has Holm-Bonferroni-validated positive ROI in 4 leagues
+// (24/25 walkfwd + 25/26 holdout) — see `bet-edge-policy.ts`:
+//   • la_liga         mean +36.27%  (n=46+59,  p_adj=0.000)
+//   • scottish_prem   mean +36.17%  (n=16+34,  p_adj=0.000)
+//   • bundesliga      mean +30.15%  (n=18+24,  p_adj=0.003)  [NEW vs prior]
+//   • primeira_liga   mean +27.32%  (n=22+31,  p_adj=0.003)  [NEW vs prior]
+// PREVIOUS 'validated' set (serie_a / epl / serie_b) REMOVED after walk-
+// forward revealed catastrophic reversals (-14.5% / -34.5% / -13.1% on
+// 24/25). For other leagues the engine still produces predictions but
 // `bet-edge-policy` warns against actually betting them.
 //
 // Architecture choice — same MatchCalc + ensemble field shape as v2 so the

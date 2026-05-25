@@ -48,7 +48,7 @@ export const ENGINES: EngineInfo[] = [
   {
     id: "poisson-ml-dev03",
     name: "v4 dev-03",
-    description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Cross-season-validated Money-Edge for serie_a (+3.4→+8.2%), scottish_prem (+17→+32%), epl (+4.7→+32%) — see bet-edge-policy.ts. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
+    description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Cross-season-validated Money-Edge under Holm-Bonferroni (2026-05-25 audit): la_liga +36.27%, scottish_prem +36.17%, bundesliga +30.15%, primeira_liga +27.32% mean ROI across 24/25 walkfwd + 25/26 holdout — see bet-edge-policy.ts. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
   },
   {
     id: "footbayes-hierarchical",
