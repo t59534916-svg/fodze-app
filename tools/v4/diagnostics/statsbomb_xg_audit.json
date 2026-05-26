@@ -1,0 +1,81 @@
+{
+  "audit_run": "statsbomb_xg_audit",
+  "input_corpus": "tools/statsbomb/aggregates.csv",
+  "n_sb_rows_raw": 2862,
+  "n_sb_rows_mapped": 2400,
+  "n_sb_rows_overlap": 268,
+  "n_sb_rows_resolved": 267,
+  "n_joined": 179,
+  "leagues_audited": [
+    "la_liga",
+    "ligue_1",
+    "bundesliga"
+  ],
+  "dropped_competitions": [
+    "Champions League",
+    "FIFA World Cup",
+    "UEFA Euro"
+  ],
+  "unmapped_team_count": 1,
+  "per_league_per_source": {
+    "bundesliga": {
+      "sofascore": {
+        "n": 68,
+        "rmse": 0.2312,
+        "mae": 0.1776,
+        "bias_sb_minus_ours": -0.0719,
+        "status": "\u26a0 moderate"
+      }
+    },
+    "la_liga": {
+      "understat": {
+        "n": 48,
+        "rmse": 0.3118,
+        "mae": 0.2112,
+        "bias_sb_minus_ours": -0.0981,
+        "status": "\ud83d\udd34 large drift"
+      }
+    },
+    "ligue_1": {
+      "sofascore": {
+        "n": 63,
+        "rmse": 0.3419,
+        "mae": 0.2441,
+        "bias_sb_minus_ours": -0.1037,
+        "status": "\ud83d\udd34 large drift"
+      }
+    }
+  },
+  "per_source_aggregate": {
+    "sofascore": {
+      "n": 131,
+      "rmse": 0.2898,
+      "mae": 0.2096,
+      "bias_sb_minus_ours": -0.0872
+    },
+    "understat": {
+      "n": 48,
+      "rmse": 0.3118,
+      "mae": 0.2112,
+      "bias_sb_minus_ours": -0.0981
+    }
+  },
+  "systematic_bias_sb_minus_ours": -0.0901,
+  "n_min_for_firm_verdict": 100,
+  "firm_recalibration_targets": [],
+  "suggestive_drift_targets": [
+    {
+      "league": "la_liga",
+      "source": "understat",
+      "rmse": 0.3118,
+      "n": 48
+    },
+    {
+      "league": "ligue_1",
+      "source": "sofascore",
+      "rmse": 0.3419,
+      "n": 63
+    }
+  ],
+  "verdict": "validation_only_directional_drift"
+}
