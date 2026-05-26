@@ -7,24 +7,34 @@ from. Doesn't validate any specific feature — just stores the data.
 Flow:
   1. Query local SQLite `sofascore_match` for "Not started" matches in
      a window (default: next 48h based on start_timestamp).
-  2. For each: fetch `/api/v1/event/{id}/lineups` via Webshare proxy.
-     (Mac-IP is CF-blocked since 2026-05-25; live-snapshot cron also
-     proxied — same pattern.)
+  2. For each: fetch `/api/v1/event/{id}/lineups`. Default = Mac-IP
+     direct (curl_cffi chrome124, no proxy). Fall back to Webshare
+     ONLY on BlockedError mid-run.
   3. Persist to local SQLite `sofascore_lineups_cache` (one row per game,
      full raw JSON + parsed starting-XI + formation).
   4. Output JSON snapshot to `tools/sofascore/data/lineups_upcoming.json`
      for engine-side reads.
 
+Connectivity history:
+  * 2026-05-25: Mac-IP got CF-blocked for api.sofascore.com — MVP launched
+    with hardcoded Webshare-only path.
+  * 2026-05-26: CF block lifted. All 7 endpoints (statistics, lineups,
+    incidents, average-positions, managers, pregame-form, team-streaks)
+    return HTTP 200 direct from Mac-IP. Confirmed via the in-flight
+    22/23 slim-3 backfill (~25 games/min sustained, 0 BlockedErrors).
+    Default flipped to Mac-IP-direct; Webshare is opt-in fallback.
+
 Design notes:
   * NO Supabase write — purely local cache. Supabase sync would be a
     separate cron addition.
-  * NO retry / cooldown logic — single-pass best-effort. If proxy
-    burns, accept partial coverage + retry next run.
+  * Auto-fallback: on BlockedError mid-run, switch to Webshare and
+    continue. Saves Webshare bandwidth when Mac-IP works (most days).
   * Lineups are released ~1h before kickoff. Run hourly via cron OR
     on-demand before /matchday page-load.
 
 Usage:
-  python3 tools/sofascore/fetch_upcoming_lineups.py
+  python3 tools/sofascore/fetch_upcoming_lineups.py                    # Mac-IP-first
+  python3 tools/sofascore/fetch_upcoming_lineups.py --use-webshare     # skip direct, force proxy
   python3 tools/sofascore/fetch_upcoming_lineups.py --hours-ahead 24
   python3 tools/sofascore/fetch_upcoming_lineups.py --game-id 14023928
   python3 tools/sofascore/fetch_upcoming_lineups.py --dry
@@ -187,6 +197,10 @@ def main():
     ap.add_argument("--game-id", type=int, help="Single game (debug)")
     ap.add_argument("--max", type=int, default=0, help="Cap pending games")
     ap.add_argument("--pace", type=float, default=1.5)
+    ap.add_argument("--use-webshare", action="store_true",
+                    help="Force Webshare proxy (skip Mac-IP direct attempt)")
+    ap.add_argument("--block-threshold", type=int, default=3,
+                    help="Switch to Webshare after N consecutive BlockedErrors (default 3)")
     ap.add_argument("--dry", action="store_true")
     args = ap.parse_args()
 
@@ -210,16 +224,34 @@ def main():
             print(f"  … and {len(games) - 10} more")
         return
 
-    # Use Webshare proxies — Mac IP CF-blocked since 2026-05-25
-    http = make_session(use_tor=False, use_webshare=True, use_tls_requests=False)
+    # Default: Mac-IP-direct (curl_cffi chrome124, no proxy). CF unblocked
+    # as of 2026-05-26 — verified across all 7 Sofa endpoints. Webshare
+    # is opt-in fallback for when CF re-enables the block.
+    use_webshare = args.use_webshare
+    if use_webshare:
+        print("  ⚙ Mode: Webshare proxy (forced via --use-webshare)")
+    else:
+        print("  ⚙ Mode: Mac-IP direct (CF-unblocked since 2026-05-26)")
+    http = make_session(use_tor=False, use_webshare=use_webshare, use_tls_requests=False)
 
     pulled = blocked = empty = 0
+    consecutive_blocked = 0
     t0 = time.time()
     for i, g in enumerate(games, 1):
         parsed = fetch_one(http, g)
         if parsed is None:
             blocked += 1
+            consecutive_blocked += 1
+            # Auto-fallback: if Mac-IP starts getting blocked, swap to
+            # Webshare and retry. Only fires once per run (use_webshare flips).
+            if not use_webshare and consecutive_blocked >= args.block_threshold:
+                print(f"  ⚠ {consecutive_blocked} consecutive blocks — switching to Webshare proxy",
+                      flush=True)
+                use_webshare = True
+                http = make_session(use_tor=False, use_webshare=True, use_tls_requests=False)
+                consecutive_blocked = 0
             continue
+        consecutive_blocked = 0  # reset on any success
         if not parsed["home_starters"] and not parsed["away_starters"]:
             empty += 1
             kt = time.strftime("%H:%M", time.gmtime(g["start_timestamp"]))
@@ -235,7 +267,8 @@ def main():
         time.sleep(args.pace)
 
     elapsed = time.time() - t0
-    print(f"\n━ Done in {elapsed:.0f}s: {pulled} fetched, {empty} empty, {blocked} blocked")
+    mode_used = "Webshare" if use_webshare else "Mac-IP direct"
+    print(f"\n━ Done in {elapsed:.0f}s: {pulled} fetched, {empty} empty, {blocked} blocked · final mode: {mode_used}")
 
     export_snapshot(conn)
 
