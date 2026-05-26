@@ -12,7 +12,7 @@ import { predictRho, buildRhoFeatures, DEFAULT_RHO_MODEL, type RhoModelCoefficie
 import { xgbPredict, buildFeatureVector, applyResidualCorrections, tagsToResidualFeatures, type ResidualModels } from "./xgb-runtime";
 import { anchorToPinnacle, hasPinnacleData, pinnacleImpliedProbs, type PinnacleOdds, type AnchorConfig } from "./pinnacle-anchor";
 import { benterBlend } from "./benter-blend";
-import { conformalKellyFactor } from "./conformal-gate";
+import { conformalKellyFactor, conformalKellyFactorOU25 } from "./conformal-gate";
 import { normalizedCIWidth } from "./backtest";
 import { applyFilterShield, type ShieldVeto, type BetSide } from "./filter-shield";
 
@@ -1043,12 +1043,23 @@ export function calculateBetsEnhanced(
       if (anchored) kellyDamp = anchored.kelly_dampening;
     }
     // Phase 2.5: Mondrian Conformal gate factor (1.0 when mode=off — the
-    // default until NEXT_PUBLIC_CONFORMAL_GATE is flipped). Applies only
-    // to 1X2 outcomes because the conformal calibration is trained on the
-    // 3-class classification task; O25/U25/BTTS gate factor stays 1.0.
-    const conformalFactor = (m.key === "H" || m.key === "D" || m.key === "A")
-      ? conformalKellyFactor({ H: cal.H, D: cal.D, A: cal.A }, league)
-      : 1.0;
+    // default until NEXT_PUBLIC_CONFORMAL_GATE is flipped). Two layers:
+    //   * 1X2 outcomes (H/D/A): 3-class conformal trained on v2 OOT
+    //   * O25/U25 outcomes:     binary conformal trained 2026-05-25
+    //                            (tools/fit_conformal_ou25.py, 18 leagues,
+    //                            14/18 within ±5pp OOS coverage at α=0.10)
+    // BTTS gate factor stays 1.0 (no BTTS conformal fit yet).
+    let conformalFactor = 1.0;
+    if (m.key === "H" || m.key === "D" || m.key === "A") {
+      conformalFactor = conformalKellyFactor({ H: cal.H, D: cal.D, A: cal.A }, league);
+    } else if (m.key === "O25" || m.key === "U25") {
+      // Binary O/U conformal — gate logic is symmetric in p(over25):
+      // - For "Über 2.5" (O25): p_o25 must clear p_o25 ≥ 1-q (high confidence over)
+      // - For "Unter 2.5" (U25): same gate but checks p_o25 ≤ q (high confidence under)
+      // The conformalKellyFactorOU25 internally calls conformalGateOU25
+      // which handles both directions correctly via the prediction-set logic.
+      conformalFactor = conformalKellyFactorOU25(calO25.O25, league);
+    }
     let pLow:number,pHigh:number;
     if(m.key==="H"){pLow=calLow.H;pHigh=calHigh.H;}
     else if(m.key==="D"){pLow=Math.min(calLow.D,calHigh.D);pHigh=Math.max(calLow.D,calHigh.D);}

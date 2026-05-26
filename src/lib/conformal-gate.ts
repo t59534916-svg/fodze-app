@@ -34,6 +34,17 @@ export interface ConformalQuantilesJSON {
   // can ship a global-only payload before per-league quantiles are
   // reliable (Mondrian falls back to global per the spec).
   leagues?: Record<string, Record<string, number>>;
+  // ─── Optional Over/Under 2.5 binary conformal section ────────────
+  // Fitted by tools/fit_conformal_ou25.py since 2026-05-25. Schema
+  // mirrors the 1X2 section but applies to the binary OU25 market.
+  // Scoring: s_i = 1 - p[y_i] where y_i ∈ {0=under, 1=over}.
+  // Prediction set at confidence (1-α): { k : p_k >= 1 - q_g }.
+  // Absent on legacy fits → consumers fall back to mode="off".
+  ou25?: {
+    _meta?: { method?: string; market?: string; trained_at?: string | null };
+    global?: Record<string, number>;
+    leagues?: Record<string, Record<string, number>>;
+  };
 }
 
 export type Outcome = "H" | "D" | "A";
@@ -158,4 +169,105 @@ export function conformalKellyFactor(
   if (gate.setSize <= 1) return 1.0;
   if (gate.setSize === 2) return 0.6;
   return 0.3;
+}
+
+// ─── Over/Under 2.5 (binary) conformal gate ─────────────────────────
+// Sibling of the 1X2 gate above. Binary case: outcomes are {over25,
+// under25} with probabilities {p, 1-p}. Mondrian per-league quantiles
+// fitted by tools/fit_conformal_ou25.py.
+
+export interface ConformalGateOU25Result {
+  inSet: Array<"over25" | "under25">;
+  isSingleton: boolean;
+  setSize: number;
+  quantile: number;
+  cluster: "league" | "global" | "default";
+  applied: boolean;
+}
+
+function lookupQuantileOU25(leagueCode: string | undefined, alpha: number):
+    { q: number; cluster: ConformalGateOU25Result["cluster"] } {
+  if (!QUANTILES?.ou25) return { q: FALLBACK_QUANTILE, cluster: "default" };
+  const key = alphaKey(alpha);
+  // ou25 fitter writes keys as "0.05", "0.1", "0.2" (one digit after 0.1).
+  // Tolerate both "0.10" (alphaKey) and "0.1" by checking both forms.
+  const altKey = alpha === 0.1 ? "0.1" : alpha === 0.2 ? "0.2" : key;
+  const perLeague = leagueCode && QUANTILES.ou25.leagues?.[leagueCode];
+  if (perLeague) {
+    const v = perLeague[key] ?? perLeague[altKey];
+    if (typeof v === "number") return { q: v, cluster: "league" };
+  }
+  if (QUANTILES.ou25.global) {
+    const v = QUANTILES.ou25.global[key] ?? QUANTILES.ou25.global[altKey];
+    if (typeof v === "number") return { q: v, cluster: "global" };
+  }
+  return { q: FALLBACK_QUANTILE, cluster: "default" };
+}
+
+/**
+ * Binary Over/Under 2.5 conformal gate.
+ *
+ * Scoring (per Angelopoulos & Bates 2023 sec 2):
+ *   s_over = 1 - p_o25  (score for "is over the true class?")
+ *   s_under = p_o25
+ *
+ * Set membership: class k is INCLUDED in S iff s_k ≤ q_g, i.e.
+ *   p_o25 ≥ 1 - q  → over25 in set
+ *   p_o25 ≤ q       → under25 in set
+ *
+ * Singleton ⇒ confident → no Kelly dampening. Both-in-set ⇒ uncertain.
+ * Defensive: if neither qualifies (q so tight nothing survives), keep
+ * arg-max (matches 1X2 fallback).
+ */
+export function conformalGateOU25(
+  probOver25: number,
+  leagueCode?: string,
+  alpha: number = DEFAULT_ALPHA,
+): ConformalGateOU25Result {
+  const { q, cluster } = lookupQuantileOU25(leagueCode, alpha);
+  const inSet: Array<"over25" | "under25"> = [];
+  if (probOver25 >= 1 - q) inSet.push("over25");
+  if (probOver25 <= q) inSet.push("under25");
+  if (inSet.length === 0) {
+    inSet.push(probOver25 >= 0.5 ? "over25" : "under25");
+  }
+  return {
+    inSet,
+    isSingleton: inSet.length === 1,
+    setSize: inSet.length,
+    quantile: q,
+    cluster,
+    applied: cluster !== "default",
+  };
+}
+
+/**
+ * Kelly-dampening factor for Over/Under 2.5 bets. Same semantics as
+ * conformalKellyFactor() for 1X2 but the set has at most 2 outcomes:
+ *   isSingleton → 1.0
+ *   both in set (uncertain) → mode-dependent:
+ *     "dampen" → 0.6 (analog to 1X2 set-size=2)
+ *     "enforce" → 0.0
+ *
+ * Falls back to 1.0 when:
+ *   * mode is "off" or "warn"
+ *   * QUANTILES.ou25 not loaded (cluster="default")
+ */
+export function conformalKellyFactorOU25(
+  probOver25: number,
+  leagueCode?: string,
+  alpha: number = DEFAULT_ALPHA,
+  mode: ConformalMode = MODE,
+): number {
+  if (mode === "off" || mode === "warn") return 1.0;
+  if (!QUANTILES?.ou25) return 1.0;  // section not loaded → no-op
+  const gate = conformalGateOU25(probOver25, leagueCode, alpha);
+  if (!gate.applied) return 1.0;
+  if (mode === "enforce") return gate.isSingleton ? 1.0 : 0.0;
+  // dampen mode
+  return gate.isSingleton ? 1.0 : 0.6;
+}
+
+export function isConformalOU25Loaded(): boolean {
+  return QUANTILES?.ou25 != null;
 }
