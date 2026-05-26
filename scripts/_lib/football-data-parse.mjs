@@ -195,10 +195,18 @@ export function buildRows(league, season, csvRows) {
       psh: numOrNull(r.PSH),
       psd: numOrNull(r.PSD),
       psa: numOrNull(r.PSA),
-      psc_over25: numOrNull(r["PSC>2.5"]),
-      psc_under25: numOrNull(r["PSC<2.5"]),
-      pscahh: numOrNull(r.PSCAHH),
-      pscaha: numOrNull(r.PSCAHA),
+      // 2026-05-25 fix: fd.co.uk actual column names are `PC>2.5`/`PC<2.5`
+      // (not `PSC>2.5`). The PSC* prefix is only used for 1X2 markets;
+      // O/U closing uses the shorter `PC` prefix. Verified across
+      // 22/23, 23/24, 24/25, 25/26 EPL CSVs — all consistent. The old
+      // `PSC>2.5` lookup returned null → only 37 of 19191 rows had
+      // Pinnacle Over25 closing populated. Kept as fallback for any
+      // legacy season that might use it.
+      psc_over25: numOrNull(r["PC>2.5"] ?? r["PSC>2.5"]),
+      psc_under25: numOrNull(r["PC<2.5"] ?? r["PSC<2.5"]),
+      // Pinnacle Asian Handicap closing — same `PC` convention
+      pscahh: numOrNull(r["PCAHH"] ?? r.PSCAHH),
+      pscaha: numOrNull(r["PCAHA"] ?? r.PSCAHA),
       ah_line: numOrNullSigned(r.AHCh) ?? numOrNullSigned(r.AHh),
       ft_result: resultFromGoals(fth, fta),
       ft_goals_h: fth,
