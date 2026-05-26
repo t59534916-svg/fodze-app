@@ -1,0 +1,407 @@
+{
+  "joined_n": 19660,
+  "tests": [
+    {
+      "feature": "fs_xg_total",
+      "target": "over25",
+      "market": "Over2.5",
+      "label": "H1: FS xG-total \u2192 Over25 (Pinnacle baseline)",
+      "n": 19660,
+      "r_raw": 0.0566,
+      "p_raw": 0.0,
+      "r_residual": 0.0126,
+      "spearman_residual": -0.0991,
+      "perm_p_residual": 0.0759,
+      "per_league": [
+        {
+          "league": "jupiler_pro",
+          "n": 1060,
+          "r_resid": 0.0769
+        },
+        {
+          "league": "super_lig",
+          "n": 1249,
+          "r_resid": 0.0589
+        },
+        {
+          "league": "epl",
+          "n": 1644,
+          "r_resid": 0.0392
+        },
+        {
+          "league": "serie_b",
+          "n": 1451,
+          "r_resid": -0.0374
+        },
+        {
+          "league": "eredivisie",
+          "n": 1331,
+          "r_resid": 0.0301
+        },
+        {
+          "league": "bundesliga",
+          "n": 1263,
+          "r_resid": 0.0231
+        },
+        {
+          "league": "primeira_liga",
+          "n": 1046,
+          "r_resid": 0.0208
+        },
+        {
+          "league": "la_liga2",
+          "n": 1190,
+          "r_resid": -0.0201
+        },
+        {
+          "league": "bundesliga2",
+          "n": 300,
+          "r_resid": -0.0185
+        },
+        {
+          "league": "greek_sl",
+          "n": 875,
+          "r_resid": 0.0161
+        },
+        {
+          "league": "serie_a",
+          "n": 1718,
+          "r_resid": 0.0098
+        },
+        {
+          "league": "ligue_1",
+          "n": 1311,
+          "r_resid": -0.0094
+        },
+        {
+          "league": "championship",
+          "n": 1549,
+          "r_resid": -0.005
+        },
+        {
+          "league": "ligue_2",
+          "n": 1430,
+          "r_resid": 0.0036
+        },
+        {
+          "league": "scottish_prem",
+          "n": 967,
+          "r_resid": -0.003
+        },
+        {
+          "league": "la_liga",
+          "n": 1276,
+          "r_resid": -0.002
+        }
+      ]
+    },
+    {
+      "feature": "prematch_over25_pct",
+      "target": "over25",
+      "market": "Over2.5",
+      "label": "H2: FS Over25% \u2192 Over25 (Pinnacle baseline)",
+      "n": 19660,
+      "r_raw": 0.0588,
+      "p_raw": 0.0,
+      "r_residual": 0.0007,
+      "spearman_residual": -0.1214,
+      "perm_p_residual": 0.9041,
+      "per_league": [
+        {
+          "league": "bundesliga2",
+          "n": 300,
+          "r_resid": -0.0954
+        },
+        {
+          "league": "ligue_2",
+          "n": 1430,
+          "r_resid": -0.0601
+        },
+        {
+          "league": "jupiler_pro",
+          "n": 1060,
+          "r_resid": 0.0588
+        },
+        {
+          "league": "ligue_1",
+          "n": 1311,
+          "r_resid": -0.0552
+        },
+        {
+          "league": "serie_a",
+          "n": 1718,
+          "r_resid": 0.0345
+        },
+        {
+          "league": "greek_sl",
+          "n": 875,
+          "r_resid": 0.0332
+        },
+        {
+          "league": "epl",
+          "n": 1644,
+          "r_resid": 0.0272
+        },
+        {
+          "league": "championship",
+          "n": 1549,
+          "r_resid": -0.0186
+        },
+        {
+          "league": "scottish_prem",
+          "n": 967,
+          "r_resid": 0.0183
+        },
+        {
+          "league": "la_liga2",
+          "n": 1190,
+          "r_resid": 0.0143
+        },
+        {
+          "league": "serie_b",
+          "n": 1451,
+          "r_resid": -0.0119
+        },
+        {
+          "league": "primeira_liga",
+          "n": 1046,
+          "r_resid": -0.0113
+        },
+        {
+          "league": "la_liga",
+          "n": 1276,
+          "r_resid": -0.0104
+        },
+        {
+          "league": "bundesliga",
+          "n": 1263,
+          "r_resid": -0.0027
+        },
+        {
+          "league": "super_lig",
+          "n": 1249,
+          "r_resid": 0.0005
+        },
+        {
+          "league": "eredivisie",
+          "n": 1331,
+          "r_resid": 0.0003
+        }
+      ]
+    },
+    {
+      "feature": "prematch_avg_goals",
+      "target": "over25",
+      "market": "Over2.5",
+      "label": "H3: FS avg-goals \u2192 Over25 (Pinnacle baseline)",
+      "n": 19660,
+      "r_raw": 0.061,
+      "p_raw": 0.0,
+      "r_residual": 0.001,
+      "spearman_residual": -0.1482,
+      "perm_p_residual": 0.8961,
+      "per_league": [
+        {
+          "league": "jupiler_pro",
+          "n": 1060,
+          "r_resid": 0.075
+        },
+        {
+          "league": "bundesliga2",
+          "n": 300,
+          "r_resid": -0.0631
+        },
+        {
+          "league": "ligue_2",
+          "n": 1430,
+          "r_resid": -0.0626
+        },
+        {
+          "league": "serie_b",
+          "n": 1451,
+          "r_resid": -0.0484
+        },
+        {
+          "league": "epl",
+          "n": 1644,
+          "r_resid": 0.0379
+        },
+        {
+          "league": "serie_a",
+          "n": 1718,
+          "r_resid": 0.0251
+        },
+        {
+          "league": "ligue_1",
+          "n": 1311,
+          "r_resid": -0.02
+        },
+        {
+          "league": "championship",
+          "n": 1549,
+          "r_resid": -0.0123
+        },
+        {
+          "league": "super_lig",
+          "n": 1249,
+          "r_resid": 0.0113
+        },
+        {
+          "league": "greek_sl",
+          "n": 875,
+          "r_resid": 0.0105
+        },
+        {
+          "league": "la_liga",
+          "n": 1276,
+          "r_resid": -0.0045
+        },
+        {
+          "league": "bundesliga",
+          "n": 1263,
+          "r_resid": -0.0026
+        },
+        {
+          "league": "scottish_prem",
+          "n": 967,
+          "r_resid": -0.0025
+        },
+        {
+          "league": "primeira_liga",
+          "n": 1046,
+          "r_resid": -0.0022
+        },
+        {
+          "league": "eredivisie",
+          "n": 1331,
+          "r_resid": 0.0012
+        },
+        {
+          "league": "la_liga2",
+          "n": 1190,
+          "r_resid": 0.001
+        }
+      ]
+    },
+    {
+      "feature": "prematch_btts_pct",
+      "target": "btts",
+      "market": "BTTS",
+      "label": "H4: FS BTTS% \u2192 BTTS realized (FS-bookmaker baseline)",
+      "n": 19653,
+      "r_raw": 0.0363,
+      "p_raw": 0.0,
+      "r_residual": 0.0088,
+      "spearman_residual": -0.1129,
+      "perm_p_residual": 0.2098,
+      "per_league": [
+        {
+          "league": "serie_a",
+          "n": 1718,
+          "r_resid": 0.0501
+        },
+        {
+          "league": "serie_b",
+          "n": 1451,
+          "r_resid": -0.046
+        },
+        {
+          "league": "greek_sl",
+          "n": 874,
+          "r_resid": -0.0413
+        },
+        {
+          "league": "jupiler_pro",
+          "n": 1060,
+          "r_resid": 0.033
+        },
+        {
+          "league": "bundesliga2",
+          "n": 300,
+          "r_resid": 0.0321
+        },
+        {
+          "league": "la_liga",
+          "n": 1276,
+          "r_resid": 0.0262
+        },
+        {
+          "league": "primeira_liga",
+          "n": 1043,
+          "r_resid": 0.0259
+        },
+        {
+          "league": "super_lig",
+          "n": 1249,
+          "r_resid": 0.0246
+        },
+        {
+          "league": "ligue_2",
+          "n": 1429,
+          "r_resid": 0.0192
+        },
+        {
+          "league": "ligue_1",
+          "n": 1311,
+          "r_resid": -0.0175
+        },
+        {
+          "league": "la_liga2",
+          "n": 1190,
+          "r_resid": -0.016
+        },
+        {
+          "league": "epl",
+          "n": 1643,
+          "r_resid": 0.0151
+        },
+        {
+          "league": "scottish_prem",
+          "n": 967,
+          "r_resid": 0.0063
+        },
+        {
+          "league": "eredivisie",
+          "n": 1331,
+          "r_resid": 0.0049
+        },
+        {
+          "league": "bundesliga",
+          "n": 1263,
+          "r_resid": 0.0041
+        },
+        {
+          "league": "championship",
+          "n": 1548,
+          "r_resid": 0.0011
+        }
+      ]
+    }
+  ],
+  "holm_results": [
+    {
+      "name": "H1: FS xG-total \u2192 Over25 (Pinnacle baseline)",
+      "p_raw": 0.0759,
+      "p_adj": 0.3036,
+      "significant": false
+    },
+    {
+      "name": "H4: FS BTTS% \u2192 BTTS realized (FS-bookmaker baseline)",
+      "p_raw": 0.2098,
+      "p_adj": 0.6294,
+      "significant": false
+    },
+    {
+      "name": "H3: FS avg-goals \u2192 Over25 (Pinnacle baseline)",
+      "p_raw": 0.8961,
+      "p_adj": 1.0,
+      "significant": false
+    },
+    {
+      "name": "H2: FS Over25% \u2192 Over25 (Pinnacle baseline)",
+      "p_raw": 0.9041,
+      "p_adj": 0.9041,
+      "significant": false
+    }
+  ]
+}
