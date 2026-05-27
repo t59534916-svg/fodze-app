@@ -152,3 +152,60 @@ lean features).
 
 **Tasks**: D-4 (chain v1), D-5 (chain v2), D-6 (chain v3) — all marked completed
 with PARTIAL status in task list.
+
+### dev-03 multi-season retrain attempted (2026-05-27)
+
+**Trigger:** User requested fresh dev-03 retrain on expanded multi-season corpus
+(2022-07-01 → 2025-08-01, n=48,630 team-rows, +1,238 vs 2026-05-22 production).
+
+**First attempt (failed):**
+- `train_m3_xg.py --since 2022-07-01 --cutoff 2025-08-01 --tag dev-03` produced
+  21-feature pickle (market_disagreement_flag, market_disagreement_high,
+  lineup_quality_player_diff, lineup_quality_player_available added by dev-04/05
+  sprints to NUMERIC_FEATURES but never made it into FEATURES_LOCKED)
+- `refit-dev03-artifacts.sh` caught schema mismatch via
+  `export_dev03_to_json.py::FEATURES_LOCKED` gate → ValueError
+- Restored 2026-05-22 production artifacts; reverted public/dev03-*.json
+
+**Second attempt (proper, with --features-locked):**
+- Added `--features-locked` CLI flag + `DEV_03_LOCKED_FEATURES` constant to
+  `train_m3_xg.py` (mirrors `FEATURES_LOCKED` in export script)
+- Retrained as `dev-03-fresh` with locked 17-feature schema
+- `fit_benter.py --tag dev-03-fresh --m3-tag dev-03-fresh` produced compatible
+  per-Liga β weights
+
+**Stage-1 holdout comparison (25/26):**
+
+| Tag | Brier | Δ vs v2_benter | G1 ship-gate |
+|---|---|---|---|
+| dev-03 (production, 2026-05-22) | 0.6141 | -0.0053 | ✓ cleared |
+| dev-03-fresh (2026-05-27) | 0.6133 | -0.0061 | ✓ cleared |
+| **Δ fresh − production** | **-0.0008** | — | sub-noise (< 0.002 threshold) |
+
+Per-Liga: 10 leagues improved, 6 worsened (mixed direction = consistent with
+random variance, not systematic improvement).
+
+**Decision: KEEP PRODUCTION, ARCHIVE FRESH.**
+
+Reasoning:
+1. Δ -0.0008 is below the 0.002 single-seed-noise threshold per CLAUDE.md
+2. Mixed per-Liga direction shows no systematic signal
+3. Both pass G1 ship-gate so neither model is broken
+4. 1.4% data growth (1,238 / 91,237 rows) wasn't expected to move Brier
+   above noise floor anyway
+
+**Action taken:**
+- `dev-03-fresh` artifacts moved to `tools/v4/artifacts/_archived/` for
+  forensic record
+- Production `dev-03` artifacts unchanged
+- `public/dev03-*.json` unchanged
+- `train_m3_xg.py --features-locked` patch committed (single value-add of
+  the sprint: future-proofs against schema-drift recurrence)
+
+**Reusable lesson:** When `train_m3_xg.py` evolves to add new features to
+`NUMERIC_FEATURES`, the matching `FEATURES_LOCKED` in `export_dev03_to_json.py`
++ `dev03-features.ts` must move together OR a `--features-locked` flag must
+be used to retrain with the older schema. The two-list synchronization is
+the architectural invariant; running production-target retrains without
+`--features-locked` is now flagged as user-error (or use a higher-versioned
+tag like dev-04 to ship the new schema through 5-Gate first).
