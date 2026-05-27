@@ -1,0 +1,76 @@
+{
+  "tag": "dev-09-day3",
+  "test_seasons": [
+    "24/25"
+  ],
+  "leagues": [
+    "epl",
+    "la_liga",
+    "serie_a",
+    "bundesliga",
+    "ligue_1"
+  ],
+  "rho": -0.094,
+  "available_only": false,
+  "n_test": 1752,
+  "brier_dev09": 0.5974310196422856,
+  "log_loss_dev09": 1.0007578909865043,
+  "v2_benter_baseline": 0.6193697078746303,
+  "v2_benter_meta": {
+    "source": "cross-engine-current-metrics.json",
+    "window": {
+      "from": "2025-08-01",
+      "to": "2026-05-11"
+    },
+    "n_v2_eval": 5448,
+    "generated_at": "2026-05-11T19:20:48.578482Z"
+  },
+  "brier_delta_vs_v2": -0.021938688232344683,
+  "pass_threshold": 0.6243697078746303,
+  "stage1_pass": true,
+  "lambda_h_mean": 1.541928434204535,
+  "lambda_a_mean": 1.1826071103765137,
+  "poisson_fallback_rate": 0.0,
+  "per_liga": [
+    {
+      "league": "bundesliga",
+      "n": 306,
+      "brier": 0.6375120583370815,
+      "delta_v2": 0.018142350462451162,
+      "log_loss": 1.05650944388002
+    },
+    {
+      "league": "epl",
+      "n": 380,
+      "brier": 0.6098204318437548,
+      "delta_v2": -0.00954927603087552,
+      "log_loss": 1.022716004318387
+    },
+    {
+      "league": "la_liga",
+      "n": 380,
+      "brier": 0.56688045452674,
+      "delta_v2": -0.05248925334789034,
+      "log_loss": 0.9583153510681995
+    },
+    {
+      "league": "ligue_1",
+      "n": 306,
+      "brier": 0.5779091013259284,
+      "delta_v2": -0.04146060654870187,
+      "log_loss": 0.9756525251683225
+    },
+    {
+      "league": "serie_a",
+      "n": 380,
+      "brier": 0.5990366703568827,
+      "delta_v2": -0.02033303751774762,
+      "log_loss": 0.9965640721912099
+    }
+  ],
+  "_notes": [
+    "Day-2 evaluation: dev-09 vs v2_benter (CLAUDE.md live baseline).",
+    "Day-3 will add paired dev-09 vs dev-03 head-to-head via Sofa\u2194team_xg_history bridge.",
+    "Stage-1 pass criterion is informational only at Day-2 (no production-swap claim yet)."
+  ]
+}

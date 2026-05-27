@@ -68,17 +68,16 @@ TOP5 = ("epl", "la_liga", "serie_a", "bundesliga", "ligue_1")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train dev-09 Bayesian Ensemble (TABULA RASA bottom-up)")
-    p.add_argument("--train-seasons", default="23/24",
-                   help="Comma-separated training seasons. Default 23/24 only because "
-                        "22/23 has 21.6%% lineup coverage in Top-5 (vs 99.9%% in 23/24+) — "
-                        "training on 22/23 would feed the model 78%% Layer-3 (zero-features) "
-                        "rows which teaches it to ignore the bottom-up signal. Re-include "
-                        "22/23 once orthogonal context (Elo, rest_days) is added in Day-3 "
-                        "to give Layer-3 rows non-zero features.")
+    p.add_argument("--train-seasons", default="22/23,23/24",
+                   help="Comma-separated training seasons. Default 22/23+23/24 since Day-3 "
+                        "adds Elo+rest_days orthogonal context giving Layer-3 rows (sparse "
+                        "22/23 lineups) non-zero signal — satisfies the audit committee's "
+                        "'30%%+ available=0 training rows' requirement. Day-2 used 23/24-only.")
     p.add_argument("--test-seasons", default="24/25",
                    help="Comma-separated holdout seasons (default: 24/25)")
-    p.add_argument("--leagues", default=",".join(TOP5),
-                   help=f"Comma-separated league list (default: {','.join(TOP5)})")
+    p.add_argument("--leagues", default="ALL",
+                   help="Comma-separated league list, or 'ALL' for all 22 leagues in Sofa "
+                        "(default ALL for Day-3). Top-5 only: --leagues epl,la_liga,serie_a,bundesliga,ligue_1")
     p.add_argument("--tag", default=None,
                    help="Artifact tag (default: dev-09-{timestamp})")
     p.add_argument("--n-models", type=int, default=5,
@@ -156,7 +155,8 @@ def main() -> int:
     args = parse_args()
     train_seasons = tuple(args.train_seasons.split(","))
     test_seasons = tuple(args.test_seasons.split(","))
-    leagues = tuple(args.leagues.split(","))
+    # --leagues=ALL → None sentinel (build_corpus interprets None = no filter)
+    leagues = None if args.leagues.strip().upper() == "ALL" else tuple(args.leagues.split(","))
     tag = args.tag or f"dev-09-{datetime.now().strftime('%Y%m%d-%H%M')}"
 
     print("═" * 70)
@@ -164,7 +164,7 @@ def main() -> int:
     print("═" * 70)
     print(f"  train_seasons: {train_seasons}")
     print(f"  test_seasons:  {test_seasons}")
-    print(f"  leagues:       {leagues}")
+    print(f"  leagues:       {'ALL (22)' if leagues is None else leagues}")
     print(f"  n_models:      {args.n_models}")
     print(f"  seeds:         {[42+i+args.seed_offset for i in range(args.n_models)]}")
     print(f"  dry_run:       {args.dry_run}")
@@ -262,7 +262,7 @@ def main() -> int:
         "trained_at": datetime.now().isoformat(),
         "train_seasons": list(train_seasons),
         "test_seasons": list(test_seasons),
-        "leagues": list(leagues),
+        "leagues": "ALL" if leagues is None else list(leagues),
         "n_models": args.n_models,
         "seeds": seeds,
         "seed_offset": args.seed_offset,

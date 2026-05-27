@@ -1,0 +1,70 @@
+{
+  "architecture": "dev-09-TABULA-RASA-bottom-up",
+  "n_seeds": 5,
+  "seed_offsets": [
+    0,
+    100,
+    200,
+    300,
+    400
+  ],
+  "ensemble_briers": [
+    {
+      "seed_offset": 0,
+      "brier": 0.5974
+    },
+    {
+      "seed_offset": 100,
+      "brier": 0.5978
+    },
+    {
+      "seed_offset": 200,
+      "brier": 0.5974
+    },
+    {
+      "seed_offset": 300,
+      "brier": 0.5971
+    },
+    {
+      "seed_offset": 400,
+      "brier": 0.5955
+    }
+  ],
+  "brier_mean": 0.59704,
+  "brier_std": 0.000896102672688789,
+  "brier_ci_95": [
+    0.5962545313755471,
+    0.597825468624453
+  ],
+  "brier_range": 0.0022999999999999687,
+  "empirical_noise_floor_1sigma": 0.000896102672688789,
+  "dev03_noise_floor_for_comparison": 0.000456,
+  "interpretation": "For dev-09 architecture: any single-seed Brier-improvement \u0394 < 0.0009 is indistinguishable from run-noise. Per-feature G2 Holm correction requires \u0394 > ~2\u03c3 (0.0018) for any single-feature claim to survive correction at \u03b1=0.05/11 = 0.00455.",
+  "per_league_stats": {
+    "epl": {
+      "mean": 0.60844,
+      "std": 0.0021593980642762374,
+      "n_seeds": 5
+    },
+    "ligue_1": {
+      "mean": 0.5762799999999999,
+      "std": 0.0022163032283511967,
+      "n_seeds": 5
+    },
+    "bundesliga": {
+      "mean": 0.63862,
+      "std": 0.0024853571171966553,
+      "n_seeds": 5
+    },
+    "serie_a": {
+      "mean": 0.5938,
+      "std": 0.003014133374620296,
+      "n_seeds": 5
+    },
+    "la_liga": {
+      "mean": 0.5722200000000001,
+      "std": 0.003559072912992944,
+      "n_seeds": 5
+    }
+  }
+}

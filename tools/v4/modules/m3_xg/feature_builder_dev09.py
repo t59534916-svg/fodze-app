@@ -42,8 +42,13 @@ from v4.modules.m3_xg.bottom_up_features import (
     MIN_STARTERS_WITH_HISTORY,
     BottomUpCalculator,
 )
+from v4.modules.m3_xg.sofa_context import compute_sofa_context
 
-# Day-2 feature schema (LOCKED — see train_dev09.py::DEV_09_LOCKED_FEATURES)
+# Day-3 feature schema (LOCKED — see train_dev09.py::DEV_09_LOCKED_FEATURES)
+# Adds elo_diff + rest_days_diff vs Day-2's 9-feature vector. These are
+# the "orthogonal context" features that give Layer-3 rows (bottom_up_available=0)
+# non-zero signal — see audit committee binding-revision rationale in
+# docs/FODZE-OPTIMAL-BLUEPRINT.md.
 DEV_09_NUMERIC_FEATURES: List[str] = [
     "bottom_up_xg_diff",
     "bottom_up_xa_diff",
@@ -54,6 +59,8 @@ DEV_09_NUMERIC_FEATURES: List[str] = [
     "gk_saves_per_90_diff",
     "minutes_rate_diff",
     "bottom_up_available",
+    "elo_diff",          # Day-3: Sofa-native running Elo (NOT dev-03's)
+    "rest_days_diff",    # Day-3: days since last match diff
 ]
 DEV_09_CATEGORICAL_FEATURES: List[str] = ["league"]
 DEV_09_ALL_FEATURES: List[str] = DEV_09_NUMERIC_FEATURES + DEV_09_CATEGORICAL_FEATURES
@@ -72,10 +79,17 @@ class FeatureBuilderDev09:
     def __init__(self, sqlite_path: Path):
         self.sqlite_path = Path(sqlite_path)
         self._bc: Optional[BottomUpCalculator] = None
+        self._elo_lookup: dict = {}
+        self._rest_lookup: dict = {}
 
     def fit(self) -> "FeatureBuilderDev09":
-        """Fit the BottomUpCalculator (loads + computes full-corpus rolling)."""
+        """Fit the BottomUpCalculator + compute orthogonal Sofa context.
+
+        Both layers are leakage-safe: BC uses shift(1).rolling, Elo/rest use
+        chronological iteration with pre-match-state-recorded-first semantic.
+        """
         self._bc = BottomUpCalculator(self.sqlite_path).fit()
+        self._elo_lookup, self._rest_lookup = compute_sofa_context(self.sqlite_path)
         return self
 
     def build_corpus(
@@ -174,9 +188,27 @@ class FeatureBuilderDev09:
                 if feats["bottom_up_available"] == 0:
                     n_no_history += 1
 
-            # Ensure all DEV_09_NUMERIC_FEATURES are present (drop n_starters_with_history_min
-            # from the model feature vector — it's metadata, not a model input)
-            row = {f: float(feats[f]) for f in DEV_09_NUMERIC_FEATURES}
+            # Look up orthogonal context (Elo + rest_days). Available for every Sofa
+            # game in the corpus by construction of compute_sofa_context.
+            h_elo = self._elo_lookup.get((gid, True))
+            a_elo = self._elo_lookup.get((gid, False))
+            h_rest = self._rest_lookup.get((gid, True))
+            a_rest = self._rest_lookup.get((gid, False))
+            # Defensive: if game_id missing from context (shouldn't happen but
+            # keep model from crashing on corrupted DB), fall back to 0 diff.
+            elo_diff = (h_elo - a_elo) if (h_elo is not None and a_elo is not None) else 0.0
+            rest_days_diff = (h_rest - a_rest) if (h_rest is not None and a_rest is not None) else 0.0
+
+            # Compose full feature row. BC features come from feats (dict from
+            # get_features_for_match), context features come from lookups.
+            row = {}
+            for f in DEV_09_NUMERIC_FEATURES:
+                if f == "elo_diff":
+                    row[f] = float(elo_diff)
+                elif f == "rest_days_diff":
+                    row[f] = float(rest_days_diff)
+                else:
+                    row[f] = float(feats[f])
             row["league"] = m["league"]
             row["home_goals"] = float(m["home_score"])
             row["away_goals"] = float(m["away_score"])
