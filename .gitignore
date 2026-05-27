@@ -51,3 +51,6 @@ ExakterTag/
 # Tracked but always re-generated, so accidental commits add noise.
 # Leave it tracked for first-time clones, just ignore deltas.
 # (No gitignore entry — see scripts/refresh-all.mjs DNS-retry comment for context)
+
+# Personal working docs (do not commit)
+docs/PROJECT-OVERVIEW.md
