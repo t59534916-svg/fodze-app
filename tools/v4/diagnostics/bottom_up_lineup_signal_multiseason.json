@@ -1,0 +1,247 @@
+{
+  "seasons_tested": [
+    "22/23",
+    "23/24",
+    "24/25",
+    "25/26"
+  ],
+  "skip_dev03_baseline": true,
+  "rolling_N_player": 10,
+  "rolling_N_team": 5,
+  "per_season": {
+    "22/23": {
+      "season": "22/23",
+      "status": "ok",
+      "n_rows": 477,
+      "n_distinct_games": 260,
+      "test_a_sanity": {
+        "r": 0.15015928985480825,
+        "p": 0.0010033208586094852
+      },
+      "test_b1_vs_team_rolling": {
+        "r_additive": 0.019313727186695648,
+        "p_value": 0.6739371434108553,
+        "bootstrap_ci_95": [
+          -0.06078146744800447,
+          0.10108642266636238
+        ],
+        "n": 477,
+        "is_proxy_for_dev03": true,
+        "note": "Cheap baseline \u2014 team-rolling-xg approximates dev-03's team-level component"
+      },
+      "test_b2_vs_dev03": {
+        "status": "skipped_insufficient_coverage"
+      },
+      "per_league": {
+        "bundesliga": {
+          "r_additive": 0.00650135760485869,
+          "p_value": 0.9465066047538051,
+          "n": 109
+        },
+        "epl": {
+          "r_additive": 0.041927249360561414,
+          "p_value": 0.7066581435548162,
+          "n": 83
+        },
+        "la_liga": {
+          "r_additive": 0.07373316514072661,
+          "p_value": 0.48486100402861193,
+          "n": 92
+        },
+        "ligue_1": {
+          "r_additive": 0.09350930481953364,
+          "p_value": 0.35975794638415215,
+          "n": 98
+        },
+        "serie_a": {
+          "r_additive": -0.11687547954478812,
+          "p_value": 0.25934042775360855,
+          "n": 95
+        }
+      },
+      "season_pass": false
+    },
+    "23/24": {
+      "season": "23/24",
+      "status": "ok",
+      "n_rows": 3501,
+      "n_distinct_games": 1751,
+      "test_a_sanity": {
+        "r": 0.30862492972089783,
+        "p": 3.860602829392193e-78
+      },
+      "test_b1_vs_team_rolling": {
+        "r_additive": 0.2384331921705022,
+        "p_value": 1.9023035816107575e-46,
+        "bootstrap_ci_95": [
+          0.20555850793140582,
+          0.2679269823419983
+        ],
+        "n": 3501,
+        "is_proxy_for_dev03": true,
+        "note": "Cheap baseline \u2014 team-rolling-xg approximates dev-03's team-level component"
+      },
+      "test_b2_vs_dev03": {
+        "status": "skipped_insufficient_coverage"
+      },
+      "per_league": {
+        "bundesliga": {
+          "r_additive": 0.20672526327117308,
+          "p_value": 2.4763776094704084e-07,
+          "n": 612
+        },
+        "epl": {
+          "r_additive": 0.27027040608269015,
+          "p_value": 3.730131303319597e-14,
+          "n": 758
+        },
+        "la_liga": {
+          "r_additive": 0.2967049975437064,
+          "p_value": 6.543947835900429e-17,
+          "n": 760
+        },
+        "ligue_1": {
+          "r_additive": 0.19433101500848138,
+          "p_value": 1.2731000360632664e-06,
+          "n": 612
+        },
+        "serie_a": {
+          "r_additive": 0.21560988985532553,
+          "p_value": 1.961385712514237e-09,
+          "n": 759
+        }
+      },
+      "season_pass": true
+    },
+    "24/25": {
+      "season": "24/25",
+      "status": "ok",
+      "n_rows": 3480,
+      "n_distinct_games": 1740,
+      "test_a_sanity": {
+        "r": 0.30955226296239047,
+        "p": 3.6680108866625344e-78
+      },
+      "test_b1_vs_team_rolling": {
+        "r_additive": 0.24093778619562856,
+        "p_value": 3.8102537070466215e-47,
+        "bootstrap_ci_95": [
+          0.20397753216493106,
+          0.2774902216004757
+        ],
+        "n": 3480,
+        "is_proxy_for_dev03": true,
+        "note": "Cheap baseline \u2014 team-rolling-xg approximates dev-03's team-level component"
+      },
+      "test_b2_vs_dev03": {
+        "status": "skipped_insufficient_coverage"
+      },
+      "per_league": {
+        "bundesliga": {
+          "r_additive": 0.1676766930812268,
+          "p_value": 3.1503245624298834e-05,
+          "n": 610
+        },
+        "epl": {
+          "r_additive": 0.3160822260581527,
+          "p_value": 5.30208884447683e-19,
+          "n": 756
+        },
+        "la_liga": {
+          "r_additive": 0.2648286338809275,
+          "p_value": 1.2449244020271072e-13,
+          "n": 758
+        },
+        "ligue_1": {
+          "r_additive": 0.2271926374150071,
+          "p_value": 1.4723864880276103e-08,
+          "n": 608
+        },
+        "serie_a": {
+          "r_additive": 0.22682482969847487,
+          "p_value": 3.4927664713719477e-10,
+          "n": 748
+        }
+      },
+      "season_pass": true
+    },
+    "25/26": {
+      "season": "25/26",
+      "status": "ok",
+      "n_rows": 3264,
+      "n_distinct_games": 1632,
+      "test_a_sanity": {
+        "r": 0.28543817252731113,
+        "p": 3.087408770236309e-62
+      },
+      "test_b1_vs_team_rolling": {
+        "r_additive": 0.20979686301116965,
+        "p_value": 8.638439578034542e-34,
+        "bootstrap_ci_95": [
+          0.17648920165273624,
+          0.24626224176747483
+        ],
+        "n": 3264,
+        "is_proxy_for_dev03": true,
+        "note": "Cheap baseline \u2014 team-rolling-xg approximates dev-03's team-level component"
+      },
+      "test_b2_vs_dev03": {
+        "status": "skipped_insufficient_coverage"
+      },
+      "per_league": {
+        "bundesliga": {
+          "r_additive": 0.23227082188830128,
+          "p_value": 1.209395483025594e-08,
+          "n": 588
+        },
+        "epl": {
+          "r_additive": 0.23725184664906235,
+          "p_value": 1.7236560793038067e-10,
+          "n": 706
+        },
+        "la_liga": {
+          "r_additive": 0.22692652389830978,
+          "p_value": 1.7429562817816686e-09,
+          "n": 688
+        },
+        "ligue_1": {
+          "r_additive": 0.1907889609407078,
+          "p_value": 4.15718080317185e-06,
+          "n": 574
+        },
+        "serie_a": {
+          "r_additive": 0.16135139983461555,
+          "p_value": 1.6033210525929616e-05,
+          "n": 708
+        }
+      },
+      "season_pass": true
+    }
+  },
+  "aggregate_across_seasons": {
+    "n_seasons_tested": 4,
+    "n_seasons_passing": 3,
+    "mean_r_additive_vs_team_rolling": 0.177120392140999,
+    "per_season_r": {
+      "22/23": 0.019313727186695648,
+      "23/24": 0.2384331921705022,
+      "24/25": 0.24093778619562856,
+      "25/26": 0.20979686301116965
+    },
+    "final_verdict": "PARTIAL",
+    "decision_action": "REVIEW per-season failures + cautious D4 scope",
+    "pre_registered_thresholds": {
+      "STRONG_VALIDATION": "ALL 4 seasons r>0.10 AND p<0.05 AND CI>0 AND mean r\u22650.15",
+      "PARTIAL": "3/4 seasons pass",
+      "REJECTED": "<3/4 seasons pass OR mean r<0.10"
+    }
+  },
+  "caveats": [
+    "MVP uses Sofa-only data (no Understat); xG NULL = treated as 0 (no shots).",
+    "Estimated minutes = 90 for all starters (no minute-prediction modeling).",
+    "team_rolling baseline is sum-of-player-xg across (game, side); audit-bug-fixed GROUP BY.",
+    "dev-03 baseline (when not skipped) is IN-SAMPLE for 22/23-24/25 (cutoff=2025-08-01).",
+    "Test corpus is Top-5 ONLY \u2014 lower-tier untested.",
+    "5-Gate G5 (ROI sim) deferred \u2014 this is signal-test only, not betting test."
+  ]
+}

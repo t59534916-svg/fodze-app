@@ -1,0 +1,52 @@
+{
+  "season": "24/25",
+  "status": "ok",
+  "n_rows": 3480,
+  "n_distinct_games": 1740,
+  "test_a_sanity": {
+    "r": 0.30955226296239047,
+    "p": 3.6680108866625344e-78
+  },
+  "test_b1_vs_team_rolling": {
+    "r_additive": 0.24093778619562856,
+    "p_value": 3.8102537070466215e-47,
+    "bootstrap_ci_95": [
+      0.20397753216493106,
+      0.2774902216004757
+    ],
+    "n": 3480,
+    "is_proxy_for_dev03": true,
+    "note": "Cheap baseline \u2014 team-rolling-xg approximates dev-03's team-level component"
+  },
+  "test_b2_vs_dev03": {
+    "status": "skipped_insufficient_coverage"
+  },
+  "per_league": {
+    "bundesliga": {
+      "r_additive": 0.1676766930812268,
+      "p_value": 3.1503245624298834e-05,
+      "n": 610
+    },
+    "epl": {
+      "r_additive": 0.3160822260581527,
+      "p_value": 5.30208884447683e-19,
+      "n": 756
+    },
+    "la_liga": {
+      "r_additive": 0.2648286338809275,
+      "p_value": 1.2449244020271072e-13,
+      "n": 758
+    },
+    "ligue_1": {
+      "r_additive": 0.2271926374150071,
+      "p_value": 1.4723864880276103e-08,
+      "n": 608
+    },
+    "serie_a": {
+      "r_additive": 0.22682482969847487,
+      "p_value": 3.4927664713719477e-10,
+      "n": 748
+    }
+  },
+  "season_pass": true
+}
