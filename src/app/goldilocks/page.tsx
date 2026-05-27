@@ -731,7 +731,7 @@ export default function GoldilocksPage() {
       <div style={S.chips} role="tablist" aria-label="Filter">
         {([
           ["all", `Alle (${bets.length})`],
-          ["validated", `🎯 Validated Edge (${countValidated})`],
+          ["validated", `🎯 Directionally Consistent (${countValidated})`],
           ["consensus", `Konsens (${countConsensus})`],
           ["veto-free", `Veto-frei (${countVetoFree})`],
           ["A", `Grade A (${gradeA})`],
@@ -787,7 +787,7 @@ export default function GoldilocksPage() {
                     if (rec) {
                       return (
                         <div style={badge("neutral")} title={rec.reason}>
-                          ⚠ Unvalidiert
+                          ⚠ Nicht-direktional
                         </div>
                       );
                     }
@@ -921,22 +921,21 @@ export default function GoldilocksPage() {
           Engine-Edges ohne Konsens in Top-Ligen sind vorsichtig zu behandeln (Pinnacle ist dort meist scharf);
           in unteren Ligen (Liga 3, Greek SL, League Two) kann Engine allein aber echte Fehler im Markt aufzeigen.
         </div>
-        <div style={{ ...S.footerTitle, marginTop: space[4] }}>🎯 Cross-Season Validated Edge</div>
+        <div style={{ ...S.footerTitle, marginTop: space[4] }}>🎯 Directionally Consistent (2-Saison)</div>
         <div style={S.footerText}>
-          Der <strong style={{ color: color.value }}>🎯 Filter</strong> zeigt nur Liga mit empirisch bewiesenem Edge:
-          5 Liga überstanden eine 5-Test-Money-Validation (2026-05-21) mit positivem ROI auf BEIDE
-          Saisons (23/24 + 25/26) mit dem passenden Engine.
+          Der <strong style={{ color: color.value }}>🎯 Filter</strong> zeigt 4 Liga mit direktionaler Konsistenz:
+          positive Kelly-ROI in BEIDEN Holdouts (24/25 Walk-Forward + 25/26 Holdout).
           {" "}
-          <strong style={{ color: color.gold }}>dev-03+m6_benter</strong> für Serie A, Scottish Premiership, EPL
-          (cross-season +3 bis +32% ROI/stake).
+          <strong style={{ color: color.gold }}>dev-03</strong> für La Liga, Scottish Premiership, Bundesliga, Primeira Liga.
           {" "}
-          <strong style={{ color: color.gold }}>v2_production</strong> für La Liga + Serie B
-          (cross-season +4 bis +32% ROI/stake).
+          <strong style={{ color: color.warn }}>WICHTIG:</strong> dies ist KEIN statistisch validierter Edge —
+          der empirische 2026-05-25 Audit (`bet_edge_policy_empirical_audit`) zeigt: unter realer
+          per-Bet-Varianz (148%) übersteht KEINE Liga Holm-Bonferroni bei α=0.05; selbst
+          aggregat-dev-03 ist p=0.227. "Direktional" heißt: beide Holdouts gleiches Vorzeichen
+          + n≥40 — historisches Muster, keine Prognose.
           {" "}
           <strong style={{ color: color.warn }}>Andere Liga</strong> zeigten Reversals oder konsistent
-          negative Edges — diese sind als "⚠ Unvalidiert" gekennzeichnet. Real-Money-Bets sollten
-          die validierten 5 favorisieren. Die Empfehlungen werden bei jedem Saison-Wechsel + neuer
-          Backtest-Daten re-validiert.
+          negative Edges — diese sind als "⚠ Nicht-direktional" gekennzeichnet. Re-validation jährlich.
         </div>
         <div style={{ ...S.footerTitle, marginTop: space[4] }}>v1.1 Asymmetric Negation — was tun die Vetos?</div>
         <div style={S.footerText}>
