@@ -1,0 +1,83 @@
+{
+  "tag": "dev-09-day2",
+  "architecture": "dev-09-TABULA-RASA-bottom-up",
+  "trained_at": "2026-05-27T22:39:21.045964",
+  "train_seasons": [
+    "23/24"
+  ],
+  "test_seasons": [
+    "24/25"
+  ],
+  "leagues": [
+    "epl",
+    "la_liga",
+    "serie_a",
+    "bundesliga",
+    "ligue_1"
+  ],
+  "n_models": 5,
+  "seeds": [
+    42,
+    43,
+    44,
+    45,
+    46
+  ],
+  "seed_offset": 0,
+  "n_train_matches": 1753,
+  "n_test_matches": 1752,
+  "n_features": 9,
+  "feature_names": [
+    "bottom_up_xg_diff",
+    "bottom_up_xa_diff",
+    "bottom_up_shots_diff",
+    "bottom_up_key_passes_diff",
+    "attack_concentration_diff",
+    "defense_block_sum_diff",
+    "gk_saves_per_90_diff",
+    "minutes_rate_diff",
+    "bottom_up_available",
+    "league"
+  ],
+  "categorical_features": [
+    "league"
+  ],
+  "lgb_params": {
+    "objective": "tweedie",
+    "tweedie_variance_power": 1.3,
+    "metric": "tweedie",
+    "n_estimators": 200,
+    "learning_rate": 0.05,
+    "max_depth": 5,
+    "num_leaves": 24,
+    "min_child_samples": 20,
+    "feature_fraction": 0.9,
+    "verbose": -1
+  },
+  "data_source": "sofascore_match (Sofa-native, NOT team_xg_history)",
+  "bottom_up_calculator_stats": {
+    "n_fitted_player_match_pairs": 533036,
+    "n_distinct_players": 15413,
+    "n_distinct_games": 18402,
+    "fitted": true
+  },
+  "training_set_diagnostics": {
+    "_warning": "in-sample only \u2014 NOT a validation metric. See stage_1_dev09.py.",
+    "home_lambda_mean": 1.4829702478790088,
+    "home_target_mean": 1.592127780946948,
+    "home_avg_variance": 0.13796601586061358,
+    "away_lambda_mean": 1.2083190514398099,
+    "away_target_mean": 1.2932116371933828,
+    "away_avg_variance": 0.12170020355336728
+  },
+  "artifacts": {
+    "home_ensemble": "tools/v4/artifacts/m3_xg-home-dev-09-day2.pkl",
+    "away_ensemble": "tools/v4/artifacts/m3_xg-away-dev-09-day2.pkl"
+  },
+  "_notes": [
+    "TABULA RASA: NO dev-03 macro borrows (Elo, momentum, league constants).",
+    "Layer-3 fallback: bottom_up_available=0 \u2192 all 8 bottom-up diffs = 0.",
+    "Honest holdout evaluation lives in pipeline/stage_1_dev09.py.",
+    "Re-run cache via export_feature_cache_dev09.py if shipping to TS runtime."
+  ]
+}

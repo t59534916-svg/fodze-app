@@ -96,9 +96,10 @@ class BottomUpCalculator:
         df = pd.read_sql_query("""
             SELECT pms.player_id, pms.game_id, pms.position,
                    pms.minutes_played, pms.expected_goals, pms.expected_assists,
-                   pms.shots_total, pms.key_passes,
+                   pms.shots_on_target, pms.shots_off_target, pms.shots_blocked,
+                   pms.key_passes,
                    pms.tackles_won, pms.interceptions,
-                   pms.saves, pms.shots_on_target,
+                   pms.saves,
                    sm.start_timestamp, sm.league, sm.season
             FROM sofascore_player_match_stats pms
             JOIN sofascore_match sm ON sm.game_id = pms.game_id
@@ -109,10 +110,16 @@ class BottomUpCalculator:
         # Treat NULL counts as 0 (no shots/passes/etc = 0 contribution).
         # astype(float) before fillna avoids pandas FutureWarning about object-dtype
         # downcasting deprecation when nullable integer columns contain mixed NULLs.
-        for col in ("expected_goals", "expected_assists", "shots_total",
-                    "key_passes", "tackles_won", "interceptions",
-                    "saves", "shots_on_target"):
+        for col in ("expected_goals", "expected_assists",
+                    "shots_on_target", "shots_off_target", "shots_blocked",
+                    "key_passes", "tackles_won", "interceptions", "saves"):
             df[col] = df[col].astype(float).fillna(0.0)
+
+        # Empirically verified (2026-05-27): pms.shots_total is 0% populated in
+        # the local SQLite mirror (the ingest pipeline never fills it). The three
+        # component columns ARE populated. Derive total at fit time.
+        df["shots_total"] = (df["shots_on_target"] + df["shots_off_target"]
+                             + df["shots_blocked"])
 
         # Avoid division-by-zero on minutes_played (clip lower bound at 0.1 → 0.001 hours)
         minutes_factor = (df["minutes_played"] / 90.0).clip(lower=0.1)

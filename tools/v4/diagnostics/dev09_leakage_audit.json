@@ -1,0 +1,52 @@
+{
+  "tag": "dev-09-day2",
+  "train_seasons": [
+    "23/24"
+  ],
+  "test_seasons": [
+    "24/25"
+  ],
+  "leagues": [
+    "epl",
+    "la_liga",
+    "serie_a",
+    "bundesliga",
+    "ligue_1"
+  ],
+  "checks": {
+    "G3.1 chrono split (test_min > train_max)": {
+      "status": "PASS",
+      "detail": "gap=74d (train_max=2024-06-02 \u2192 test_min=2024-08-15)"
+    },
+    "G3.2 game_id overlap (train \u2229 test = \u2205)": {
+      "status": "PASS",
+      "detail": "n_train=1,753, n_test=1,752, overlap=0 (\u2713 CLEAN)"
+    },
+    "G3.3 shift(1).rolling pattern present": {
+      "status": "PASS",
+      "detail": "BottomUpCalculator uses shift(1).rolling() for leakage-safe rolling"
+    },
+    "G3.3 sort kind='mergesort' present": {
+      "status": "PASS",
+      "detail": "Deterministic sort guarantees rolling order across runs"
+    },
+    "G3.4 NO GROUP BY team_id in code": {
+      "status": "PASS",
+      "detail": "no SQL GROUP BY team_id pattern found"
+    },
+    "G3.5 lineup uses is_starter=1 filter": {
+      "status": "PASS",
+      "detail": "FeatureBuilderDev09 reads starting XI from player_match_stats.is_starter=1 (post-match emitted; no future leak since it reflects WHO actually started)"
+    },
+    "G3.6 cache values = shift(1)+rolling ref": {
+      "status": "PASS",
+      "detail": "219 cache lookups across 3 players; 0 mismatches (\u2713 all bit-identical to reference)"
+    }
+  },
+  "summary": {
+    "n_pass": 7,
+    "n_warn": 0,
+    "n_fail": 0,
+    "verdict": "PASS"
+  }
+}
