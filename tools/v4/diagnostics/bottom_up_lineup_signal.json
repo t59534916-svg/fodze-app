@@ -5,16 +5,16 @@
   "rolling_N_player": 10,
   "rolling_N_team": 5,
   "test_a_sanity_correlation": {
-    "r": 0.1207010220290234,
-    "p": 9.071226661628933e-13,
+    "r": 0.30955226296239047,
+    "p": 3.6680108866625344e-78,
     "interpretation": "Does \u03a3(starter rolling xG) track actual team xG at all?"
   },
   "test_b_additive": {
-    "r_additive": 0.12545816721262165,
-    "p_value": 1.1052460615975696e-13,
+    "r_additive": 0.24093778619562856,
+    "p_value": 3.8102537070466215e-47,
     "bootstrap_ci_95": [
-      0.09237396339865694,
-      0.16170644252880498
+      0.20397753216493106,
+      0.2774902216004757
     ],
     "n_bootstrap": 1000,
     "interpretation": "ADDITIVE test: does bottom_up explain residuals AFTER subtracting team-rolling baseline? Positive r = bottom-up has signal beyond team-rolling. Pre-registered threshold: r > 0.05 AND p < 0.05 AND CI strictly positive = SIGNAL",
@@ -23,28 +23,28 @@
   },
   "per_league": {
     "bundesliga": {
-      "r_additive": 0.010000419827937507,
-      "p_value": 0.8053016254874131,
+      "r_additive": 0.1676766930812268,
+      "p_value": 3.1503245624298834e-05,
       "n": 610
     },
     "epl": {
-      "r_additive": 0.3674521321150943,
-      "p_value": 1.3976181580653273e-25,
+      "r_additive": 0.3160822260581527,
+      "p_value": 5.30208884447683e-19,
       "n": 756
     },
     "la_liga": {
-      "r_additive": 0.011764874451680639,
-      "p_value": 0.746403835923936,
+      "r_additive": 0.2648286338809275,
+      "p_value": 1.2449244020271072e-13,
       "n": 758
     },
     "ligue_1": {
-      "r_additive": 0.13979379575626236,
-      "p_value": 0.0005464633411054359,
+      "r_additive": 0.2271926374150071,
+      "p_value": 1.4723864880276103e-08,
       "n": 608
     },
     "serie_a": {
-      "r_additive": 0.18001086417799067,
-      "p_value": 7.213535489502405e-07,
+      "r_additive": 0.22682482969847487,
+      "p_value": 3.4927664713719477e-10,
       "n": 748
     }
   },

@@ -139,33 +139,51 @@ def build_player_rolling_xg(conn: sqlite3.Connection, focal_season: str) -> dict
             for _, r in focal_df.iterrows()}
 
 
-def build_team_rolling_xg(conn: sqlite3.Connection, focal_season: str) -> dict:
+def build_team_rolling_xg(conn: sqlite3.Connection, focal_season: str) -> tuple[dict, pd.DataFrame]:
     """Team-level rolling xG (TEAM_ROLLING_N prior matches) per (game_id, team_side).
 
-    Returns: {(game_id, 'home'|'away'): rolling_team_xg}
+    Returns: {(game_id, 'home'|'away'): rolling_team_xg}, all_team_xg_df
+
+    BUG FIX 2026-05-27: original GROUP BY (game_id, team_id, is_home) was WRONG —
+    `team_id` in sofascore_player_match_stats is the player's CURRENT/registered
+    team (which may differ from their team in this specific match if they
+    transferred). Example: Christian Nørgaard moved Brentford→Arsenal, so his
+    24/25 Brentford matches have team_id=42 (Arsenal) but is_home=1 (Brentford
+    home). Correct grouping is GROUP BY (game_id, is_home) — sums ALL players
+    on that match-side regardless of their registered team.
+
+    The match-team-id is then derived from sofa_match.home_team_id / away_team_id
+    for rolling-history lookup.
     """
-    print(f"  Building per-team rolling xG (N={TEAM_ROLLING_N})...")
-    # Use sofascore_team_chance_quality view if available, else per-team xG aggregate
-    # Simpler: aggregate from player_match_stats by team
+    print(f"  Building per-team rolling xG (N={TEAM_ROLLING_N}) — FIXED grouping...")
+    # Step 1: SUM by (game, side) — match-team xG (NOT by registered team_id)
     df = pd.read_sql_query("""
-        SELECT pms.game_id, pms.team_id, pms.is_home,
+        SELECT pms.game_id, pms.is_home,
                SUM(COALESCE(pms.expected_goals, 0)) AS team_xg,
                sm.start_timestamp, sm.league, sm.season,
                sm.home_team_id, sm.away_team_id
         FROM sofascore_player_match_stats pms
         JOIN sofascore_match sm ON sm.game_id = pms.game_id
-        GROUP BY pms.game_id, pms.team_id, pms.is_home
+        GROUP BY pms.game_id, pms.is_home
     """, conn)
-    df = df.sort_values(["team_id", "start_timestamp"], kind="mergesort").reset_index(drop=True)
+    # Derive match-team-id (the canonical "which team is this for this match")
+    df["match_team_id"] = df.apply(
+        lambda r: r["home_team_id"] if r["is_home"] else r["away_team_id"], axis=1
+    )
+    # Sort by match-team-id + chronological
+    df = df.sort_values(["match_team_id", "start_timestamp"], kind="mergesort").reset_index(drop=True)
+    # Rolling N prior matches per match-team
     df["rolling_team_xg"] = (
-        df.groupby("team_id")["team_xg"]
+        df.groupby("match_team_id")["team_xg"]
           .transform(lambda s: s.shift(1).rolling(TEAM_ROLLING_N, min_periods=3).mean())
     )
     df["side"] = df["is_home"].apply(lambda x: "home" if x else "away")
     focal = df[df["season"] == focal_season].dropna(subset=["rolling_team_xg"])
     print(f"    Focal-season team-rows with valid rolling: {len(focal):,}")
-    return {(int(r["game_id"]), r["side"]): float(r["rolling_team_xg"])
-            for _, r in focal.iterrows()}, df[["game_id", "team_id", "is_home", "team_xg"]].copy()
+    print(f"    Sanity: team_xg mean={df['team_xg'].mean():.2f} (should be ~1.4 if scale-correct)")
+    rolling_dict = {(int(r["game_id"]), r["side"]): float(r["rolling_team_xg"])
+                    for _, r in focal.iterrows()}
+    return rolling_dict, df[["game_id", "is_home", "team_xg", "match_team_id"]].copy()
 
 
 def main():
