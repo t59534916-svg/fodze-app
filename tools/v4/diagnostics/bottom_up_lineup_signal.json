@@ -1,0 +1,60 @@
+{
+  "focal_season": "24/25",
+  "n_matches_team_rows": 3480,
+  "n_distinct_games": 1740,
+  "rolling_N_player": 10,
+  "rolling_N_team": 5,
+  "test_a_sanity_correlation": {
+    "r": 0.1207010220290234,
+    "p": 9.071226661628933e-13,
+    "interpretation": "Does \u03a3(starter rolling xG) track actual team xG at all?"
+  },
+  "test_b_additive": {
+    "r_additive": 0.12545816721262165,
+    "p_value": 1.1052460615975696e-13,
+    "bootstrap_ci_95": [
+      0.09237396339865694,
+      0.16170644252880498
+    ],
+    "n_bootstrap": 1000,
+    "interpretation": "ADDITIVE test: does bottom_up explain residuals AFTER subtracting team-rolling baseline? Positive r = bottom-up has signal beyond team-rolling. Pre-registered threshold: r > 0.05 AND p < 0.05 AND CI strictly positive = SIGNAL",
+    "verdict": "SIGNAL \u2014 bottom-up explains residuals beyond team-rolling",
+    "ci_verdict": "CI strictly positive \u2192 robust additive signal"
+  },
+  "per_league": {
+    "bundesliga": {
+      "r_additive": 0.010000419827937507,
+      "p_value": 0.8053016254874131,
+      "n": 610
+    },
+    "epl": {
+      "r_additive": 0.3674521321150943,
+      "p_value": 1.3976181580653273e-25,
+      "n": 756
+    },
+    "la_liga": {
+      "r_additive": 0.011764874451680639,
+      "p_value": 0.746403835923936,
+      "n": 758
+    },
+    "ligue_1": {
+      "r_additive": 0.13979379575626236,
+      "p_value": 0.0005464633411054359,
+      "n": 608
+    },
+    "serie_a": {
+      "r_additive": 0.18001086417799067,
+      "p_value": 7.213535489502405e-07,
+      "n": 748
+    }
+  },
+  "final_verdict": "BUILD",
+  "recommendation": "5-7 day bottom-up architecture build justified by signal evidence",
+  "caveats": [
+    "MVP uses Sofa-only data (no Understat-fuzzy-match); xG NULL = treated as 0 (no shots)",
+    "Estimated minutes = 90 for all starters (no minute-prediction modeling)",
+    "Team-rolling baseline is sum-of-player-xg (cleaner than independent team_xg_history)",
+    "Test corpus is Top-5 \u00d7 24/25 ONLY \u2014 lower-tier untested (different data structure)",
+    "5-Gate G5 (ROI sim) deferred \u2014 this is signal-test only, not betting test"
+  ]
+}
