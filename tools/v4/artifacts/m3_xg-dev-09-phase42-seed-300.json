@@ -1,0 +1,132 @@
+{
+  "tag": "dev-09-phase42-seed-300",
+  "architecture": "dev-09-TABULA-RASA-bottom-up",
+  "trained_at": "2026-05-27T23:47:05.475524",
+  "train_seasons": [
+    "22/23",
+    "23/24",
+    "24/25"
+  ],
+  "test_seasons": [
+    "25/26"
+  ],
+  "leagues": "ALL",
+  "seeds": [
+    342,
+    343,
+    344,
+    345,
+    346
+  ],
+  "seed_offset": 300,
+  "n_models": 5,
+  "n_train_matches": 20797,
+  "n_test_matches": 6868,
+  "feature_names": [
+    "bottom_up_xg_diff",
+    "bottom_up_xa_diff",
+    "bottom_up_shots_diff",
+    "bottom_up_key_passes_diff",
+    "attack_concentration_diff",
+    "defense_block_sum_diff",
+    "gk_saves_per_90_diff",
+    "minutes_rate_diff",
+    "bottom_up_available",
+    "elo_diff",
+    "rest_days_diff",
+    "league"
+  ],
+  "holdout_brier": 0.6148338987992849,
+  "per_liga": {
+    "austria_bl": {
+      "n": 180,
+      "brier": 0.6545224647510224
+    },
+    "bundesliga": {
+      "n": 294,
+      "brier": 0.5682525486688915
+    },
+    "bundesliga2": {
+      "n": 290,
+      "brier": 0.6313501551092884
+    },
+    "championship": {
+      "n": 459,
+      "brier": 0.6442072079983238
+    },
+    "eerste_divisie": {
+      "n": 380,
+      "brier": 0.6254733690349462
+    },
+    "epl": {
+      "n": 354,
+      "brier": 0.6064747651678472
+    },
+    "eredivisie": {
+      "n": 288,
+      "brier": 0.5976398787775007
+    },
+    "greek_sl": {
+      "n": 28,
+      "brier": 0.5684426343998678
+    },
+    "jupiler_pro": {
+      "n": 286,
+      "brier": 0.6401764967242466
+    },
+    "la_liga": {
+      "n": 345,
+      "brier": 0.5772555639764092
+    },
+    "la_liga2": {
+      "n": 418,
+      "brier": 0.6353858299067893
+    },
+    "league_one": {
+      "n": 456,
+      "brier": 0.6223217306533572
+    },
+    "league_two": {
+      "n": 456,
+      "brier": 0.6377352805291263
+    },
+    "liga3": {
+      "n": 367,
+      "brier": 0.6310515096459688
+    },
+    "ligue_1": {
+      "n": 287,
+      "brier": 0.599604195697252
+    },
+    "ligue_2": {
+      "n": 306,
+      "brier": 0.653205200379243
+    },
+    "primeira_liga": {
+      "n": 285,
+      "brier": 0.5375355826518144
+    },
+    "scottish_prem": {
+      "n": 210,
+      "brier": 0.5845364414327819
+    },
+    "serie_a": {
+      "n": 354,
+      "brier": 0.5964219324658634
+    },
+    "serie_b": {
+      "n": 380,
+      "brier": 0.6214369192515002
+    },
+    "super_lig": {
+      "n": 234,
+      "brier": 0.5901487549192389
+    },
+    "swiss_sl": {
+      "n": 211,
+      "brier": 0.6222707469677572
+    }
+  },
+  "train_time_sec": 4.583301067352295,
+  "eval_time_sec": 0.3971569538116455
+}
