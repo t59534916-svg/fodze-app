@@ -28,12 +28,47 @@
     }
   ],
   "brier_mean": 0.61346,
-  "brier_std_1sigma": 0.0004560701700396585,
-  "brier_range": 0.0011999999999999789,
-  "brier_ci_95": [
-    0.6130602368701343,
-    0.6138597631298657
+  "brier_std_1sigma_point_estimate": 0.0004560701700396585,
+  "brier_std_1sigma_95ci": [
+    0.00027324675264130203,
+    0.001310543006652472
   ],
+  "brier_range": 0.0011999999999999789,
   "claudemd_heuristic": 0.002,
-  "interpretation": "Empirical 1\u03c3 inter-seed Brier variance = 0.0005 across 5 ensembles trained with disjoint seed-sets [42-46, 142-146, 242-246, 342-346, 442-446]. The CLAUDE.md heuristic 0.002 was pessimistic (real noise is smaller). Today's retrain \u0394=-0.0008 / 1\u03c3=0.0005 = 1.75\u03c3 \u2014 borderline."
+  "heuristic_pessimism_ratio": {
+    "vs_point_estimate": 4.39,
+    "vs_sigma_lower_ci": 1.53,
+    "vs_sigma_upper_ci": 7.32,
+    "note": "Range reflects n=5 wide CI. Honest claim: 1.5x-7.3x too pessimistic."
+  },
+  "production_comparison": {
+    "production_brier": 0.6141,
+    "production_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "production_corpus_date": "2026-05-22",
+    "fresh_seed_000_brier": 0.6133,
+    "fresh_seed_000_seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "fresh_corpus_date": "2026-05-27",
+    "delta_prod_minus_seed000": 0.0008,
+    "delta_driver": "corpus_update_not_seed_luck",
+    "caveat": "Production seeds IDENTICAL to seed-000 (verified via pickle inspection). Therefore Delta 0.0008 between them is driven by the +1,238 corpus rows added between 2026-05-22 and 2026-05-27, NOT by random-seed variance. This bootstrap measures inter-seed variance on TODAY's corpus only \u2014 it cannot cleanly test signal-vs-noise for the cross-corpus comparison."
+  },
+  "decision_gate_criterion": "For SAME-corpus retrain comparisons: \u0394 < 1\u03c3 (\u2248 0.0005) = noise \u2192 archive; 1\u03c3 < \u0394 < 2\u03c3 = borderline \u2192 require multi-seed bootstrap before shipping; \u0394 > 2\u03c3 = signal \u2192 ship after refit-dev03-artifacts.sh. For CROSS-corpus comparisons (e.g. retrain on +N rows): need multi-seed bootstrap on BOTH corpora to be statistically clean.",
+  "retracted_overclaims": [
+    "Earlier '\u0394_mean / \u03c3 = 1.2\u03c3' was arithmetic error \u2014 actual 1.40\u03c3.",
+    "Earlier 'production was unlucky seed pick' was wrong \u2014 seeds identical.",
+    "Earlier 'exactly 4\u00d7 too pessimistic' was point-estimate only \u2014 CI gives 1.5\u00d7\u20137.3\u00d7.",
+    "Earlier 'ship best-of-5 seed-300' was cherry-picking \u2014 violates 5-Gate G2."
+  ]
 }

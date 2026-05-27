@@ -279,3 +279,49 @@ is mildly-but-genuinely better. Production was an outlier seed.
 brier-diff" criterion in CLAUDE.md's 5-Gate Falsification Protocol now has a
 proper empirical anchor: std ≈ 0.0005 at the ENSEMBLE level (per-match std
 will be larger ~0.01-0.03 since per-match variance is higher than per-ensemble).
+
+### Self-correction on the 2026-05-27 bootstrap interpretation
+
+Caught in same-day double-check:
+
+**Bug 1 — arithmetic error:** Earlier claim "Δ_mean / σ = 1.2σ" was wrong.
+Δ = 0.0006, σ = 0.000456 → actual ratio is **1.40σ** (not 1.2σ).
+
+**Bug 2 — interpretation error:** "Production at 0.6141 was an unlucky seed
+pick" claim was WRONG. Production seeds = [42, 43, 44, 45, 46] = identical to
+seed-000 (verified by loading both pickles). Δ -0.0008 between production
+(2026-05-22 corpus) and seed-000 (2026-05-27 corpus) is therefore **driven by
+the 1,238-row corpus update**, NOT seed luck. Both use the same seed-set.
+
+**Bug 3 — overclaim on heuristic-pessimism:** Earlier claim "heuristic 0.002
+was 4× too pessimistic" used point-estimate σ=0.000456 only. With n=5
+chi-square 95% CI on σ is [0.000273, 0.001311] — so the heuristic is
+1.5×–7.3× too pessimistic depending on which CI bound you use. Point estimate
+is 4.4× but that's just the median of a wide distribution.
+
+**Bug 4 — cherry-picking suggestion:** Earlier suggested "ship best-of-5
+(seed-300 Brier 0.6129 = 2.4σ over prod)". This is selection bias — picking
+the lowest of 5 random samples violates 5-Gate G2 (Holm-Bonferroni
+multiple-testing). Retracted.
+
+**Bug 5 — cross-corpus conflation:** Statements like "fresh ensembles cluster
+below production" were directionally OK but the implied "this is signal"
+overstated. The bootstrap measures inter-seed variance on a SINGLE corpus.
+Cross-corpus signal vs prod requires multi-seed runs on BOTH corpora — only
+have it on today's corpus.
+
+**What remains valid:**
+
+* Empirical inter-seed Brier std ≈ 0.0005 (with wide CI) — REAL measurement
+* CLAUDE.md heuristic 0.002 was directionally over-pessimistic — TRUE
+* `train_m3_xg.py --seed-offset` flag + bootstrap orchestrator — REUSABLE
+* Decision-gate concept (Δ < 1σ = noise / 1-2σ = borderline / >2σ = signal) —
+  USABLE but with the cross-corpus caveat: those σ-bounds apply within a
+  single corpus; cross-corpus signal-tests need bilateral bootstrap
+
+**Lesson for future bootstrap analyses:**
+1. Don't compare a multi-seed cluster to a single-seed point-estimate from a
+   DIFFERENT corpus and call the gap "signal".
+2. n=5 is enough to refute a heuristic but not enough for tight σ-CI.
+3. "Best-of-N" cherry-picking violates multiple-testing protections.
+4. Verify pickled seeds match before attributing Δ to "seed luck".
