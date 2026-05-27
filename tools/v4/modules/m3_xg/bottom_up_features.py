@@ -15,6 +15,27 @@ Critical invariants (audit committee + bug-class A from MVP):
      PRIOR matches only, never includes the focal match itself.
   3. xG NULL = treated as 0 (no shots = no expected goals; valid interpretation).
 
+KNOWN feature-design caveats (will be empirically tested by G2 Holm-Bonferroni
+in Day 2 training, NOT pre-emptively fixed):
+  - `attack_concentration` is a top-3-share ratio, not a magnitude — it captures
+    distribution shape (1 elite vs 3-of-equal) but NOT absolute talent. Magnitude
+    lives in `bottom_up_xg_diff`. The two features are complementary, NOT redundant.
+  - `bottom_up_xg + bottom_up_xa` likely correlate (pass→shot chain credits both
+    passer and shooter for the same play). LightGBM's tree-splits will discover
+    redundancy and pick the more-informative one. Holm-correction will reject
+    spurious doublets.
+  - `gk_saves_per_90_diff` is NOT a save-rate (would need opponent SoT). It's a
+    raw saves-per-90 differential. A GK facing 10 SoT/saving 7 ranks higher than
+    one facing 4/saving 4 — semantically backwards for "quality." The trade-off
+    is per-90-saves correlates with team-defensive-quality (more SoT against bad
+    teams) but introduces noise. Renamed (was `gk_save_rate`) to avoid pretending.
+
+Position-code empirics (verified 2026-05-27 via sqlite):
+  Sofa emits ONLY 4 position codes: M (n=228,644), D (n=178,904), F (n=137,756),
+  G (n=38,256). The earlier 11-code-list (DC/DL/DR/DMC/...) was wishful — none
+  of those substrings exist in the data. defense_block_sum filters on `D` only
+  (true defenders; midfielder defensive work folds into shots+key_passes).
+
 Usage:
     bc = BottomUpCalculator(sqlite_path)
     bc.fit()  # builds full-corpus rolling cache
@@ -55,11 +76,9 @@ class BottomUpCalculator:
         self._fitted = False
         # (player_id, game_id) → dict of rolling features
         # Each dict has: xg_per_90, xa_per_90, shots_per_90, key_passes_per_90,
-        #               minutes_rate, tackles_per_90, interceptions_per_90, position
+        #               minutes_rate, tackles_per_90, interceptions_per_90, position,
+        #               saves_per_90
         self._player_rolling: Dict[Tuple[int, int], Dict[str, float]] = {}
-        # (game_id, side) → defenders position assignment (computed at fit time)
-        # Per-(player_id, game_id) → position string for filtering defenders/GK
-        self._player_position: Dict[Tuple[int, int], str] = {}
 
     @property
     def is_fitted(self) -> bool:
@@ -143,9 +162,6 @@ class BottomUpCalculator:
                 "saves_per_90": float(r["rolling_saves_per_90"]),
                 "position": str(r["position"]) if pd.notna(r["position"]) else "?",
             }
-            self._player_position[key] = (
-                str(r["position"]) if pd.notna(r["position"]) else "?"
-            )
 
         self._fitted = True
         return self
@@ -172,7 +188,7 @@ class BottomUpCalculator:
                 "bottom_up_key_passes": 0.0,
                 "attack_concentration": 0.0,
                 "defense_block_sum": 0.0,
-                "gk_save_rate": 0.0,
+                "gk_saves_per_90": 0.0,
                 "minutes_rate_sum": 0.0,
             }, 0)
 
@@ -184,21 +200,26 @@ class BottomUpCalculator:
         sum_minutes = sum(p["minutes_rate"] for p in with_data)
 
         # Attack concentration: top-3 starters' xG share of total
+        # NOTE: shape-only feature — captures elite-vs-balanced distribution,
+        # NOT magnitude. Magnitude lives in bottom_up_xg_diff. Caveat in module doc.
         xg_values = sorted([p["xg_per_90"] for p in with_data], reverse=True)
         top3_xg = sum(xg_values[:3])
         attack_concentration = (top3_xg / sum_xg) if sum_xg > 1e-6 else 0.0
 
-        # Defense aggregate: tackles + interceptions for non-GK, non-FWD positions
-        # Sofa position codes: G=GK, D=DEF, M=MID, F=FWD (others possible)
-        defenders = [p for p in with_data if p["position"] in ("D", "DC", "DL", "DR", "M", "MC", "ML", "MR", "DMC", "DML", "DMR")]
+        # Defense aggregate: tackles + interceptions for true defenders ONLY.
+        # Empirically verified (2026-05-27): Sofa only emits 4 position codes
+        # (M, D, F, G) — no DC/DMC/etc. variants. Midfielders' defensive work
+        # folds into shots+key_passes signals. Cleanest signal: D-only.
+        defenders = [p for p in with_data if p["position"] == "D"]
         defense_block_sum = sum(
             p["tackles_per_90"] + p["interceptions_per_90"]
             for p in defenders
         )
 
-        # GK save rate: average saves_per_90 of starting GK (typically 1 GK)
+        # GK saves-per-90 (NOT a rate — would need opponent SoT). Caveat in module doc.
+        # Typically 1 GK per side; defensive against multi-keeper edge case via /len(gks).
         gks = [p for p in with_data if p["position"] == "G"]
-        gk_save_rate = (sum(p["saves_per_90"] for p in gks) / len(gks)) if gks else 0.0
+        gk_saves_per_90 = (sum(p["saves_per_90"] for p in gks) / len(gks)) if gks else 0.0
 
         return ({
             "bottom_up_xg": sum_xg,
@@ -207,7 +228,7 @@ class BottomUpCalculator:
             "bottom_up_key_passes": sum_key_passes,
             "attack_concentration": attack_concentration,
             "defense_block_sum": defense_block_sum,
-            "gk_save_rate": gk_save_rate,
+            "gk_saves_per_90": gk_saves_per_90,
             "minutes_rate_sum": sum_minutes,
         }, n_with_history)
 
@@ -245,7 +266,7 @@ class BottomUpCalculator:
                 "bottom_up_key_passes_diff": 0.0,
                 "attack_concentration_diff": 0.0,
                 "defense_block_sum_diff": 0.0,
-                "gk_save_rate_diff": 0.0,
+                "gk_saves_per_90_diff": 0.0,
                 "minutes_rate_diff": 0.0,
                 "bottom_up_available": 0,
                 "n_starters_with_history_min": min(n_home, n_away),
@@ -258,7 +279,7 @@ class BottomUpCalculator:
             "bottom_up_key_passes_diff": home_agg["bottom_up_key_passes"] - away_agg["bottom_up_key_passes"],
             "attack_concentration_diff": home_agg["attack_concentration"] - away_agg["attack_concentration"],
             "defense_block_sum_diff": home_agg["defense_block_sum"] - away_agg["defense_block_sum"],
-            "gk_save_rate_diff": home_agg["gk_save_rate"] - away_agg["gk_save_rate"],
+            "gk_saves_per_90_diff": home_agg["gk_saves_per_90"] - away_agg["gk_saves_per_90"],
             "minutes_rate_diff": home_agg["minutes_rate_sum"] - away_agg["minutes_rate_sum"],
             "bottom_up_available": 1,
             "n_starters_with_history_min": min(n_home, n_away),
@@ -274,7 +295,9 @@ class BottomUpCalculator:
         }
 
 
-# Feature names exposed for downstream feature_builder_dev09 + train_dev09
+# Feature names exposed for downstream feature_builder_dev09 + train_dev09.
+# Order is the canonical column order — keep stable; train_dev09 + dev09-features.ts
+# rely on this list verbatim.
 DEV_09_BOTTOM_UP_FEATURES: List[str] = [
     "bottom_up_xg_diff",
     "bottom_up_xa_diff",
@@ -282,7 +305,7 @@ DEV_09_BOTTOM_UP_FEATURES: List[str] = [
     "bottom_up_key_passes_diff",
     "attack_concentration_diff",
     "defense_block_sum_diff",
-    "gk_save_rate_diff",
+    "gk_saves_per_90_diff",
     "minutes_rate_diff",
     "bottom_up_available",
     "n_starters_with_history_min",

@@ -146,7 +146,7 @@ def test_aggregator_uses_explicit_starter_lists(fitted_calculator: BottomUpCalcu
     assert out["bottom_up_available"] == 0
     for f in ("bottom_up_xg_diff", "bottom_up_xa_diff", "bottom_up_shots_diff",
               "bottom_up_key_passes_diff", "attack_concentration_diff",
-              "defense_block_sum_diff", "gk_save_rate_diff", "minutes_rate_diff"):
+              "defense_block_sum_diff", "gk_saves_per_90_diff", "minutes_rate_diff"):
         assert out[f] == 0.0
 
 
@@ -242,7 +242,7 @@ def test_layer3_degradation_below_min_starters(fitted_calculator: BottomUpCalcul
     assert out["bottom_up_available"] == 0
     for f in ("bottom_up_xg_diff", "bottom_up_xa_diff", "bottom_up_shots_diff",
               "bottom_up_key_passes_diff", "attack_concentration_diff",
-              "defense_block_sum_diff", "gk_save_rate_diff", "minutes_rate_diff"):
+              "defense_block_sum_diff", "gk_saves_per_90_diff", "minutes_rate_diff"):
         assert out[f] == 0.0
 
 
