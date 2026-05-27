@@ -1,0 +1,39 @@
+{
+  "n_seeds": 5,
+  "ensemble_briers": [
+    {
+      "tag": "dev-03-seed-000",
+      "seed_offset": 0,
+      "brier": 0.6133
+    },
+    {
+      "tag": "dev-03-seed-100",
+      "seed_offset": 100,
+      "brier": 0.6137
+    },
+    {
+      "tag": "dev-03-seed-200",
+      "seed_offset": 200,
+      "brier": 0.6133
+    },
+    {
+      "tag": "dev-03-seed-300",
+      "seed_offset": 300,
+      "brier": 0.6129
+    },
+    {
+      "tag": "dev-03-seed-400",
+      "seed_offset": 400,
+      "brier": 0.6141
+    }
+  ],
+  "brier_mean": 0.61346,
+  "brier_std_1sigma": 0.0004560701700396585,
+  "brier_range": 0.0011999999999999789,
+  "brier_ci_95": [
+    0.6130602368701343,
+    0.6138597631298657
+  ],
+  "claudemd_heuristic": 0.002,
+  "interpretation": "Empirical 1\u03c3 inter-seed Brier variance = 0.0005 across 5 ensembles trained with disjoint seed-sets [42-46, 142-146, 242-246, 342-346, 442-446]. The CLAUDE.md heuristic 0.002 was pessimistic (real noise is smaller). Today's retrain \u0394=-0.0008 / 1\u03c3=0.0005 = 1.75\u03c3 \u2014 borderline."
+}

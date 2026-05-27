@@ -60,6 +60,11 @@ def parse_args() -> argparse.Namespace:
                    help="Artifact tag (default: timestamp YYYYMMDD-HHMM)")
     p.add_argument("--n-models", type=int, default=5,
                    help="Number of bagged models in ensemble (default 5)")
+    p.add_argument("--seed-offset", type=int, default=0,
+                   help="Add this offset to the default seed-list [42, 43, 44, 45, 46]. "
+                        "Used by dev03_multi_seed_bootstrap.py to produce N independent "
+                        "ensembles for empirical inter-seed Brier variance measurement. "
+                        "Example: --seed-offset 100 → seeds=[142,143,144,145,146].")
     p.add_argument("--features-locked", action="store_true",
                    help="Constrain feature set to dev-03 production schema "
                         "(16 numeric + league = 17 total). Required for compatibility "
@@ -217,7 +222,7 @@ def main() -> int:
     # ─────────── Train home-goals ensemble ───────────
     t0 = time.time()
     print(f"  Training home-goals ensemble (n_models={args.n_models})...")
-    ens_h = BayesianEnsemble(n_models=args.n_models)
+    ens_h = BayesianEnsemble(n_models=args.n_models, seeds=[42 + i + args.seed_offset for i in range(args.n_models)])
     ens_h.fit(X, y_h, categorical_columns=["league"])
     print(f"    Done in {time.time()-t0:.1f}s")
 
@@ -229,7 +234,7 @@ def main() -> int:
     # ─────────── Train away-goals ensemble ───────────
     t0 = time.time()
     print(f"  Training away-goals ensemble (n_models={args.n_models})...")
-    ens_a = BayesianEnsemble(n_models=args.n_models)
+    ens_a = BayesianEnsemble(n_models=args.n_models, seeds=[42 + i + args.seed_offset for i in range(args.n_models)])
     ens_a.fit(X, y_a, categorical_columns=["league"])
     print(f"    Done in {time.time()-t0:.1f}s")
 
