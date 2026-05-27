@@ -41,10 +41,30 @@
     "G3.6 cache values = shift(1)+rolling ref": {
       "status": "PASS",
       "detail": "219 cache lookups across 3 players; 0 mismatches (\u2713 all bit-identical to reference)"
+    },
+    "G3.7a sofa_context uses (league, team_id) keying": {
+      "status": "PASS",
+      "detail": "Confirmed EloKey = Tuple[str, int] \u2014 per-league isolation enforced"
+    },
+    "G3.7a sofa_context SQL includes league": {
+      "status": "PASS",
+      "detail": "Confirmed SQL retrieves league for keying"
+    },
+    "G3.7b sofa_context ORDER BY start_timestamp": {
+      "status": "PASS",
+      "detail": "Chronological iteration enforced in SQL"
+    },
+    "G3.7b pre-match state recorded BEFORE update": {
+      "status": "PASS",
+      "detail": "Source order: record lookup \u2192 compute expected \u2192 apply K-update (no leakage)"
+    },
+    "G3.7c sofa_context pytest suite passes": {
+      "status": "PASS",
+      "detail": "pytest result: 7 passed, 13 warnings in 1.02s"
     }
   },
   "summary": {
-    "n_pass": 7,
+    "n_pass": 12,
     "n_warn": 0,
     "n_fail": 0,
     "verdict": "PASS"

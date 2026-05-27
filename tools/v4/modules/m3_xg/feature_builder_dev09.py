@@ -7,14 +7,16 @@ Architecture per FODZE-Optimal-Blueprint audit revision (2026-05-27):
     sofascore_player_match_stats WHERE is_starter=1.
   - Targets: sofascore_match.home_score / away_score (NOT team_xg_history.goals_for).
 
-Day-2 feature vector (10 columns):
+Current feature vector (12 columns, audit-binding Phase 4.1):
   8 bottom-up diff features (BottomUpCalculator output) +
-  bottom_up_available + n_starters_with_history_min +
-  league (categorical).
+  bottom_up_available + elo_diff + rest_days_diff +
+  league (categorical) + n_starters_with_history_min (metadata, not model input).
 
-Future Day-3 may add: elo_diff_sofa (computed over Sofa results),
-rest_days_diff (from start_timestamp). Held back to keep Day-2 G2 Holm
-correction tractable (m=8 features → α_corrected = 0.05/8 = 0.00625).
+elo_diff + rest_days_diff are PER-LEAGUE Sofa-native context (sofa_context.py).
+G2 Holm correction: m=11 → α_corrected = 0.05/11 = 0.00455.
+
+Day-2 used 9-feature vector (no Elo/rest). Day-3 added Elo/rest but with GLOBAL
+keying (wrong — fixed in Phase 4.1).
 
 Leakage contract:
   - BottomUpCalculator.fit() loads full corpus, but shift(1).rolling(N)

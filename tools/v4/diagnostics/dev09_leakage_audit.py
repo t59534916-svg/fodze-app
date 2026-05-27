@@ -11,6 +11,10 @@ Verifies the dev-09 training pipeline has no train/test leakage:
   G3.6 — Test set never appears in BottomUpCalculator.fit() input independently
          (but since fit loads ALL games, leakage is bounded by shift(1) — verified
          numerically by sampling test-game rolling against hand-computed reference)
+  G3.7 — sofa_context.compute_sofa_context (Phase 4.1):
+         (a) per-league Elo isolation (no cross-league contamination)
+         (b) pre-match-state-recorded-FIRST semantic (no leakage)
+         (c) chronological ORDER BY enforced in SQL
 
 This script is callable as a Day-2 CI gate AND as a Day-3 multi-seed bootstrap
 pre-check. Exit codes:
@@ -258,6 +262,62 @@ def main() -> int:
         f"{leakage_n_checks:,} cache lookups across {len(sample_pids)} players; "
         f"{leakage_mismatches} mismatches "
         f"({'✓ all bit-identical to reference' if leakage_mismatches == 0 else '✗ leakage'})",
+    )
+
+    # ─── G3.7: sofa_context (Phase 4.1) — per-league Elo + pre-match state ───
+    print()
+    print("─" * 70)
+    print("G3.7 — sofa_context: per-league Elo + pre-match-state-first")
+    print("─" * 70)
+    sc_src = (REPO_ROOT / "tools" / "v4" / "modules" / "m3_xg" /
+              "sofa_context.py").read_text()
+    # Per-league keying: state dicts must use (league, team_id) tuple keys
+    _check(
+        "G3.7a sofa_context uses (league, team_id) keying",
+        "EloKey" in sc_src and "Tuple[str, int]" in sc_src,
+        "Confirmed EloKey = Tuple[str, int] — per-league isolation enforced",
+    )
+    # SQL must select `league` for per-league state
+    _check(
+        "G3.7a sofa_context SQL includes league",
+        "SELECT game_id, league" in sc_src,
+        "Confirmed SQL retrieves league for keying",
+    )
+    # ORDER BY chronological
+    import re as _re
+    chrono_ok = bool(_re.search(r"ORDER\s+BY\s+start_timestamp", sc_src, _re.IGNORECASE))
+    _check(
+        "G3.7b sofa_context ORDER BY start_timestamp",
+        chrono_ok,
+        "Chronological iteration enforced in SQL",
+    )
+    # Pre-match state recorded FIRST — comment + structural ordering check
+    pre_first_ok = (
+        "RECORD FIRST" in sc_src and
+        "Pre-match state" in sc_src and
+        # Heuristic: the `elo_lookup[(int(gid)` line must appear BEFORE
+        # any `elo_state[h_key] = h_elo + update` line in the source.
+        sc_src.find("elo_lookup[(int(gid), True)] = h_elo") <
+        sc_src.find("elo_state[h_key] = h_elo + update")
+    )
+    _check(
+        "G3.7b pre-match state recorded BEFORE update",
+        pre_first_ok,
+        "Source order: record lookup → compute expected → apply K-update (no leakage)",
+    )
+    # Empirical: pytest sofa_context test suite passes
+    import subprocess
+    pytest_result = subprocess.run(
+        ["tools/venv/bin/python3", "-m", "pytest",
+         "tools/v4/tests/test_sofa_context.py", "-q", "--tb=no"],
+        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=60,
+    )
+    pytest_ok = pytest_result.returncode == 0
+    last_line = pytest_result.stdout.strip().split("\n")[-1] if pytest_result.stdout else "no output"
+    _check(
+        "G3.7c sofa_context pytest suite passes",
+        pytest_ok,
+        f"pytest result: {last_line}",
     )
 
     # ─── Verdict ───

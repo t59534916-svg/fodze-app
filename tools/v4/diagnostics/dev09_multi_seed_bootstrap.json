@@ -1,5 +1,15 @@
 {
   "architecture": "dev-09-TABULA-RASA-bottom-up",
+  "phase": "4.1+",
+  "train_seasons": [
+    "22/23",
+    "23/24"
+  ],
+  "test_seasons": [
+    "24/25"
+  ],
+  "leagues": "ALL",
+  "test_leagues": "ALL",
   "n_seeds": 5,
   "seed_offsets": [
     0,
@@ -8,62 +18,196 @@
     300,
     400
   ],
+  "feature_names": [
+    "bottom_up_xg_diff",
+    "bottom_up_xa_diff",
+    "bottom_up_shots_diff",
+    "bottom_up_key_passes_diff",
+    "attack_concentration_diff",
+    "defense_block_sum_diff",
+    "gk_saves_per_90_diff",
+    "minutes_rate_diff",
+    "bottom_up_available",
+    "elo_diff",
+    "rest_days_diff",
+    "league"
+  ],
   "ensemble_briers": [
     {
       "seed_offset": 0,
-      "brier": 0.5974
+      "brier": 0.6135679502317112,
+      "seeds": [
+        42,
+        43,
+        44,
+        45,
+        46
+      ]
     },
     {
       "seed_offset": 100,
-      "brier": 0.5978
+      "brier": 0.6147554026975433,
+      "seeds": [
+        142,
+        143,
+        144,
+        145,
+        146
+      ]
     },
     {
       "seed_offset": 200,
-      "brier": 0.5974
+      "brier": 0.615437921886252,
+      "seeds": [
+        242,
+        243,
+        244,
+        245,
+        246
+      ]
     },
     {
       "seed_offset": 300,
-      "brier": 0.5971
+      "brier": 0.614381378171129,
+      "seeds": [
+        342,
+        343,
+        344,
+        345,
+        346
+      ]
     },
     {
       "seed_offset": 400,
-      "brier": 0.5955
+      "brier": 0.6136984474948947,
+      "seeds": [
+        442,
+        443,
+        444,
+        445,
+        446
+      ]
     }
   ],
-  "brier_mean": 0.59704,
-  "brier_std": 0.000896102672688789,
+  "brier_mean": 0.6143682200963061,
+  "brier_std": 0.0007719087729174231,
   "brier_ci_95": [
-    0.5962545313755471,
-    0.597825468624453
+    0.6136916122247468,
+    0.6150448279678654
   ],
-  "brier_range": 0.0022999999999999687,
-  "empirical_noise_floor_1sigma": 0.000896102672688789,
+  "brier_range": 0.0018699716545408362,
+  "empirical_noise_floor_1sigma": 0.0007719087729174231,
   "dev03_noise_floor_for_comparison": 0.000456,
-  "interpretation": "For dev-09 architecture: any single-seed Brier-improvement \u0394 < 0.0009 is indistinguishable from run-noise. Per-feature G2 Holm correction requires \u0394 > ~2\u03c3 (0.0018) for any single-feature claim to survive correction at \u03b1=0.05/11 = 0.00455.",
+  "interpretation": "For dev-09 architecture: any single-seed Brier-improvement \u0394 < 0.0008 is indistinguishable from run-noise. Per-feature G2 Holm correction requires \u0394 > ~2\u03c3 (0.0015) for individual feature claims to survive correction at \u03b1=0.05/11 = 0.00455.",
   "per_league_stats": {
+    "league_two": {
+      "mean": 0.6609444479971514,
+      "std": 0.0012709154596985675,
+      "n_seeds": 5
+    },
+    "championship": {
+      "mean": 0.6225158605245953,
+      "std": 0.0014261230225931388,
+      "n_seeds": 5
+    },
+    "eerste_divisie": {
+      "mean": 0.6269688895952117,
+      "std": 0.0014285382975072522,
+      "n_seeds": 5
+    },
+    "jupiler_pro": {
+      "mean": 0.6068311849673325,
+      "std": 0.001509056786717816,
+      "n_seeds": 5
+    },
+    "scottish_prem": {
+      "mean": 0.5941035406941823,
+      "std": 0.0016105384906630103,
+      "n_seeds": 5
+    },
     "epl": {
-      "mean": 0.60844,
-      "std": 0.0021593980642762374,
+      "mean": 0.5988806253411424,
+      "std": 0.0016904109025380506,
       "n_seeds": 5
     },
-    "ligue_1": {
-      "mean": 0.5762799999999999,
-      "std": 0.0022163032283511967,
+    "swiss_sl": {
+      "mean": 0.6421185689744087,
+      "std": 0.0023249128343207333,
       "n_seeds": 5
     },
-    "bundesliga": {
-      "mean": 0.63862,
-      "std": 0.0024853571171966553,
+    "bundesliga2": {
+      "mean": 0.654477017335781,
+      "std": 0.002396415930189637,
       "n_seeds": 5
     },
-    "serie_a": {
-      "mean": 0.5938,
-      "std": 0.003014133374620296,
+    "la_liga2": {
+      "mean": 0.6368555870517252,
+      "std": 0.0025833516402810116,
+      "n_seeds": 5
+    },
+    "ligue_2": {
+      "mean": 0.620872316604468,
+      "std": 0.0027555109788397003,
+      "n_seeds": 5
+    },
+    "serie_b": {
+      "mean": 0.6554717712872133,
+      "std": 0.002767255000409766,
       "n_seeds": 5
     },
     "la_liga": {
-      "mean": 0.5722200000000001,
-      "std": 0.003559072912992944,
+      "mean": 0.5685712213658081,
+      "std": 0.0028847560506046832,
+      "n_seeds": 5
+    },
+    "bundesliga": {
+      "mean": 0.6344834351434342,
+      "std": 0.002891942583661563,
+      "n_seeds": 5
+    },
+    "greek_sl": {
+      "mean": 0.5957546720106136,
+      "std": 0.002937355099623744,
+      "n_seeds": 5
+    },
+    "austria_bl": {
+      "mean": 0.6182537561764698,
+      "std": 0.0030609356213474517,
+      "n_seeds": 5
+    },
+    "serie_a": {
+      "mean": 0.5896659008742091,
+      "std": 0.0030999659209915175,
+      "n_seeds": 5
+    },
+    "league_one": {
+      "mean": 0.6378996592632683,
+      "std": 0.003387036861729013,
+      "n_seeds": 5
+    },
+    "ligue_1": {
+      "mean": 0.5767456426928146,
+      "std": 0.0034201406216335423,
+      "n_seeds": 5
+    },
+    "liga3": {
+      "mean": 0.62865944361108,
+      "std": 0.0035217244753543817,
+      "n_seeds": 5
+    },
+    "super_lig": {
+      "mean": 0.5589350771791312,
+      "std": 0.0035793002148087573,
+      "n_seeds": 5
+    },
+    "primeira_liga": {
+      "mean": 0.5766949405696417,
+      "std": 0.004268581346029813,
+      "n_seeds": 5
+    },
+    "eredivisie": {
+      "mean": 0.6041530199095202,
+      "std": 0.004687667971830557,
       "n_seeds": 5
     }
   }

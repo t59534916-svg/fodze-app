@@ -5,25 +5,29 @@ Per FODZE-Optimal-Blueprint audit revision: TABULA RASA architecture.
 NO dev-03 macro feature borrows. Only Sofa player_match_stats aggregates +
 bottom_up_available flag + league categorical.
 
-Day-2 feature vector (9 cols: 8 numeric + league):
+Current feature vector (12 cols: 11 numeric + league) per Phase 4.1 audit:
   bottom_up_xg_diff, bottom_up_xa_diff, bottom_up_shots_diff,
   bottom_up_key_passes_diff, attack_concentration_diff,
   defense_block_sum_diff, gk_saves_per_90_diff, minutes_rate_diff,
-  bottom_up_available + league
+  bottom_up_available, elo_diff, rest_days_diff + league
 
-Future Day-3 may add Elo + rest_days. Today's vector keeps G2 Holm-correction
-tractable (m=8 → α_corrected = 0.05/8 = 0.00625).
+  elo_diff / rest_days_diff are PER-LEAGUE Sofa-native (Phase 4.1, audit-binding).
+  G2 Holm correction: m=11 → α_corrected = 0.05/11 = 0.00455.
 
 Architecture:
   - 5-seed bagged LightGBM Tweedie (mirrors dev-03 ensemble pattern)
   - One ensemble for home_goals, one for away_goals
-  - --seed-offset for multi-seed bootstrap support (Day-3)
+  - --seed-offset for multi-seed bootstrap support
   - Saves home + away pickles + manifest JSON to tools/v4/artifacts/
 
-Walk-forward CV scheme (audit committee binding):
-  - train: 22/23 + 23/24 (default)
-  - test:  24/25 (held out — never seen during fit)
+Walk-forward CV scheme (current default — Phase 4.2 audit-binding):
+  - train: 22/23 + 23/24 + 24/25 (cutoff 2025-08-01)
+  - test:  25/26 (held out — never seen during fit)
   - --train-seasons / --test-seasons override
+
+Day-2 used 23/24-only on Top-5. Day-3 expanded to 22/23+23/24 on 22 leagues.
+Day-4 (current) uses 22/23+23/24+24/25 for the audit-mandated TRUE H2H vs dev-03
+on 25/26 holdout — only proper temporally-aligned baseline comparison.
 
 Usage:
   tools/venv/bin/python3 -I tools/v4/train_dev09.py
