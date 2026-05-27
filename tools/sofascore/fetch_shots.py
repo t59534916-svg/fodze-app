@@ -220,6 +220,9 @@ def main():
     p.add_argument("--dry", action="store_true", help="show plan, no writes")
     p.add_argument("--pace", type=float, default=0.6,
                    help="seconds between week fetches (default 0.6)")
+    p.add_argument("--use-webshare", action="store_true",
+                   help="route requests through Webshare residential proxy pool "
+                        "(2026-05-18: needed because Mac-IP blocked from Sofa).")
     args = p.parse_args()
 
     if not (args.league or args.tier):
@@ -233,7 +236,38 @@ def main():
 
     leagues = [args.league] if args.league else (TIER_A if args.tier == "A" else TIER_B)
 
-    http = cf_requests.Session(impersonate="chrome124")
+    if args.use_webshare:
+        # Import the verified Webshare pool from fetch_match_extras
+        # and monkey-patch datafc's internal SofascoreClient to use it.
+        # 2026-05-18: this is the empirically-working bypass after CF blocked
+        # both direct Mac-IP and tls_requests fingerprint.
+        #
+        # The trick: datafc.utils._client.SofascoreClient builds its OWN
+        # cf_requests.Session in __init__ without proxy support. We patch
+        # __init__ to attach proxies after the session is built.
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fetch_match_extras as fme
+        import random
+        from datafc.utils import _client as _datafc_client
+
+        pool = list(fme.WEBSHARE_PROXIES_VERIFIED[:20])  # residential only
+        random.shuffle(pool)
+        label, ip, port, user, password = pool[0]
+        proxy_url = f"http://{user}:{password}@{ip}:{port}"
+        print(f"🛰  Using Webshare proxy {label} ({ip}) for datafc + fetch_shots http")
+
+        _orig_init = _datafc_client.SofascoreClient.__init__
+        def _patched_init(self, *a, **kw):
+            _orig_init(self, *a, **kw)
+            self._session.proxies = {"http": proxy_url, "https": proxy_url}
+        _datafc_client.SofascoreClient.__init__ = _patched_init  # type: ignore
+
+        http = cf_requests.Session(
+            impersonate="chrome124",
+            proxies={"http": proxy_url, "https": proxy_url},
+        )
+    else:
+        http = cf_requests.Session(impersonate="chrome124")
 
     for lg in leagues:
         fetch_league(

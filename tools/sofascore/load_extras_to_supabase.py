@@ -37,11 +37,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+import sqlite3
 import urllib.request
 import urllib.error
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "tools" / "sofascore" / "data" / "extras"
+LOCAL_DB_PATH = REPO_ROOT / "tools" / "sofascore" / "data" / "local_extras.db"
 
 
 def load_env():
@@ -62,6 +64,187 @@ SUPA_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 if not SUPA_URL or not SUPA_KEY:
     print("ERROR: missing SUPABASE_URL / SUPABASE_SERVICE_KEY in .env.local", file=sys.stderr)
     sys.exit(1)
+
+# Storage-saver flag: when set, skip per-player stats inserts (the dominant
+# storage cost — 36 KB/game vs 60 KB/game total). Engine doesn't currently
+# read this table; bridge-sofascore-extras-to-team-xg.mjs uses match_statistics
+# instead. JSONs remain on disk in data/extras/ for future re-ingest if needed
+# (e.g., after a Pro-plan DB-upgrade or when engine adds player-level features).
+#
+# DEFAULT FROM 2026-05-18: skip on (Supabase free-tier 500 MB limit hit when
+# player_stats was included — see hindsight at end of file). Local SQLite mirror
+# always retains the data (always-on, see `local_upsert` in load_file).
+# Opt back in via:
+#   - CLI flag `--include-player-stats` (Pro plan, intentional override)
+#   - env `FODZE_SKIP_PLAYER_STATS=0`
+SKIP_PLAYER_STATS = os.environ.get("FODZE_SKIP_PLAYER_STATS", "1") not in ("0", "false", "no")
+
+# Local SQLite mirror — when enabled, every projected row also gets written to
+# `tools/sofascore/data/local_extras.db` via INSERT OR REPLACE (idempotent).
+# Default-on so the user has a queryable local copy of EVERYTHING that goes to
+# (or would have gone to) Supabase. Especially important when SKIP_PLAYER_STATS
+# is on — player rows still get the local mirror, just not the cloud copy.
+# Disable with FODZE_LOCAL_MIRROR=0 or --no-local-mirror.
+LOCAL_MIRROR = os.environ.get("FODZE_LOCAL_MIRROR", "1") not in ("0", "false", "no")
+
+# Skip-Supabase mode — for offline drain when Supabase is broken/overloaded.
+# When enabled, ALL supa_upsert calls are no-ops (return success) and resolve_team_ids
+# returns from cache only. SQLite mirror gets full data; nothing goes to cloud.
+# Useful for: (a) local-only experimental work, (b) emergency drain when Supabase
+# is having an outage. Re-running loader without flag once Supabase recovers will
+# upsert all missing rows from JSONs.
+NO_SUPABASE = os.environ.get("FODZE_NO_SUPABASE") in ("1", "true", "yes")
+
+
+# ─── Local SQLite mirror ───────────────────────────────────────────
+
+_LOCAL_DB_INITIALIZED = False
+
+
+def _init_local_db():
+    """Create SQLite tables mirroring Supabase schema. Idempotent."""
+    global _LOCAL_DB_INITIALIZED
+    if _LOCAL_DB_INITIALIZED:
+        return
+    LOCAL_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(LOCAL_DB_PATH, timeout=30.0)
+    cur = con.cursor()
+    # WAL mode = concurrent read + serialized writes without long-locks.
+    # Required when multiple parallel backfill instances share this DB.
+    # synchronous=NORMAL is the WAL-mode default + 2-3× faster than FULL,
+    # safe under crash (only loses last few committed transactions, not
+    # the whole DB). For a mirror this is acceptable since the source-of-
+    # truth is the JSONs on disk anyway.
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    # Schema: column-types are loose (TEXT/INTEGER/REAL) — SQLite is dynamic-
+    # typed anyway. PKs match the UNIQUE constraints in Supabase so INSERT OR
+    # REPLACE gives idempotency identical to PostgREST upsert.
+    cur.executescript("""
+    CREATE TABLE IF NOT EXISTS sofascore_match_statistics (
+        game_id INTEGER, is_home INTEGER, period TEXT,
+        ball_possession_pct REAL, expected_goals REAL,
+        big_chances INTEGER, big_chances_missed INTEGER,
+        total_shots INTEGER, shots_on_target INTEGER, shots_off_target INTEGER,
+        blocked_shots INTEGER, shots_inside_box INTEGER, shots_outside_box INTEGER,
+        hit_woodwork INTEGER, corner_kicks INTEGER, free_kicks INTEGER,
+        offsides INTEGER, goalkeeper_saves INTEGER, goalkeeper_saves_inside_box INTEGER,
+        goals_prevented REAL,
+        passes_total INTEGER, passes_accurate INTEGER, pass_accuracy_pct REAL,
+        long_balls_accurate INTEGER, long_balls_total INTEGER,
+        crosses_accurate INTEGER, crosses_total INTEGER,
+        ground_duels_won INTEGER, ground_duels_total INTEGER,
+        aerial_duels_won INTEGER, aerial_duels_total INTEGER,
+        dribbles_won INTEGER, dribbles_attempted INTEGER,
+        tackles_total INTEGER, tackles_won INTEGER,
+        interceptions INTEGER, recoveries INTEGER, clearances INTEGER,
+        errors_lead_to_shot INTEGER, errors_lead_to_goal INTEGER,
+        fouls INTEGER, yellow_cards INTEGER, red_cards INTEGER,
+        raw_extras TEXT,
+        PRIMARY KEY (game_id, is_home, period)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_player_match_stats (
+        game_id INTEGER, player_id INTEGER, team_id INTEGER, is_home INTEGER,
+        is_starter INTEGER, is_captain INTEGER, player_name TEXT,
+        position TEXT, jersey_number INTEGER,
+        rating REAL, minutes_played INTEGER, goals INTEGER, assists INTEGER,
+        expected_goals REAL, expected_assists REAL,
+        shots_total INTEGER, shots_on_target INTEGER, shots_off_target INTEGER,
+        shots_blocked INTEGER,
+        passes_total INTEGER, passes_accurate INTEGER, pass_accuracy_pct REAL,
+        key_passes INTEGER,
+        long_balls_total INTEGER, long_balls_accurate INTEGER,
+        crosses_total INTEGER, crosses_accurate INTEGER,
+        touches INTEGER, dribbles_won INTEGER, dribbles_attempted INTEGER,
+        was_dispossessed INTEGER,
+        tackles_won INTEGER, interceptions INTEGER, clearances INTEGER,
+        duels_total INTEGER, duels_won INTEGER,
+        aerial_duels_total INTEGER, aerial_duels_won INTEGER,
+        blocks INTEGER, fouls_committed INTEGER, fouls_drawn INTEGER,
+        saves INTEGER, saves_inside_box INTEGER,
+        raw_extras TEXT,
+        PRIMARY KEY (game_id, player_id)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_incidents (
+        game_id INTEGER, incident_idx INTEGER,
+        incident_type TEXT, minute INTEGER, added_minute INTEGER, period TEXT,
+        is_home INTEGER, team_id INTEGER, player_id INTEGER, player_name TEXT,
+        related_player_id INTEGER, related_player_name TEXT,
+        goal_type TEXT, card_color TEXT, card_reason TEXT,
+        scoring_team_score INTEGER, conceding_team_score INTEGER,
+        raw_extras TEXT,
+        PRIMARY KEY (game_id, incident_idx)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_average_positions (
+        game_id INTEGER, player_id INTEGER, team_id INTEGER, is_home INTEGER,
+        avg_x REAL, avg_y REAL, points_count INTEGER,
+        PRIMARY KEY (game_id, player_id)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_match_managers (
+        game_id INTEGER, is_home INTEGER,
+        manager_id INTEGER, manager_name TEXT, manager_short_name TEXT,
+        manager_slug TEXT, raw_extras TEXT,
+        PRIMARY KEY (game_id, is_home)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_pregame_form (
+        game_id INTEGER, is_home INTEGER,
+        avg_rating REAL, league_position INTEGER, league_value INTEGER,
+        label TEXT, form TEXT, raw_extras TEXT,
+        PRIMARY KEY (game_id, is_home)
+    );
+    CREATE TABLE IF NOT EXISTS sofascore_team_streaks (
+        game_id INTEGER, category TEXT, streak_idx INTEGER,
+        name TEXT, value_text TEXT, value_numerator INTEGER, value_denominator INTEGER,
+        team TEXT, continued INTEGER, raw_extras TEXT,
+        PRIMARY KEY (game_id, category, streak_idx)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pms_player ON sofascore_player_match_stats(player_id);
+    CREATE INDEX IF NOT EXISTS idx_inc_player ON sofascore_incidents(player_id);
+    CREATE INDEX IF NOT EXISTS idx_streaks_name ON sofascore_team_streaks(name);
+    """)
+    con.commit()
+    con.close()
+    _LOCAL_DB_INITIALIZED = True
+
+
+def local_upsert(rows: list[dict], table: str) -> int:
+    """INSERT OR REPLACE rows into local SQLite mirror. Returns rows written.
+
+    Robust under concurrency: timeout=30s lets sqlite3 wait on a busy lock
+    instead of immediate-error, and retry-on-busy handles the rare case where
+    the WAL-checkpoint races. Used by parallel backfill instances writing the
+    same DB file.
+    """
+    if not rows or not LOCAL_MIRROR:
+        return 0
+    _init_local_db()
+    rows = _normalize_keys(rows)
+    cols = sorted(rows[0].keys())
+    placeholders = ",".join("?" for _ in cols)
+    sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({placeholders})"
+    payload = [
+        tuple(json.dumps(r.get(c), default=str) if isinstance(r.get(c), (dict, list))
+              else r.get(c)
+              for c in cols)
+        for r in rows
+    ]
+    last_err = None
+    for attempt in range(5):
+        con = sqlite3.connect(LOCAL_DB_PATH, timeout=30.0)
+        try:
+            con.executemany(sql, payload)
+            con.commit()
+            return len(rows)
+        except sqlite3.OperationalError as e:
+            last_err = e
+            if "locked" in str(e).lower() or "busy" in str(e).lower():
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+        finally:
+            con.close()
+    print(f"  ⚠ local_upsert {table}: gave up after 5 retries: {last_err}", file=sys.stderr)
+    return 0
 
 
 # ─── Generic helpers ───────────────────────────────────────────────
@@ -665,6 +848,13 @@ _TEAM_ID_CACHE: dict[int, dict[bool, int]] = {}
 def resolve_team_ids(game_id: int) -> dict[bool, int]:
     if game_id in _TEAM_ID_CACHE:
         return _TEAM_ID_CACHE[game_id]
+    if NO_SUPABASE:
+        # In local-only mode, skip Supabase fetch — return zeros; the local
+        # SQLite mirror's player_match_stats team_id will be 0. When Supabase
+        # is back, a re-run will populate from sofascore_match.
+        ids = {True: 0, False: 0}
+        _TEAM_ID_CACHE[game_id] = ids
+        return ids
     url = f"{SUPA_URL}/rest/v1/sofascore_match?game_id=eq.{game_id}&select=home_team_id,away_team_id"
     req = urllib.request.Request(
         url,
@@ -702,9 +892,27 @@ def _normalize_keys(rows: list[dict]) -> list[dict]:
     return rows
 
 
+# Circuit breaker state — module-level so consecutive supa_upsert calls share it.
+# When DB is overloaded (PostgREST timeouts), we don't want to wait 60s on EVERY
+# subsequent upsert call (that's the 2h-hang bug observed 2026-05-10 02:00).
+# Instead, after N consecutive failures, abort the entire load run cleanly so
+# the wrapper can sleep + retry the chunk later.
+_supa_consec_failures = 0
+_SUPA_FAIL_LIMIT = 5  # abort after this many consecutive timeouts/errors
+
+
+class SupaOverloadError(Exception):
+    """Raised when too many consecutive Supabase failures — caller should abort."""
+    pass
+
+
 def supa_upsert(rows: list[dict], table: str, on_conflict: str, *, dry: bool = False, chunk: int = 500) -> tuple[int, int]:
+    global _supa_consec_failures
     if not rows:
         return 0, 0
+    if NO_SUPABASE:
+        # Local-only mode — pretend success, SQLite mirror takes over
+        return len(rows), 0
     rows = _normalize_keys(rows)
     if dry:
         return len(rows), 0
@@ -726,18 +934,38 @@ def supa_upsert(rows: list[dict], table: str, on_conflict: str, *, dry: bool = F
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            # Timeout 15s (was 60s) — for healthy PostgREST, requests complete
+            # in <1s; longer timeout just amplifies the cascade when DB is
+            # overloaded. 15s leaves headroom for slow batches but fails fast
+            # enough to not hang the run.
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 if resp.status in (200, 201, 204):
                     inserted += len(batch)
+                    _supa_consec_failures = 0  # reset on success
                 else:
                     errors += len(batch)
+                    _supa_consec_failures += 1
         except urllib.error.HTTPError as e:
             body_txt = e.read().decode("utf-8", errors="replace")[:300]
             print(f"    HTTP {e.code} on {table}: {body_txt}", file=sys.stderr)
             errors += len(batch)
+            # 5xx are typically transient overload — count toward circuit breaker.
+            # 4xx are usually data-shape problems — don't trip the breaker on those.
+            if 500 <= e.code < 600:
+                _supa_consec_failures += 1
+            # else: don't increment, the data is the problem not the DB
         except Exception as e:
             print(f"    {type(e).__name__}: {e}", file=sys.stderr)
             errors += len(batch)
+            _supa_consec_failures += 1
+
+        # Circuit-breaker check — abort if too many consecutive failures
+        if _supa_consec_failures >= _SUPA_FAIL_LIMIT:
+            raise SupaOverloadError(
+                f"{_supa_consec_failures} consecutive Supabase failures — "
+                f"aborting to avoid hours-long timeout cascade. Re-run later "
+                f"after Supabase recovers."
+            )
     return inserted, errors
 
 
@@ -786,21 +1014,31 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if ms_rows:
         ms_ins, ms_err = supa_upsert(ms_rows, "sofascore_match_statistics",
                                      "game_id,is_home,period", dry=dry)
+        local_upsert(ms_rows, "sofascore_match_statistics")
         if verbose:
             print(f"  match_stats: {ms_ins}/{len(ms_rows)} (errs {ms_err})")
 
     # 2. Player stats — back-fill team_id from sofascore_match
+    # Storage-saver: SKIP_PLAYER_STATS skips the upsert (this table is 36 KB/game
+    # = 60% of v1+v2 storage cost). State flag still gets set TRUE if `lineups`
+    # was successfully fetched, so v2_complete logic is unaffected.
     team_ids = resolve_team_ids(game_id)
     ps_rows = project_player_stats(payload.get("lineups") or {}, game_id)
     for r in ps_rows:
         if not r.get("team_id"):
             r["team_id"] = team_ids.get(r["is_home"], 0)
-    has_lineups = len(ps_rows) > 0
+    has_lineups = "lineups" in payload  # attempted, regardless of skip
     if ps_rows:
-        ps_ins, ps_err = supa_upsert(ps_rows, "sofascore_player_match_stats",
-                                     "game_id,player_id", dry=dry)
-        if verbose:
-            print(f"  player_stats: {ps_ins}/{len(ps_rows)} (errs {ps_err})")
+        if not SKIP_PLAYER_STATS:
+            ps_ins, ps_err = supa_upsert(ps_rows, "sofascore_player_match_stats",
+                                         "game_id,player_id", dry=dry)
+            if verbose:
+                print(f"  player_stats: {ps_ins}/{len(ps_rows)} (errs {ps_err})")
+        elif verbose:
+            print(f"  player_stats: Supabase SKIPPED, mirrored locally ({len(ps_rows)} rows)")
+        # Always mirror locally — this is the user's safety-net for the
+        # skipped Supabase table (and equally useful when not skipped).
+        local_upsert(ps_rows, "sofascore_player_match_stats")
 
     # 3. Incidents
     inc_rows = project_incidents(payload.get("incidents") or {}, game_id)
@@ -808,6 +1046,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if inc_rows:
         inc_ins, inc_err = supa_upsert(inc_rows, "sofascore_incidents",
                                        "game_id,incident_idx", dry=dry)
+        local_upsert(inc_rows, "sofascore_incidents")
         if verbose:
             print(f"  incidents: {inc_ins}/{len(inc_rows)} (errs {inc_err})")
 
@@ -818,6 +1057,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if avg_rows:
         avg_ins, avg_err = supa_upsert(avg_rows, "sofascore_average_positions",
                                        "game_id,player_id", dry=dry)
+        local_upsert(avg_rows, "sofascore_average_positions")
         if verbose:
             print(f"  avg_positions: {avg_ins}/{len(avg_rows)} (errs {avg_err})")
 
@@ -834,6 +1074,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if mgr_rows:
         mgr_ins, mgr_err = supa_upsert(mgr_rows, "sofascore_match_managers",
                                        "game_id,is_home", dry=dry)
+        local_upsert(mgr_rows, "sofascore_match_managers")
         if verbose:
             print(f"  managers: {mgr_ins}/{len(mgr_rows)} (errs {mgr_err})")
 
@@ -843,6 +1084,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if pgf_rows:
         pgf_ins, pgf_err = supa_upsert(pgf_rows, "sofascore_pregame_form",
                                        "game_id,is_home", dry=dry)
+        local_upsert(pgf_rows, "sofascore_pregame_form")
         if verbose:
             print(f"  pregame_form: {pgf_ins}/{len(pgf_rows)} (errs {pgf_err})")
 
@@ -852,6 +1094,7 @@ def load_file(path: Path, *, dry: bool, verbose: bool = False) -> dict[str, int]
     if streak_rows:
         s_ins, s_err = supa_upsert(streak_rows, "sofascore_team_streaks",
                                    "game_id,category,streak_idx", dry=dry)
+        local_upsert(streak_rows, "sofascore_team_streaks")
         if verbose:
             print(f"  team_streaks: {s_ins}/{len(streak_rows)} (errs {s_err})")
 
@@ -883,10 +1126,52 @@ def main():
     p.add_argument("--game-id", type=int, help="single game")
     p.add_argument("--dry", action="store_true")
     p.add_argument("--verbose", action="store_true")
+    p.add_argument("--skip-player-stats", action="store_true",
+                   help="(default ON since 2026-05-18, free-tier 500 MB limit) skip "
+                        "sofascore_player_match_stats inserts to Supabase. Local SQLite "
+                        "mirror always retains the data — this only affects cloud copy.")
+    p.add_argument("--include-player-stats", action="store_true",
+                   help="opt-in override: write player_match_stats to Supabase. "
+                        "WARNING: adds ~190 MB · only safe on Pro plan.")
+    p.add_argument("--no-local-mirror", action="store_true",
+                   help="disable SQLite local mirror (default: ON, writes to "
+                        "tools/sofascore/data/local_extras.db).")
+    p.add_argument("--no-supabase", action="store_true",
+                   help="skip ALL Supabase calls (offline drain mode). Writes "
+                        "only to SQLite + JSONs on disk. Use when Supabase is "
+                        "down/overloaded. Re-run without flag later to push to cloud.")
+    p.add_argument("--since-mtime", type=int, default=0,
+                   help="when used with --all, only load JSON files whose mtime is newer "
+                        "than NOW - SECONDS. Default 0 = no filter (load all). "
+                        "Used by sync-sofascore-extras.mjs to avoid re-projecting all cached "
+                        "JSONs every chunk (linear slowdown problem on bulk backfill).")
     args = p.parse_args()
 
     if not (args.all or args.game_id):
         p.error("use --all or --game-id N")
+
+    # Allow CLI to override env flag (CLI = stronger signal)
+    global SKIP_PLAYER_STATS, LOCAL_MIRROR, NO_SUPABASE
+    # SKIP_PLAYER_STATS defaults True (since 2026-05-18, free-tier safety).
+    # --include-player-stats overrides for Pro-plan users.
+    if args.include_player_stats:
+        SKIP_PLAYER_STATS = False
+    elif args.skip_player_stats:
+        SKIP_PLAYER_STATS = True   # redundant w/ default but allows explicit CLI
+    if args.no_local_mirror:
+        LOCAL_MIRROR = False
+    if args.no_supabase:
+        NO_SUPABASE = True
+    if SKIP_PLAYER_STATS:
+        print("⚠ player_match_stats inserts SKIPPED to Supabase (storage-saver mode · default since 2026-05-18)")
+    else:
+        print("ℹ player_match_stats WILL be written to Supabase (~190 MB · Pro plan recommended)")
+    if NO_SUPABASE:
+        print("⚠ Supabase SKIPPED — local-only mode (SQLite + JSONs)")
+    if LOCAL_MIRROR:
+        print(f"📁 Local SQLite mirror ON → {LOCAL_DB_PATH.relative_to(REPO_ROOT)}")
+    else:
+        print("⚠ Local SQLite mirror DISABLED")
 
     if args.game_id:
         path = DATA_DIR / f"{args.game_id}.json"
@@ -895,16 +1180,40 @@ def main():
             sys.exit(1)
         files = [path]
     else:
-        files = sorted(DATA_DIR.glob("*.json"))
-        if not files:
+        all_files = sorted(DATA_DIR.glob("*.json"))
+        if not all_files:
             print(f"No JSONs in {DATA_DIR}", file=sys.stderr)
             return
+        # --since-mtime: filter to recently-modified JSONs only. This avoids
+        # re-projecting all cached JSONs on every chunk during bulk backfill
+        # (without filter, chunk N processes ~N × chunk_size files = O(N²)).
+        # With filter, each chunk processes only newly-fetched files = O(N).
+        if args.since_mtime > 0:
+            cutoff = time.time() - args.since_mtime
+            files = [f for f in all_files if f.stat().st_mtime >= cutoff]
+            print(f"📁 Filtered: {len(files)}/{len(all_files)} JSONs (mtime within "
+                  f"{args.since_mtime}s)")
+            if not files:
+                print(f"  No new JSONs to load — skip.")
+                return
+        else:
+            files = all_files
 
     total = {"match_stats": 0, "player_stats": 0, "incidents": 0, "avg_pos": 0,
              "managers": 0, "pregame_form": 0, "team_streaks": 0}
     t0 = time.time()
+    aborted = False
     for i, f in enumerate(files, 1):
-        counts = load_file(f, dry=args.dry, verbose=args.verbose)
+        try:
+            counts = load_file(f, dry=args.dry, verbose=args.verbose)
+        except SupaOverloadError as e:
+            print(f"\n✗ ABORTING load: {e}", file=sys.stderr)
+            print(f"  Processed {i-1}/{len(files)} JSONs before circuit-breaker tripped.",
+                  file=sys.stderr)
+            print(f"  JSONs remain on disk; re-run loader once Supabase recovers.",
+                  file=sys.stderr)
+            aborted = True
+            sys.exit(2)
         for k, v in counts.items():
             total[k] += v
         if i % 25 == 0 or args.verbose:
