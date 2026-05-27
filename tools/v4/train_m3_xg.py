@@ -253,6 +253,7 @@ def main() -> int:
         "since": args.since,
         "leagues": leagues if leagues else "ALL",
         "n_models": args.n_models,
+        "n_train_matches": len(matches),
         "features_locked": bool(args.features_locked),
         "n_features": len(active_numeric),
         "feature_names": active_numeric + ["league"],
