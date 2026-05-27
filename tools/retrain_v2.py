@@ -117,6 +117,11 @@ FEATURE_NAMES = [
     "shot_quality_diff",        # 19: avg xGoals per shot diff (season-level, dominance)
     "high_value_shot_share_diff", # 20: % of shots with xGoals >= 0.15 diff (season-level)
 ]
+# NOTE 2026-05-11: 3 velocity features from feature_lab batch-1 (xg_diff_velocity_long_home,
+# _short_home, xga_velocity_long_home) passed diagnostic gates (partR² 0.0055-0.0118, drift
+# < 0.10, league-stable) BUT failed current-season Brier check (-0.008 Brier on n=5505 OOT,
+# Supabase mode). Per feature_lab README: features that pass step 1 but fail step 3 go
+# BACK to feature_lab. Reverted from FEATURE_NAMES + MONO_HOME/AWAY + feature loop.
 
 # Monotonic constraints: +1 = increasing, -1 = decreasing, 0 = none
 # shot_quality: +1/-1 (higher quality shots → more goals)
