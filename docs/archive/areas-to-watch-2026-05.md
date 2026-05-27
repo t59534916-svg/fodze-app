@@ -92,3 +92,63 @@ Common patterns from the archived experiments:
 4. **All five**: tree-feature additions of derived statistics on team-quality data are info-redundant with lean's mean-feature set
 
 The Bootstrap-Validation-Before-Training methodology (dev-08 Phase A Step 2) is the operational lesson — never ship a model based on single-seed Brier-improvement again.
+
+### Sofa Phase-2 multi-season backfill sprint — ops empirical findings (2026-05-26 → 2026-05-27)
+
+**Outcome**: per-season slim-3 (statistics + lineups + average_positions) endpoint
+coverage brought from baseline (22/23 45%, 23/24 92%, 24/25 97%, 25/26 100%) to
+**near-complete (95-97% across all 4 seasons)**. +5,404 enriched cache JSONs added
+in 26 hours of compute via three sequential chain runs.
+
+**Run sequence + empirical capacity**:
+
+| Run | Start | Mode | Games attempted | Successful | Duration |
+|---|---|---|---|---|---|
+| **chain v1** (Mac-IP direct) | 2026-05-26 12:27 | curl_cffi chrome124, no proxy | 3,710 | **598** | ~25 min before CF block |
+| **chain v2** (Webshare 30-IP) | 2026-05-26 12:59 | proxy rotation | 4,178 | **~3,110** | 4.5h, killed at pool burnout |
+| **chain v3** (Webshare after 17h cool-down) | 2026-05-27 11:00 | proxy rotation | 597 of 706 | **~499** | killed at game 597 |
+
+**Key empirical findings**:
+
+1. **Mac-IP-direct works in bursts but does NOT sustain.** ~600 games max before
+   CF flags the user-IP. Appropriate for lineup-fetcher use (N=10-50 games/hour);
+   useless for backfills (N=1000+).
+
+2. **Webshare 30-IP pool capacity DIMINISHES per cycle.** First fresh-burst
+   sustained ~2,500-3,000 games; after 17h cool-down only ~500 before dead.
+   Each cycle on the same pool reduces effective capacity — Sofa CF appears to
+   memorize IP fingerprints across days.
+
+3. **17h cool-down is insufficient.** Pool needs **days** to fully recover, not
+   hours. The 6-12h heuristic in earlier docs was over-optimistic.
+
+4. **No false-rotation behavior.** Script's proxy rotation triggers on 407 errors
+   but timeouts (curl 28) don't fire rotation. Pool can be "dead" while script
+   thinks it's still working — silent throughput death. Manual kill required when
+   `last 30 games = 0% success`.
+
+5. **Forward path for last 1-3% coverage gap** — only viable paths:
+   - **$25/mo Webshare Rotating-Residential plan** — unlimited fresh IPs, ~1-2h
+     to reach 100%
+   - **Hetzner VM with fresh IP** — one-shot solution, ~$5
+   - **Week-long retry** with free 30-IP pool — risky, may still hit diminishing
+     capacity
+   - **Accept 95-97% as "good enough"** — gaps uniformly distributed, no Liga-bias,
+     <3% of corpus; engine training already well-served
+
+**Verdict**: 96-97% multi-season Phase-2 coverage is **the achievable ceiling on
+free-tier proxy resources**. Last few percentage points cost more than they're
+worth for engine training (per Phase-A+B ablation 2026-05-21 which found
+sofa-extras-features are not independent signals beyond xG-history-derived
+lean features).
+
+**Reusable artifacts**:
+- `tools/sofascore/run_sofa_backfill_chain.sh` — 3-stage sequential chain
+  orchestrator with 90s cool-downs
+- `tools/sofascore/logs/chain-webshare-*.log` — per-run metadata (start, stage
+  transitions, kill timestamps)
+- `tools/sofascore/logs/sofa-{2223,2324,2425}-slim3-webshare-*.log` — per-stage
+  game-by-game output with success/failure markers
+
+**Tasks**: D-4 (chain v1), D-5 (chain v2), D-6 (chain v3) — all marked completed
+with PARTIAL status in task list.
