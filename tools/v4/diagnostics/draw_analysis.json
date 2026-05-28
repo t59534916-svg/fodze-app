@@ -1,0 +1,98 @@
+{
+  "n": 6868,
+  "actual_draw_rate": 0.2582993593476995,
+  "engines": {
+    "dev-03": {
+      "tip_x_rate": 0.0010192195690157252,
+      "mean_p_draw": 0.26374259534438416,
+      "max_p_draw": 0.35837532741123623,
+      "actual_draw_rate": 0.2582993593476995,
+      "draw_brier": 0.19058477762774143,
+      "calibration_gap": 0.00544323599668467,
+      "tip_h_rate": 0.6611822947000583,
+      "tip_a_rate": 0.337798485730926
+    },
+    "dev-09": {
+      "tip_x_rate": 0.000728013977868375,
+      "mean_p_draw": 0.2624269348226774,
+      "max_p_draw": 0.35813849449794066,
+      "actual_draw_rate": 0.2582993593476995,
+      "draw_brier": 0.19034143879813972,
+      "calibration_gap": 0.00412757547497794,
+      "tip_h_rate": 0.6821490972626675,
+      "tip_a_rate": 0.3171228887594642
+    },
+    "Blend": {
+      "tip_x_rate": 0.00014560279557367502,
+      "mean_p_draw": 0.2644084516463006,
+      "max_p_draw": 0.3417586582229417,
+      "actual_draw_rate": 0.2582993593476995,
+      "draw_brier": 0.190240661633683,
+      "calibration_gap": 0.0061090922986011265,
+      "tip_h_rate": 0.6932149097262668,
+      "tip_a_rate": 0.30663948747815956
+    }
+  },
+  "draw_reliability_blend": [
+    {
+      "bin": "0.00-0.20",
+      "n": 507,
+      "pred": 0.16527535984493194,
+      "actual": 0.14003944773175542
+    },
+    {
+      "bin": "0.20-0.24",
+      "n": 739,
+      "pred": 0.22346111821765494,
+      "actual": 0.23410013531799728
+    },
+    {
+      "bin": "0.24-0.27",
+      "n": 1921,
+      "pred": 0.25841920994213846,
+      "actual": 0.24726704841228528
+    },
+    {
+      "bin": "0.27-0.30",
+      "n": 2879,
+      "pred": 0.28350545763069107,
+      "actual": 0.28968391802709276
+    },
+    {
+      "bin": "0.30-0.33",
+      "n": 801,
+      "pred": 0.30881049427925217,
+      "actual": 0.26841448189762795
+    },
+    {
+      "bin": "0.33-1.00",
+      "n": 21,
+      "pred": 0.3348643508226897,
+      "actual": 0.2857142857142857
+    }
+  ],
+  "close_game_blend": [
+    {
+      "bucket": "sehr ausgeglichen <0.2",
+      "n": 1732,
+      "mean_p_draw": 0.2892511014365554,
+      "actual_draw_rate": 0.2806004618937644,
+      "tip_x_rate": 0.0005773672055427252
+    },
+    {
+      "bucket": "ausgeglichen 0.2-0.5",
+      "n": 2146,
+      "mean_p_draw": 0.28280223352389,
+      "actual_draw_rate": 0.27586206896551724,
+      "tip_x_rate": 0.0
+    },
+    {
+      "bucket": "klar >0.5",
+      "n": 2990,
+      "mean_p_draw": 0.23681630270114068,
+      "actual_draw_rate": 0.23277591973244147,
+      "tip_x_rate": 0.0
+    }
+  ],
+  "verdict": "PROBABILITY OK \u2014 Blend \u00d8 P(X) 0.264 \u2248 Ist 0.258 (Gap +0.006). Das 'keine Remis'-Problem ist ein ARGMAX-Artefakt, kein Modellfehler. Remis sind als WAHRSCHEINLICHKEIT korrekt \u2014 nur selten das Einzelmaximum."
+}
