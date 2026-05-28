@@ -234,10 +234,8 @@ export default function HealthPage() {
         { name: "pipeline_shadow_log", dateCol: "predicted_at", expectMin: 100, stubCheck: false },
         // ─── Metadata / discipline ─────────────────────────────────
         { name: "team_metadata", dateCol: "last_updated", expectMin: 100, stubCheck: false },
-        { name: "stadiums", dateCol: "last_updated", expectMin: 100, stubCheck: true,
-          stubReason: "altitude_m 0% populated, capacity 30% join coverage" },
-        { name: "referees", dateCol: "last_updated", expectMin: 100, stubCheck: true,
-          stubReason: "fouls_per_game NULL all rows, 1 distinct home_yellow_bias value" },
+        // stadiums + referees DROPPED 2026-05-28 — verified leakage baggage,
+        // not wired as engine features. Ingest scripts in scripts/_archive/.
         { name: "player_xg_history", dateCol: "last_updated", expectMin: 100, stubCheck: false,
           note: "Top-5 leagues only" },
         // ─── Sofascore pipeline (v1 = shotmap + extras since 2026-04-29) ──

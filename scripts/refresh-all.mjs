@@ -13,8 +13,8 @@
  *   2. settle completed bets         — fetch-results for any pending bets
  *   3. Liga 3 OpenLigaDB backfill    — catches last matchday's results
  *   4. sync-sofascore                — Tier-A shot events (incl. xG)
- *   5. bridge-sofascore              — propagate sofascore → team_xg_history
- *   6. referees (opt-in)             — FBref scrape per league
+ *   5. rolling-8-refresh             — REFRESH MATERIALIZED VIEW CONCURRENTLY
+ *   6. bridge-sofascore              — propagate sofascore → team_xg_history
  *   7. generate-matchday × 19        — enriched + seeded matchdays
  *   8. retro-enrich latest matchdays — fills any remaining form/tag gaps
  *   9. audit-data-quality            — final green/red summary
@@ -40,7 +40,6 @@
  *                                                # seeded by an earlier crashed run
  *                                                # (progress file < 6h old)
  *   node scripts/refresh-all.mjs --injuries      # include Transfermarkt injury scrape
- *   node scripts/refresh-all.mjs --referees      # include FBref referee-stats scrape
  *   node scripts/refresh-all.mjs --extras        # include Sofascore post-match extras
  *                                                # (stats + lineups + incidents + avg-positions)
  *                                                # — capped via FODZE_EXTRAS_MAX=N (default 50)
@@ -91,11 +90,11 @@ const RESUME = args.includes("--resume");
 // Transfermarkt scrape. Adds ~3s/team but populates the `injuries` field
 // the absence-parser + calcAbsenceImpact actually use.
 const WITH_INJURIES = args.includes("--injuries");
-// Opt-in: scrape FBref schedule pages per league to populate the
-// `referees` table. Adds ~6s/league (rate-limited) = ~2 min for all 19.
-// Matchdays will hydrate match.referee from this table when a pre-match
-// source supplies referee_name.
-const WITH_REFEREES = args.includes("--referees");
+// `--referees` flag removed 2026-05-28. The `referees` table was dropped
+// (verified leakage baggage, never wired as engine feature). The scrape
+// script lives in scripts/_archive/scrape-referees.mjs if someone wants
+// to resurrect; matchday-enrich.mjs already 404-gracefully handles missing
+// referees table.
 // Opt-in: pull Sofascore post-match extras (statistics + lineups +
 // incidents + avg-positions) into 4 forever-cached tables. First run is
 // heavy (~5000 games × 4 calls) so it's capped via FODZE_EXTRAS_MAX=N
@@ -293,29 +292,9 @@ const phases = [
     // bridge already wrote the critical features).
     abortOnFail: false,
   },
-  {
-    name: "referees",
-    emoji: "🟨",
-    description: "Referee-Stats per Liga von FBref ziehen",
-    skip: () => !WITH_REFEREES,
-    run: async () => {
-      // Iterate the same LEAGUES list we use for matchdays — non-fatal
-      // per-league failures (league not in FBREF_COMPS, HTML 404, etc.)
-      // just skip that league, rest proceeds.
-      let ok = 0, fail = 0;
-      for (const lg of LEAGUES) {
-        try {
-          await runScript("scripts/scrape-referees.mjs", ["--league", lg], `referees ${lg}`);
-          ok++;
-        } catch (e) {
-          fail++;
-          if (!QUIET) console.warn(`     ⚠ ${lg}: ${e.message}`);
-        }
-      }
-      console.log(`   ${ok}/${LEAGUES.length} Ligen referees geseedet${fail ? ` (${fail} failed)` : ""}`);
-    },
-    abortOnFail: false,
-  },
+  // `referees` phase removed 2026-05-28 — table dropped from DB
+  // (verified leakage baggage, never wired as engine feature).
+  // scripts/scrape-referees.mjs archived to scripts/_archive/.
   {
     name: "matchdays",
     emoji: "📅",
