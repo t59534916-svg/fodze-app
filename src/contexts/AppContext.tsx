@@ -9,6 +9,7 @@ import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
 import { loadV3Model } from "@/lib/poisson-ml-engine-v3";
 import { loadDev03Model, validateDev03GoldenTests } from "@/lib/dev03-runtime";
 import { loadFeatureCache } from "@/lib/dev03-features";
+import { ensureDev03Worker } from "@/lib/dev03-worker-client";
 import { loadBenterWeights, setBenterMode } from "@/lib/benter-blend";
 import { loadFootBayesPosteriors } from "@/lib/footbayes-engine";
 import { loadConformalQuantiles, setConformalMode } from "@/lib/conformal-gate";
@@ -120,6 +121,16 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
         if (golden.failed > 0) {
           console.warn(`[FODZE] dev-03 golden test failures: ${golden.failed}/${golden.passed + golden.failed}`);
         }
+        // Pre-spawn the dev-03 Web Worker + load model into its private
+        // module state. Off-main-thread predict path = React stays smooth
+        // even when 40 matches compute concurrently. Fires-and-forgets;
+        // calcMatchDev03Async falls back to sync `dev03Predict` if the
+        // worker isn't ready or unavailable (SSR, tests, CSP).
+        ensureDev03Worker().then(ok => {
+          if (!ok && typeof window !== "undefined") {
+            console.info("[FODZE] dev-03 Worker unavailable — using main-thread predict.");
+          }
+        }).catch(() => { /* swallowed — fallback is sync */ });
       }
     });
     loadModel("/dev03-feature-cache.json", "dev03-cache", cache => {

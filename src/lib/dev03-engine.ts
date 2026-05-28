@@ -40,7 +40,10 @@ import {
   getDev03Rho,
   dev03Predict,
   dev03BenterBlend,
+  type Dev03Prediction,
+  type Dev03FeatureInput,
 } from "./dev03-runtime";
+import { dev03PredictAsync } from "./dev03-worker-client";
 import {
   isFeatureCacheLoaded,
   buildDev03Features,
@@ -84,29 +87,68 @@ export interface Dev03EngineInput {
  * The MatchdayContext fallback wires this to ensemble when null.
  */
 export function calcMatchDev03(input: Dev03EngineInput): MatchCalc | null {
-  // ── 0. Hard-fail guards ─────────────────────────────────────────
-  if (!isDev03ModelLoaded() || !isFeatureCacheLoaded()) return null;
+  const stage1 = _prepareStage(input);
+  if (!stage1) return null;
+  const pred = dev03Predict(stage1.features);
+  if (!pred) return null;
+  return _finishCalc(input, pred);
+}
 
+/**
+ * Async variant of `calcMatchDev03`. Off-main-thread predict via the
+ * dev-03 Web Worker (falls back to sync `dev03Predict` if the worker is
+ * unavailable — SSR, tests, CSP-blocked envs).
+ *
+ * Use this when computing a whole matchday to keep the React render
+ * thread responsive. Single-match call sites can also use this safely
+ * (postMessage round-trip is microsecond-fast).
+ *
+ * Identical output to sync `calcMatchDev03` for the same input — the
+ * worker hosts the same dev03-runtime module; prediction math is
+ * byte-equivalent.
+ */
+export async function calcMatchDev03Async(
+  input: Dev03EngineInput,
+): Promise<MatchCalc | null> {
+  const stage1 = _prepareStage(input);
+  if (!stage1) return null;
+  const pred = await dev03PredictAsync(stage1.features);
+  if (!pred) return null;
+  return _finishCalc(input, pred);
+}
+
+interface Stage1 {
+  features: Dev03FeatureInput;
+}
+
+/** Guards + feature build (sync, fast). Shared by sync + async paths. */
+function _prepareStage(input: Dev03EngineInput): Stage1 | null {
+  if (!isDev03ModelLoaded() || !isFeatureCacheLoaded()) return null;
   const hHasHistory = input.hHistory && input.hHistory.length > 0;
   const aHasHistory = input.aHistory && input.aHistory.length > 0;
   if (!hHasHistory || !aHasHistory) return null;
+  const features = buildDev03Features({
+    homeTeam: input.homeTeam,
+    awayTeam: input.awayTeam,
+    league: input.league,
+    hHistory: input.hHistory!,
+    aHistory: input.aHistory!,
+  });
+  return { features };
+}
 
+/**
+ * Given an input + finished prediction, build the full MatchCalc.
+ *
+ * Called by both `calcMatchDev03` (sync, after `dev03Predict`) and
+ * `calcMatchDev03Async` (async, after `dev03PredictAsync`). Single
+ * source of truth for the post-prediction pipeline.
+ */
+function _finishCalc(input: Dev03EngineInput, pred: Dev03Prediction): MatchCalc | null {
   const {
-    league, homeTeam, awayTeam,
-    hHistory, aHistory,
-    odds, fraction, sharpOdds, options,
+    league, odds, fraction, sharpOdds, options,
     shieldVetoes,
   } = input;
-
-  // ── 1. Build 17-feature input ───────────────────────────────────
-  const features = buildDev03Features({
-    homeTeam, awayTeam, league,
-    hHistory: hHistory!, aHistory: aHistory!,
-  });
-
-  // ── 2. Bayesian Ensemble forward pass → λ + variance ────────────
-  const pred = dev03Predict(features);
-  if (!pred) return null;
 
   const lambdaH = pred.lambdaH_mean;
   const lambdaA = pred.lambdaA_mean;
