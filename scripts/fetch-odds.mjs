@@ -20,6 +20,7 @@
  */
 
 import { fetchOddsApi, oddsKeyState } from "./_lib/odds-api.mjs";
+import { fetchWithRetry } from "./_lib/fetch-retry.mjs";
 
 // Map FODZE league keys → The-Odds-API sport keys
 const LEAGUE_MAP = {
@@ -211,13 +212,16 @@ async function upsertToSupabase(league, odds) {
     fetched_at: new Date().toISOString(),
   }));
 
-  // Delete existing odds for this league, then insert fresh
-  await fetch(`${SUPA_URL}/rest/v1/live_odds?league=eq.${league}`, {
+  // Delete existing odds for this league, then insert fresh. Retry the
+  // DELETE too — a silently-failed DELETE before the POST would leave stale
+  // + fresh rows side-by-side (live_odds has no UNIQUE guard), so retrying
+  // transient 503/DNS-race failures is correctness, not just resilience.
+  await fetchWithRetry(`${SUPA_URL}/rest/v1/live_odds?league=eq.${league}`, {
     method: "DELETE",
     headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
-  });
+  }, { label: `live_odds DELETE ${league}` });
 
-  const resp = await fetch(`${SUPA_URL}/rest/v1/live_odds`, {
+  const resp = await fetchWithRetry(`${SUPA_URL}/rest/v1/live_odds`, {
     method: "POST",
     headers: {
       apikey: SUPA_KEY,
@@ -226,7 +230,7 @@ async function upsertToSupabase(league, odds) {
       Prefer: "return=minimal",
     },
     body: JSON.stringify(rows),
-  });
+  }, { label: `live_odds POST ${league}` });
 
   if (!resp.ok) {
     const txt = await resp.text();
@@ -276,7 +280,7 @@ async function upsertToSupabase(league, odds) {
     })).filter(r => r.odds.h && r.odds._sharp.h);  // skip if no sharp/best baseline
 
     if (snapshotRows.length > 0) {
-      const snapResp = await fetch(`${SUPA_URL}/rest/v1/odds_snapshots`, {
+      const snapResp = await fetchWithRetry(`${SUPA_URL}/rest/v1/odds_snapshots`, {
         method: "POST",
         headers: {
           apikey: SUPA_KEY,
@@ -285,7 +289,7 @@ async function upsertToSupabase(league, odds) {
           Prefer: "return=minimal",
         },
         body: JSON.stringify(snapshotRows),
-      });
+      }, { label: `odds_snapshots POST ${league}` });
       if (!snapResp.ok) {
         const txt = await snapResp.text();
         console.warn(`  ⚠ snapshot append failed: ${snapResp.status} ${txt.slice(0, 200)}`);
@@ -320,12 +324,12 @@ async function upsertFixtures(league, events) {
   }));
 
   // Delete old fixtures for this league, then insert fresh (same pattern as odds)
-  await fetch(`${SUPA_URL}/rest/v1/upcoming_fixtures?league=eq.${league}`, {
+  await fetchWithRetry(`${SUPA_URL}/rest/v1/upcoming_fixtures?league=eq.${league}`, {
     method: "DELETE",
     headers: { apikey: SUPA_KEY, Authorization: `Bearer ${SUPA_KEY}` },
-  });
+  }, { label: `upcoming_fixtures DELETE ${league}` });
 
-  const resp = await fetch(`${SUPA_URL}/rest/v1/upcoming_fixtures`, {
+  const resp = await fetchWithRetry(`${SUPA_URL}/rest/v1/upcoming_fixtures`, {
     method: "POST",
     headers: {
       apikey: SUPA_KEY,
@@ -334,7 +338,7 @@ async function upsertFixtures(league, events) {
       Prefer: "return=minimal",
     },
     body: JSON.stringify(rows),
-  });
+  }, { label: `upcoming_fixtures POST ${league}` });
 
   if (!resp.ok) {
     const txt = await resp.text();

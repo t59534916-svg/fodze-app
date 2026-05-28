@@ -22,6 +22,8 @@ import { readFileSync, existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
+import { fetchWithRetry } from "./_lib/fetch-retry.mjs";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = resolve(__dirname, "..", ".env.local");
 if (existsSync(envPath)) {
@@ -90,18 +92,20 @@ async function getPendingBetsForWindow(windowHours) {
   // overwrites the earlier. Sharp-lines move most in the final 30min, so
   // last-write-wins is more faithful to the "closing" semantic than the
   // previous first-write-wins that locked in whatever we caught first.
-  const resp = await fetch(
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/bets?result=eq.pending&select=*`,
     { headers: SUPA_HEADERS },
+    { label: "GET pending bets" },
   );
   if (!resp.ok) throw new Error(`Supabase GET bets: ${resp.status}`);
   return resp.json();
 }
 
 async function getLiveOdds() {
-  const resp = await fetch(
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/live_odds?select=*`,
     { headers: SUPA_HEADERS },
+    { label: "GET live_odds" },
   );
   if (!resp.ok) throw new Error(`Supabase GET live_odds: ${resp.status}`);
   return resp.json();
@@ -109,13 +113,14 @@ async function getLiveOdds() {
 
 async function updateBet(betId, closingOdds, clv) {
   if (DRY) return;
-  const resp = await fetch(
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/bets?id=eq.${betId}`,
     {
       method: "PATCH",
       headers: { ...SUPA_HEADERS, Prefer: "return=minimal" },
       body: JSON.stringify({ closing_odds: closingOdds, clv }),
     },
+    { label: `PATCH bet ${betId}` },
   );
   if (!resp.ok) {
     console.error(`  ⚠️ PATCH ${betId}: ${resp.status} ${await resp.text()}`);
@@ -151,13 +156,14 @@ async function persistClosingSnapshot(league, matchDate, homeTeam, awayTeam, sha
     psc_under25: sharpU25 > 1 ? sharpU25 : null,
     source: "live-odds-snapshot",
   };
-  const resp = await fetch(
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/odds_closing_history?on_conflict=match_key`,
     {
       method: "POST",
       headers: { ...SUPA_HEADERS, Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify([payload]),
     },
+    { label: `closing-history POST ${fodzeKey}` },
   );
   if (!resp.ok) {
     console.error(`  ⚠️ closing-history persist ${fodzeKey}: ${resp.status} ${await resp.text()}`);
