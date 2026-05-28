@@ -1,0 +1,55 @@
+{
+  "feature": "prior_season_dominance \u2192 conversion adjustment",
+  "n_team_sides": 13736,
+  "n_matches": 6868,
+  "corr_prior_dom_goals": 0.15159638658767344,
+  "corr_prior_dom_lambda": 0.364112146491159,
+  "corr_prior_dom_residual": 0.02373964226841476,
+  "residual_p": 0.005395164635097599,
+  "brier_delta_adj_vs_dev03": -0.00048485225534652076,
+  "brier_delta_p": 0.0022578279417471148,
+  "audits": {
+    "1_sign": {
+      "pass": true,
+      "r_residual": 0.02373964226841476,
+      "p": 0.005395164635097599,
+      "brier_delta": -0.00048485225534652076
+    },
+    "2_holm": {
+      "pass": true,
+      "hypotheses": [
+        {
+          "name": "attack_dominance_resid",
+          "p_raw": 0.005395164635097599,
+          "p_adj": 0.010790329270195197,
+          "significant": 1.0
+        },
+        {
+          "name": "defense_oppdominance_resid",
+          "p_raw": 0.9519391297380696,
+          "p_adj": 0.9519391297380696,
+          "significant": 0.0
+        }
+      ]
+    },
+    "3_leakage": {
+      "pass": true,
+      "note": "prior-season feature + OOT dev-03 + 5-fold out-of-fold \u03b2"
+    },
+    "4_power": {
+      "pass": true,
+      "required_n": 5780,
+      "n": 6868,
+      "power": 0.8630389408538732
+    },
+    "5_roi": {
+      "pass": false,
+      "roi_base": -3.619,
+      "roi_adj": -3.069
+    },
+    "effect_size_sigma": 1.0632724897950017,
+    "noise_floor": 0.000456
+  },
+  "gates_passed": 4,
+  "verdict": "REAL-BUT-NEGLIGIBLE \u2192 NOT production-worthy: 4/5 gates, but Brier-\u0394 -0.00048 = 1.1\u03c3 (\u2248 noise-floor 0.000456) AND G5 ROI still negative. dev-03 already captures dominance (\u03bb\u2194dom r=0.36); residual r=0.024."
+}
