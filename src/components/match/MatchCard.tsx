@@ -24,11 +24,11 @@ function isValidHex(c: string | null | undefined): c is string {
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
 
 // Compact confidence-pill colour for the list view — calibrated tier from the
-// top 1X2 probability (≥65% HOCH/green ~75% hit · 55-65% MITTEL/gold · else grey).
+// top 1X2 probability (≥65% HOCH/green ~73% hit · 55-65% MITTEL/gold · else grey).
 // Mirrors MatchDetail.confidenceTier; validated 2026-05-28 cross-season, see
 // docs/FORECAST-QUALITY-ANALYSIS.md. Lets you scan the list for green = sicher.
 function confColor(p: number): { fg: string; bg: string; border: string; title: string } {
-  if (p >= 0.65) return { fg: "#6aad55", bg: "#6aad5518", border: "#6aad5540", title: "HOCH · histor. ~75% Treffer" };
+  if (p >= 0.65) return { fg: "#6aad55", bg: "#6aad5518", border: "#6aad5540", title: "HOCH · histor. ~73% Treffer" };
   if (p >= 0.55) return { fg: "#c4a265", bg: "#c4a26518", border: "#c4a26540", title: "MITTEL · histor. ~56%" };
   return { fg: "#c4a26585", bg: "transparent", border: "#c4a26522", title: p >= 0.45 ? "NIEDRIG · ~50%" : "TOSS-UP · offen" };
 }

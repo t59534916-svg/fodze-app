@@ -109,7 +109,8 @@ Tiers (Treffer ≈ Anspruch in beiden Saisons):
 | 55–65% | 14% | 56% | 58% |
 | **≥65% (Hoch)** | **10%** | **74.5%** | **70.7%** |
 
-**Selektive Vorhersage:** Top-10% Confidence behalten → ~75%; Top-5% → ~80%.
+**Selektive Vorhersage:** Top-10% Confidence behalten → ~73%; Top-5% → ~78%
+(cross-season; 25/26-Spitze bis 80.6%, 24/25 OOT bis ~77%).
 Zusätzlich liefert dev-03 eine **λ-Varianz** pro Vorhersage + der **Conformal-
 Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 
