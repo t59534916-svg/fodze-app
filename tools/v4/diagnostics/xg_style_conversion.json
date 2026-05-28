@@ -1,0 +1,28 @@
+{
+  "n_team_matches": 27962,
+  "n_teams": 294,
+  "test_A_dominance_vs_own_conv": {
+    "r": 0.26313775872932,
+    "p": 4.796322194388487e-06
+  },
+  "test_B_dominance_vs_conceded_conv": {
+    "r": -0.18116284024576762,
+    "p": 0.0018152136482804107
+  },
+  "test_C_slopes": {
+    "pooled": 0.8261258481775806,
+    "within_team_median": 0.768825702620625,
+    "between_team": 1.110686147386892
+  },
+  "test_D_dominance_persistence_r": 0.7027387402844583,
+  "bayern": {
+    "team": "FC Bayern M\u00fcnchen",
+    "n": 133.0,
+    "dominance": 2.364,
+    "xg_against": 0.932,
+    "own_conv": 1.136,
+    "conc_conv": 1.089,
+    "net_dom": 1.431
+  },
+  "interpretation": "Dominanz\u2192eigene Conversion r=+0.26 (REAL & POSITIV \u2014 dominante Teams \u00dcBER-verwerten); Dominanz\u2192Gegner-Conversion r=-0.18 (Gegner unter-konvertieren ggn. Dominante (Suppression)); Kompression (Slope<1) ist ein WITHIN-game-Effekt (Regression zur Mitte), between-team sogar >1; Dominanz persistiert r=0.70 \u2192 STABIL, also als Conversion-Kondition nutzbar."
+}
