@@ -1,0 +1,14 @@
+# Sofascore scraper dependencies (tools/sofascore/*.py).
+# Pinned to the versions in tools/venv as of 2026-05-28.
+#
+# Install into the shared venv:
+#   tools/venv/bin/pip install -r tools/sofascore/requirements.txt
+#
+# tenacity drives the transient-retry policy in _http_retry.py (HTTP
+# 502/503/504 + network blips → 3 retries with full-jitter backoff; 403/429
+# are NOT retried — they drive Webshare proxy rotation via BlockedError).
+
+curl_cffi==0.13.0            # Chrome-124 TLS-fingerprint HTTP client (CF bypass)
+datafc==2.0.0               # Sofascore match_data / shots_data helpers
+tenacity==9.1.2             # transient-retry policy (_http_retry.py)
+wrapper-tls-requests==1.2.5  # bogdanfinn/tls-client wrapper (import: tls_requests)

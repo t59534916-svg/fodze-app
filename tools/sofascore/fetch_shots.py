@@ -46,6 +46,7 @@ from datafc import match_data, shots_data
 # Local mapping
 sys.path.insert(0, str(Path(__file__).parent))
 from tournament_ids import TOURNAMENT_IDS, TIER_A, TIER_B  # noqa: E402
+from _http_retry import get_with_retry  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "tools" / "sofascore" / "data"
@@ -67,10 +68,20 @@ def resolve_season_id(tournament_id: int, season_label: str, *, http_session) ->
         if cache_hit is not None:
             return cache_hit
 
-    r = http_session.get(
-        f"https://api.sofascore.com/api/v1/unique-tournament/{tournament_id}/seasons",
-        timeout=15,
-    )
+    # Retry transient 5xx / network blips (a flaky season-list fetch would
+    # otherwise skip a whole league's backfill). 403/429 are returned as-is
+    # → the != 200 guard below treats them as "no seasons" (no rotation here:
+    # the season-list path is Mac-IP-direct, CF-free per CLAUDE.md).
+    try:
+        r = get_with_retry(
+            http_session,
+            f"https://api.sofascore.com/api/v1/unique-tournament/{tournament_id}/seasons",
+            timeout=15,
+            label=f"seasons {tournament_id}",
+        )
+    except Exception as e:
+        print(f"  ⚠ season list fetch failed for tournament {tournament_id}: {e} (exhausted retries)")
+        return None
     if r.status_code != 200:
         print(f"  ⚠ season list HTTP {r.status_code} for tournament {tournament_id}")
         return None

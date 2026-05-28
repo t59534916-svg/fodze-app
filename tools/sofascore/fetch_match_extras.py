@@ -69,6 +69,7 @@ import tls_requests
 # Local mapping
 sys.path.insert(0, str(Path(__file__).parent))
 from tournament_ids import TOURNAMENT_IDS, TIER_A, TIER_B  # noqa: E402
+from _http_retry import run_with_retry, TransientHTTPError, RETRYABLE_STATUS  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "tools" / "sofascore" / "data" / "extras"
@@ -285,31 +286,30 @@ def _alarm_handler(signum, frame):
 signal.signal(signal.SIGALRM, _alarm_handler)
 
 
-def _get(http: cf_requests.Session, url: str, *, timeout: int = 15) -> dict | None:
-    """Returns parsed JSON dict, None on 404, raises BlockedError on 403/429.
+def _get_once(http: cf_requests.Session, url: str, timeout: int) -> dict | None:
+    """One HTTP attempt under a SIGALRM watchdog (curl_cffi's own timeout has
+    proven unreliable against slow-drip Cloudflare responses — observed 42min
+    hang in production backfill). Classifies the outcome for the retry layer:
 
-    Wrapped in SIGALRM watchdog: curl_cffi's own timeout has proven unreliable
-    against slow-drip Cloudflare responses (observed 42min hang in production
-    backfill). The watchdog forces a HungError after `timeout+5` seconds
-    regardless of what curl_cffi is doing internally.
+      raises  →  network/transport exc (propagates; tenacity retries transient)
+                 BlockedError on 403/429 (propagates; drives proxy rotation)
+                 TransientHTTPError on 502/503/504 (tenacity retries)
+      returns →  dict on 200, None on 404 / decode-fail / HungError / other 4xx
     """
     signal.alarm(timeout + 5)
     try:
         r = http.get(url, timeout=timeout)
     except HungError:
-        # Don't escalate to backoff — single endpoint hung, skip it.
-        # If the host is truly down, multiple hangs in a row will eventually
-        # surface as 4-of-4-None payloads which fetch_pending logs as "0/4".
+        # Don't escalate to retry — single endpoint hung, skip it. If the host
+        # is truly down, multiple hangs in a row surface as all-None payloads
+        # which fetch_pending logs as "0/N".
         signal.alarm(0)
         print(f"  ⚠ watchdog killed slow request: {url}", file=sys.stderr)
         return None
-    except Exception as e:
-        # Network errors, SSL hiccups — treat as 404 (skip silently).
-        signal.alarm(0)
-        print(f"  ⚠ {type(e).__name__} on {url}: {e}", file=sys.stderr)
-        return None
     finally:
         signal.alarm(0)
+    # Note: genuine network/SSL exceptions are NOT caught here — they propagate
+    # to the retry layer (_get), which retries transient ones then degrades.
 
     if r.status_code == 200:
         try:
@@ -321,8 +321,33 @@ def _get(http: cf_requests.Session, url: str, *, timeout: int = 15) -> dict | No
         return None
     if r.status_code in (403, 429):
         raise BlockedError(f"HTTP {r.status_code} for {url}")
+    if r.status_code in RETRYABLE_STATUS:
+        raise TransientHTTPError(r.status_code, url)
     print(f"  ⚠ HTTP {r.status_code} for {url}", file=sys.stderr)
     return None
+
+
+def _get(http: cf_requests.Session, url: str, *, timeout: int = 15) -> dict | None:
+    """Returns parsed JSON dict, None on 404, raises BlockedError on 403/429.
+
+    Transient failures (HTTP 502/503/504 + network/SSL hiccups) are retried
+    via the shared tenacity policy (_http_retry — 3 retries, full-jitter
+    backoff capped at 16s). 403/429 raise BlockedError immediately (drives
+    Webshare proxy rotation — never retried). After exhausting transient
+    retries the call degrades to None, preserving the original
+    skip-on-failure contract so one bad endpoint can't abort a batch.
+    """
+    try:
+        return run_with_retry(_get_once, http, url, timeout, label=url[:80])
+    except BlockedError:
+        raise  # propagate — caller rotates the proxy pool
+    except TransientHTTPError as e:
+        print(f"  ⚠ {e} (exhausted retries) — skipping", file=sys.stderr)
+        return None
+    except Exception as e:
+        # Network/SSL still failing after retries — preserve skip-silently.
+        print(f"  ⚠ {type(e).__name__} on {url}: {e} (exhausted retries)", file=sys.stderr)
+        return None
 
 
 # All 7 known per-event endpoints. Order matters only for display.
