@@ -20,6 +20,14 @@ API surface:
       BSS = 1 - Brier(model) / Brier(climatology).
       base_rates: per-class prior (None → computed from y_true).
 
+  xg_rmse / xg_mae / xg_bias(lambda_pred, xg_realized) → float
+      xG-forecast regression metrics: predicted λ (expected goals) vs realized
+      xG. RMSE/MAE = accuracy (lower better); bias = mean signed error
+      (>0 = over-estimate). 1D flat arrays (stack home+away for an overall).
+  xg_forecast_report(lambda_pred, xg_realized) → dict
+      {n, rmse, mae, bias, mean_pred, mean_realized, pearson_r} — the three
+      orthogonal axes (accuracy / calibration / ranking) in one call.
+
   bootstrap_ci(values, statistic_fn, *, n_resamples=1000, ci=0.95, seed=42)
       → (lower, median, upper)
       Bootstrap percentile CI for any statistic computable on a 1D array.
@@ -236,6 +244,93 @@ def brier_skill_score(
     if brier_base <= 0:
         return float("nan")  # degenerate baseline
     return float(1.0 - brier_model / brier_base)
+
+
+# ─────────────────────────────────────────────────────────────────────
+# xG-forecast regression metrics (predicted λ vs realized xG)
+#
+# New objective (2026-05-28): score how well an engine's predicted expected
+# goals (λ_home / λ_away) match the REALIZED xG of the match (Understat / Sofa
+# shotmap, from team_xg_history). These are regression metrics on a continuous
+# target — distinct from the 1X2 Brier, which scores the DC-matrix
+# probabilities derived from the SAME λ. A strong forecaster wins on BOTH axes.
+#
+# Inputs are flat 1D arrays; the caller picks granularity — pass home λ vs home
+# xG, away λ vs away xG, or stack both (recommended for one overall number).
+#
+# Caveat (documented, do not lose): "realized xG" is itself a model output
+# (Understat/Sofa), NOT ground truth like goals. Scoring λ against it is
+# lower-variance / more stable than against goals, but it measures agreement
+# with another model's chance-quality estimate, not with reality.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _check_regression_pair(
+    pred: np.ndarray, true: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Validate + coerce a (predicted, realized) pair for regression metrics."""
+    pred = np.asarray(pred, dtype=float)
+    true = np.asarray(true, dtype=float)
+    if pred.ndim != 1 or true.ndim != 1:
+        raise ValueError(f"expected 1D arrays, got pred.ndim={pred.ndim}, true.ndim={true.ndim}")
+    if pred.shape != true.shape:
+        raise ValueError(f"shape mismatch: pred={pred.shape}, true={true.shape}")
+    if len(pred) == 0:
+        raise ValueError("empty input")
+    _check_no_nan(pred, "lambda_pred")
+    _check_no_nan(true, "xg_realized")
+    return pred, true
+
+
+def xg_rmse(lambda_pred: np.ndarray, xg_realized: np.ndarray) -> float:
+    """Root-mean-square error of predicted λ vs realized xG. Lower = better."""
+    p, t = _check_regression_pair(lambda_pred, xg_realized)
+    return float(np.sqrt(np.mean((p - t) ** 2)))
+
+
+def xg_mae(lambda_pred: np.ndarray, xg_realized: np.ndarray) -> float:
+    """Mean absolute error of predicted λ vs realized xG. Lower = better."""
+    p, t = _check_regression_pair(lambda_pred, xg_realized)
+    return float(np.mean(np.abs(p - t)))
+
+
+def xg_bias(lambda_pred: np.ndarray, xg_realized: np.ndarray) -> float:
+    """Mean signed error = mean(λ_pred − xg_realized).
+
+    > 0 → model systematically OVER-estimates xG (predicts more chance-quality
+          than realized). < 0 → under-estimates. ~0 → mean-calibrated.
+    (The StatsBomb audit found our public-xG sources over-estimate ~+0.09/match
+    vs SB gold-standard — this surfaces that per-engine.)
+    """
+    p, t = _check_regression_pair(lambda_pred, xg_realized)
+    return float(np.mean(p - t))
+
+
+def xg_forecast_report(lambda_pred: np.ndarray, xg_realized: np.ndarray) -> dict:
+    """Full xG-forecast scorecard for one set of (λ_pred, xg_realized) pairs.
+
+    Returns dict: n, rmse, mae, bias, mean_pred, mean_realized, pearson_r.
+
+    pearson_r = how well the model RANKS chance-quality (ordering), separate
+    from absolute accuracy (rmse) and mean-calibration (bias). A model can rank
+    well (high r) yet be mis-calibrated (large |bias|), or vice-versa — keeping
+    the three orthogonal axes prevents one masking another.
+    """
+    p, t = _check_regression_pair(lambda_pred, xg_realized)
+    sp, st = float(p.std()), float(t.std())
+    if sp < 1e-12 or st < 1e-12:
+        r = float("nan")  # zero-variance input → correlation undefined
+    else:
+        r = float(np.corrcoef(p, t)[0, 1])
+    return {
+        "n": int(len(p)),
+        "rmse": float(np.sqrt(np.mean((p - t) ** 2))),
+        "mae": float(np.mean(np.abs(p - t))),
+        "bias": float(np.mean(p - t)),
+        "mean_pred": float(p.mean()),
+        "mean_realized": float(t.mean()),
+        "pearson_r": r,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────

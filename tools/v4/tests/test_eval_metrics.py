@@ -17,6 +17,10 @@ from v4.eval.metrics import (
     ece,
     log_loss,
     reliability_diagram,
+    xg_bias,
+    xg_forecast_report,
+    xg_mae,
+    xg_rmse,
 )
 
 
@@ -132,3 +136,55 @@ def test_ece_rejects_nan_input():
     y_p_nan = np.array([0.5, np.nan])
     with pytest.raises(ValueError):
         ece(y_t, y_p_nan)
+
+
+# ─── xG-forecast regression metrics (λ vs realized xG) ──────────────
+
+def test_xg_rmse_perfect_is_zero():
+    lam = np.array([1.2, 0.8, 2.1, 1.5])
+    assert xg_rmse(lam, lam.copy()) == 0.0
+    assert xg_mae(lam, lam.copy()) == 0.0
+
+
+def test_xg_rmse_known_value():
+    pred = np.array([1.0, 2.0, 3.0])
+    real = np.array([1.5, 1.5, 4.0])  # errors: -0.5, +0.5, -1.0
+    # RMSE = sqrt((0.25 + 0.25 + 1.0)/3) = sqrt(0.5) ≈ 0.70711
+    assert xg_rmse(pred, real) == pytest.approx(np.sqrt(0.5))
+    # MAE = (0.5 + 0.5 + 1.0)/3 = 0.6667
+    assert xg_mae(pred, real) == pytest.approx(2.0 / 3.0)
+
+
+def test_xg_bias_sign_convention():
+    # Over-estimate → positive bias.
+    assert xg_bias(np.array([2.0, 2.0]), np.array([1.0, 1.0])) == pytest.approx(1.0)
+    # Under-estimate → negative bias.
+    assert xg_bias(np.array([1.0, 1.0]), np.array([2.0, 2.0])) == pytest.approx(-1.0)
+
+
+def test_xg_forecast_report_fields_and_correlation():
+    rng = np.random.default_rng(7)
+    real = rng.uniform(0.3, 3.0, size=500)
+    pred = real + rng.normal(0, 0.2, size=500) + 0.1  # noisy + slight over-estimate
+    rep = xg_forecast_report(pred, real)
+    assert set(rep) == {"n", "rmse", "mae", "bias", "mean_pred", "mean_realized", "pearson_r"}
+    assert rep["n"] == 500
+    assert rep["bias"] > 0  # we added +0.1
+    assert rep["pearson_r"] > 0.9  # strong correlation by construction
+    assert rep["rmse"] >= rep["mae"]  # RMSE ≥ MAE always
+
+
+def test_xg_forecast_report_zero_variance_pred_gives_nan_r():
+    # Degenerate: constant prediction → correlation undefined, not a crash.
+    rep = xg_forecast_report(np.full(20, 1.4), np.linspace(0.5, 2.5, 20))
+    assert np.isnan(rep["pearson_r"])
+    assert np.isfinite(rep["rmse"])
+
+
+def test_xg_metrics_reject_nan_and_shape_mismatch():
+    with pytest.raises(ValueError):
+        xg_rmse(np.array([1.0, np.nan]), np.array([1.0, 1.0]))
+    with pytest.raises(ValueError, match="shape mismatch"):
+        xg_rmse(np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0]))
+    with pytest.raises(ValueError):
+        xg_rmse(np.array([]), np.array([]))
