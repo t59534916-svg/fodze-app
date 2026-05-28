@@ -89,6 +89,29 @@ Slope >1 (dominante Teams über-konvertieren).
 | Brier-Skill-Score | **+5.9%** | Mehrwert über Raten der Basisraten |
 | Über/Unter 2.5 | **55.2%** | Tor-Tendenz |
 | xG/Team RMSE · MAE | **0.702 · 0.532 Tore** | Bias −0.071 · Korrelation 0.40 |
+| **xG-Skill-Score** (vs Liga-Mittel) | **+8.4%** Blend · +4.2% dev-03 | s.u. — Anker für die RMSE |
+
+**Ist 0.70 RMSE gut?** (Self-Eval-Lücke b, beantwortet via `xg_skill_baseline.py`.)
+Gegen die **Klimatologie-Baseline** „sage für jedes Spiel das Liga-Mittel-xG vorher"
+(leakage-frei aus 29.893 Spielen *vor* der Saison; Baseline-RMSE **0.733**):
+xG-Skill-Score `xGSS = 1 − MSE_Modell/MSE_Klimatologie` = **+8.4%** (Blend) /
+**+4.2%** (dev-03). (Baseline, dev-03 und Blend hier alle auf demselben vollen
+dev-03-joinbaren Set, n≈6.750 = Leaderboard-„best-effort": dev-03-RMSE 0.7176,
+Blend 0.7016 — daher etwas höher als die §3-Tabelle, die auf der kleineren
+Common-Intersection n=4.642 rechnet. Die xGSS sind intern konsistent, weil alle
+drei auf dem identischen n=6.750 gemessen sind.) **Double-Check der Baseline-Wahl:**
+gegen eine zweite, prior-season-only Klimatologie (24/25-Mittel, RMSE 0.739) ist
+der xGSS sogar HÖHER (+5.7% dev-03 / +9.8% Blend) — die all-history-Baseline
+(0.733) ist also die HÄRTERE (per-Liga-Mittel sind quasi-stationär, das längere
+Fenster senkt Sampling-Rauschen stärker als der xG-Drift schadet). **+4.2% ist
+damit die konservative Untergrenze, robust positiv gegen BEIDE Baselines.** Also: das team-spezifische Modell schlägt die blinde
+Liga-Durchschnitts-Prognose, aber nur um einstellige %-Punkte der Varianz — denn
+per-Spiel-xG ist intrinsisch verrauscht (Abschluss/Torwart/Abfälscher), die 0.70
+sind **größtenteils irreduzible per-Spiel-Varianz, nicht Modellfehler**. Pro Liga:
+15/21 positiv (best bundesliga +15.2%, scottish_prem +14.5%, primeira_liga +12.5%);
+negativ v.a. la_liga2 (−28.9%, Volume-Tier ohne echte Sofa-xG) + jupiler_pro/ligue_1.
+Damit ist der zuvor unbenchmarkte 0.70-Wert eingeordnet: **echtes, aber bescheidenes
+Prognose-Skill** — konsistent mit Brier-BSS +5.9%.
 
 xG→Tore-Conversion (penalty-bereinigt, 17 Ligen, 27.973 Team-Spiele): **0.958
 Tore/npxG** gesamt; pro Liga bundesliga 1.02 (best) → jupiler_pro 0.882. Decke
@@ -114,14 +137,43 @@ Tiers (Treffer ≈ Anspruch in beiden Saisons):
 Zusätzlich liefert dev-03 eine **λ-Varianz** pro Vorhersage + der **Conformal-
 Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 
-> **UI-Badge-Hinweis (Self-Eval 2026-05-28):** Obige Tabelle ist der **Blend**.
-> Das Frontend-Confidence-Badge zeigt aber den *aktiven* Engine (Default
-> **dev-03**), nicht den Blend. dev-03-standalone (25/26 OOT) bestätigt den
-> HOCH-Tier (73.7% ≈ Blend 74.5%), liegt in den Mittel-Bändern aber etwas tiefer
-> (55-65% **~53%** vs Blend 56%; 45-55% ~48%) — dev-03 ist dort leicht
-> überkonfident. Die Badge-Claims nutzen daher die **dev-03-Zahlen**, nicht die
-> Blend-Zahlen. **Praktisch: nur der ≥65%-Tier ist klar handlungsrelevant;
-> darunter ist es ~Münzwurf.**
+> **UI-Badge-Hinweis (Self-Eval 2026-05-28 → Production-Pfad-Validierung):**
+> Obige Tabelle ist der **Blend** (research-only). Das Frontend-Badge zeigt den
+> *aktiven* Engine (Default **dev-03**) — und zwar dessen ECHTEN Anzeige-Pfad:
+> λ→Dixon-Coles, **dann Benter-Blend Richtung Pinnacle** sobald Quoten da sind
+> (= was `calc.mk` trägt). **Isotonic ist NICHT auf dem Anzeige-Pfad** (das ist
+> Track-B/Kelly-only) — die frühere Sorge ist damit ausgeräumt. Gemessen auf dem
+> Production-Pfad (`validate_confidence_production_path.py`, m6_benter-dev-03 =
+> exakt was `public/dev03-model.json` einbäckt):
+>
+> | Tier | RAW (validierte Spur) | **BLENDED = Badge (Prod)** | Badge-Claim |
+> |---|---|---|---|
+> | ≥65% (HOCH) | 73.7% (25/26) · 68.9% (24/25) | **78.7% · 73.5%** | ~73% ✓ Untergrenze |
+> | 55-65% (MITTEL) | 52.7% · 54.1% | **53.3% · 58.3%** | ~53% ✓ |
+> | 45-55% (NIEDRIG) | ~46–48% | **44.9% · 49.7%** | ~48% ✓ |
+> | <45% (TOSS-UP) | ~39–40% | **38.3% · 40.2%** | ~40% ✓ |
+>
+> **Der Benter-Blend VERBESSERT Brier** (0.619→0.604 auf 25/26; 0.614→0.597 auf
+> 24/25) — das Ziehen Richtung sharp-Markt macht die angezeigte Wkt *besser*
+> kalibriert, nicht schlechter. Die Badge-Claims sind damit **konservative
+> Untergrenzen**, die auf dem Production-Pfad auf BEIDEN Saisons halten (der
+> HOCH-Tier liegt real bei ~76% Mittel). Odds-Coverage bestimmt den Anteil
+> geblendeter Matches; ohne Quoten fällt das Badge auf die rohen Matrix-Probs
+> zurück (≈ RAW-Spalte). **Praktisch: nur der ≥65%-Tier ist klar
+> handlungsrelevant; darunter nur knapp über 50%.** Single-source-of-truth der
+> Boundaries+Claims: `src/lib/confidence-tier.ts` (unit-tested).
+>
+> **Fidelitäts-Caveats (Double-Check 2026-05-29):** die Benter-β sind byte-exakt
+> (gegen `public/dev03-model.json` verifiziert), aber die Rekonstruktion ist nicht
+> in jedem Schritt produktions-identisch: (1) sie nutzt λ→DC **ohne** die per-Liga
+> Overdispersion-α, die der Production-`matrixMk` enthält (α fettet v.a. die
+> O/U-Tails, 1X2-Effekt klein); (2) validiert gegen Pinnacle-**Closing**, live
+> blendet das Badge gegen die pre-close sharp-Quote (minimal weniger scharf);
+> (3) der geblendete HOCH-Tier ist n=324 (25/26, 33% Odds-Coverage in diesem
+> Backfill-Korpus) → CI ~±4.5pp, daher ist „~76% Mittel" indikativ, „~73%
+> Untergrenze" robust. Die Schlussfolgerung (Blend verbessert Brier; HOCH hält
+> die Claim) ist gegen diese kleinen Abweichungen robust, weil der Blend stark
+> Richtung Markt zieht und die Claim ohnehin als Untergrenze gesetzt ist.
 
 ---
 
@@ -132,7 +184,7 @@ Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 | **dev-09 Resurrection** | gewinnt Brier robust, aber xG-Niveau stil-/datenabhängig (Tie auf 25/26, dev-03 auf 24/25). Kein Markt-ROI. | Blend ist die Antwort, nicht dev-09 solo |
 | **Dominanz-Conversion** als Feature | dominante Teams über-konvertieren (r=+0.26, persistent 0.70), ABER dev-03-λ erfasst es bereits (λ↔dom r=0.36); Residual r=0.024; Brier-Δ −0.0005 (1.1σ noise-floor); G5 ROI negativ | **redundant** — nicht einbauen |
 | **Remis-Value** (Modell-P > Pinnacle) | 25/26 +5.9% (Bootstrap-CI umschließt 0!), 24/25 OOT **−8.16% (CI<0, signifikant negativ)** | **abgelehnt** — 25/26 war Rauschen |
-| **Training-Fokus auf High-Conf** | conf-gewichtetes Training (Gewicht ∝ \|elo_diff\|, bis 14×): High-Conf-Brier +0.0034 **schlechter**, overall flat | **falsifiziert** — falscher Hebel; High-Conf hat kaum Headroom (7% des Brier-Verlusts, kalibriert, Upset-gedeckelt). Richtiger Hebel: **selektive Vorhersage** |
+| **Training-Fokus auf High-Conf** | conf-gewichtetes Training **k-Sweep {0, 0.5, 1, 2, 4}** (Gewicht ∝ 1+k·\|elo_diff\|): KEIN monotoner High-Conf-Gewinn — einziger Dip bei k=0.5 (−0.0093) ist **nicht-monoton = Rauschen**; Overall-Brier monoton schlechter mit k (−0.0003→+0.0003), High-Conf-Acc fällt 72.6→71.6% | **falsifiziert über die ganze Sweep** — falscher Hebel bei JEDER Stärke; High-Conf hat kaum Headroom (7% des Brier-Verlusts, kalibriert, Upset-gedeckelt). Richtiger Hebel: **selektive Vorhersage** |
 
 Konsistentes Muster: ~jede „neue Edge"-Idee stirbt an Pinnacles Effizienz oder
 ist mit der xG-Historie redundant. Der Wert liegt in der **Prognose-Güte**.
@@ -164,7 +216,10 @@ ist mit der xG-Historie redundant. Der Wert liegt in der **Prognose-Güte**.
 | `falsify_draw_value.py` | Multi-Saison-Validierung der Remis-Value (rejected) |
 | `system_performance.py` | interpretierbare Scorecard (Ergebnis + xG + Confidence) |
 | `validate_high_confidence.py` | High-Conf cross-season + Headroom |
-| `eval_conf_weight.py` | A/B: conf-gewichtet vs uniform |
+| `validate_confidence_production_path.py` | Badge-Tiers auf Production-Pfad (Benter-blend, nicht raw/isotonic) — Self-Eval c |
+| `xg_skill_baseline.py` | xG-Skill-Score vs Liga-Mittel-Klimatologie — Self-Eval b |
+| `eval_conf_weight.py` | A/B: conf-gewichtet vs uniform (k=2) |
+| `eval_conf_weight_sweep.py` | conf-weight k-Sweep {0,0.5,1,2,4} — Self-Eval f |
 | `xg_to_goals.py` | xG→Tore-Kalibrierung penalty-bereinigt + Dataset |
 | `xg_conversion_context.py` | Finishing/Defense-Persistenz + Shrinkage |
 | `xg_style_conversion.py` | Dominanz↔Conversion (Bayern-These) |

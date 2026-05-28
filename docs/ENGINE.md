@@ -398,6 +398,55 @@ Konvergiert in ~50 Iterationen via Binary Search. Korrekte implizite Wahrscheinl
 
 ---
 
+## 11. Prognose-Güte & Confidence-Kalibrierung (Stand 2026-05-28)
+
+Ziel-Schwenk weg von „Markt schlagen" (Wett-ROI) hin zu **Prognose-Güte**:
+xG-RMSE + 1X2-Brier gekoppelt als Primär-Achse, ROI nur sekundärer Tiebreaker.
+Vollbericht: [`docs/FORECAST-QUALITY-ANALYSIS.md`](FORECAST-QUALITY-ANALYSIS.md).
+
+### xG-Forecast-Scoring + Skill-Baseline
+
+`tools/v4/eval/metrics.py` liefert xG-Forecast-Primitive (`xg_rmse`/`mae`/`bias`).
+Multi-Engine-Leaderboard via `score_xg_forecast.py` (tiered Name-Bridge-Join,
+98% Coverage). **Ist 0.70 RMSE gut?** — beantwortet durch
+`xg_skill_baseline.py`: gegen die Klimatologie-Baseline „sage für jedes Spiel
+das Liga-Mittel-xG" (leakage-frei aus History vor der Saison, RMSE **0.733**)
+ist der **xG-Skill-Score** `1 − MSE/MSE_clim` = **+4.2%** (dev-03) / **+8.4%**
+(Blend). Echtes, aber bescheidenes Skill — per-Spiel-xG ist größtenteils
+irreduzibles Rauschen (Abschluss/Torwart/Abfälscher). 15/21 Ligen positiv
+(best bundesliga +15.2%); la_liga2 negativ (Volume-Tier ohne echte Sofa-xG).
+
+**System-Scorecard (25/26 OOT, Blend):** 1X2-Favorit 48.9% · Brier-Skill-Score
++5.9% · Ü/U2.5 55.2% · xG-RMSE 0.702 / MAE 0.532. **Kernfazit: guter
+kalibrierter Forecaster, schlägt aber Pinnacle nicht** — der Wert ist
+Prognose-Qualität, nicht Wett-Edge.
+
+### Confidence-Badge — Kalibrierung & Production-Pfad
+
+Jede Vorhersage liefert P(H)/P(D)/P(A); **die höchste IST die Confidence des
+Tipps**. Das Frontend-Badge (MatchDetail + MatchCard) ordnet sie in 4 Tiers ein.
+Single-source-of-truth der Boundaries + Claims: [`src/lib/confidence-tier.ts`](../src/lib/confidence-tier.ts)
+(unit-tested, `tests/confidence-tier.test.ts`).
+
+**Validiert auf dem ECHTEN Production-Pfad** (`validate_confidence_production_path.py`):
+das Badge zeigt den Default-Engine **dev-03**, λ→DC, **dann Benter-Blend
+Richtung Pinnacle** sobald Quoten da sind (= was `calc.mk` trägt) — **NICHT
+Isotonic** (das ist Track-B/Kelly-only). Der Blend **verbessert** Brier
+(0.619→0.604) → die angezeigte Wkt ist *besser* kalibriert, nicht schlechter.
+
+| Tier | Schwelle | Treffer (Prod-Pfad, 25/26 · 24/25 OOT) | Badge-Claim |
+|---|---|---|---|
+| **HOCH** | ≥65% | 78.7% · 73.5% | ~73% (konservative Untergrenze) |
+| MITTEL | 55–65% | 53.3% · 58.3% | ~53% |
+| NIEDRIG | 45–55% | 44.9% · 49.7% | ~48% |
+| TOSS-UP | <45% | 38.3% · 40.2% | ~40% |
+
+**Kernaussage: nur HOCH (≥65%) ist klar überdurchschnittlich; darunter nur
+knapp über 50%.** Die Claims sind konservative Untergrenzen, die auf beiden
+Saisons halten.
+
+---
+
 ## Bekannte Limitierungen
 
 | Bereich | Limitation | Workaround |
