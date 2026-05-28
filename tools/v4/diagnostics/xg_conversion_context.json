@@ -1,0 +1,20 @@
+{
+  "global_finish_ratio": 0.9576,
+  "n_team_matches": 27962,
+  "n_teams_rated": 324,
+  "persistence": {
+    "attack_split_half_r": 0.17288962701927454,
+    "attack_rho_full": 0.29480971275813556,
+    "attack_season_to_season_r": 0.21684996923153932,
+    "defense_split_half_r": 0.0725905852429169,
+    "defense_rho_full": 0.13535562635295145,
+    "defense_season_to_season_r": 0.04751662897846672
+  },
+  "shrinkage_weight": {
+    "attack": 0.29480971275813556,
+    "defense": 0.13535562635295145
+  },
+  "form_prior5_to_next_r": 0.0021084733689009294,
+  "form_n": 25902,
+  "interpretation": "Attack-Finishing ist \u00fcberwiegend Rauschen (\u03c1=0.29) \u2192 stark zu 1.0 geschrumpft. Defense/GK persistiert \u00e4hnlich (\u03c1=0.14). Form (prior-5\u2192next) r=+0.002 = vernachl\u00e4ssigbar."
+}
