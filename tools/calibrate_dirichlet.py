@@ -167,7 +167,9 @@ def main():
     preds = preds.copy()
     preds["match_date"] = pd.to_datetime(preds["match_date"]).dt.date.astype(str)
     # OOT window only — held-out stays untouched.
-    oot = preds[(preds["match_date"] >= "2023-08-01") & (preds["match_date"] < "2024-07-01")]
+    # 2026-05-28: window advanced from 23/24 → 25/26 per audit-binding refit
+    # directive. The 23/24 hardcode was stale (frozen since dev-02 era).
+    oot = preds[(preds["match_date"] >= "2025-08-01") & (preds["match_date"] < "2026-07-01")]
     if oot.empty:
         print("[dirichlet-fit] no OOT rows — aborting")
         return

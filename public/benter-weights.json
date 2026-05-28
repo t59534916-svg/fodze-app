@@ -1,126 +1,13 @@
 {
   "_version": 1,
   "_meta": {
-    "trained_at": "2026-04-21T01:53:58.798878+00:00Z",
-    "n_oot_total": 5586,
-    "loss_function": "cross_entropy",
-    "min_league_rows": 150,
-    "source_parquet": "tools/backtest/v2-oot-predictions.parquet",
-    "odds_cache": "tools/backtest/odds-close-oot.parquet"
+    "trained_at": "2026-05-28T01:22:19.710689+00:00Z",
+    "loss_function": "log_loss",
+    "oot_start": "2023-08-01",
+    "oot_end": "2024-07-01"
   },
   "engines": {
     "v2": {
-      "global": {
-        "beta1": 0.0,
-        "beta2": 1.1035
-      },
-      "leagues": {
-        "bundesliga": {
-          "beta1": 0.0,
-          "beta2": 1.069,
-          "n": 303,
-          "oot_logloss": 0.942282
-        },
-        "bundesliga2": {
-          "beta1": 0.1688,
-          "beta2": 0.9473,
-          "n": 295,
-          "oot_logloss": 1.02476
-        },
-        "championship": {
-          "beta1": 0.0,
-          "beta2": 1.0455,
-          "n": 550,
-          "oot_logloss": 1.008383
-        },
-        "epl": {
-          "beta1": 0.0,
-          "beta2": 1.1748,
-          "n": 380,
-          "oot_logloss": 0.896528
-        },
-        "eredivisie": {
-          "beta1": 0.0,
-          "beta2": 1.0717,
-          "n": 303,
-          "oot_logloss": 0.889588
-        },
-        "greek_sl": {
-          "beta1": 0.2565,
-          "beta2": 0.9599,
-          "n": 243,
-          "oot_logloss": 0.891617
-        },
-        "jupiler_pro": {
-          "beta1": 0.0,
-          "beta2": 1.0968,
-          "n": 308,
-          "oot_logloss": 0.97047
-        },
-        "la_liga": {
-          "beta1": 0.4379,
-          "beta2": 0.8877,
-          "n": 381,
-          "oot_logloss": 0.944866
-        },
-        "la_liga2": {
-          "beta1": 0.5931,
-          "beta2": 0.6592,
-          "n": 462,
-          "oot_logloss": 1.039831
-        },
-        "ligue_1": {
-          "beta1": 0.0,
-          "beta2": 0.9834,
-          "n": 311,
-          "oot_logloss": 1.01167
-        },
-        "ligue_2": {
-          "beta1": 0.0,
-          "beta2": 0.7827,
-          "n": 375,
-          "oot_logloss": 1.068555
-        },
-        "primeira_liga": {
-          "beta1": 0.0,
-          "beta2": 1.1992,
-          "n": 305,
-          "oot_logloss": 0.895658
-        },
-        "scottish_prem": {
-          "beta1": 0.0,
-          "beta2": 0.9898,
-          "n": 230,
-          "oot_logloss": 0.940223
-        },
-        "serie_a": {
-          "beta1": 0.0083,
-          "beta2": 1.1659,
-          "n": 379,
-          "oot_logloss": 0.961762
-        },
-        "serie_b": {
-          "beta1": 0.0,
-          "beta2": 1.0317,
-          "n": 385,
-          "oot_logloss": 1.050352
-        },
-        "super_lig": {
-          "beta1": 0.0,
-          "beta2": 1.3115,
-          "n": 376,
-          "oot_logloss": 0.935147
-        }
-      }
-    },
-    "v1": {
-      "global": {
-        "beta1": 1.0,
-        "beta2": 0.0
-      },
-      "leagues": {}
-    },
-    "ensemble": {
       "global": {
         "beta1": 1.0,
         "beta2": 0.0

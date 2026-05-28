@@ -193,7 +193,9 @@ def fit_for_engine(engine: str, alphas: list[float], calibration: str = "raw") -
     df = df.copy()
     df["match_date"] = pd.to_datetime(df["match_date"]).dt.date.astype(str)
     # Only use the OOT window for calibration; held-out is never used here.
-    df = df[(df["match_date"] >= "2023-08-01") & (df["match_date"] < "2024-07-01")]
+    # 2026-05-28: window advanced from 23/24 → 25/26 per audit-binding refit
+    # directive. The 23/24 hardcode was stale (frozen since dev-02 era).
+    df = df[(df["match_date"] >= "2025-08-01") & (df["match_date"] < "2026-07-01")]
     if df.empty:
         print(f"[conformal-fit] {engine}: no OOT rows")
         return None
