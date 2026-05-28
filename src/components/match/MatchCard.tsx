@@ -6,6 +6,7 @@ import { useMatchdayContext } from "@/contexts/MatchdayContext";
 import { useApp } from "@/contexts/AppContext";
 import { useTeamMetadata } from "@/hooks/useTeamMetadata";
 import { conversionFrom, sosFrom } from "@/lib/xg-quality";
+import { confidenceTier, type ConfTierKey } from "@/lib/confidence-tier";
 import type { RawMatch, MatchCalc, BetCalc } from "@/types/match";
 
 // Soft fallback wenn weder home noch away eine Farbe haben — leather-
@@ -23,14 +24,17 @@ function isValidHex(c: string | null | undefined): c is string {
 
 const pc = (v: number) => (v * 100).toFixed(0) + "%";
 
-// Compact confidence-pill colour for the list view — calibrated tier from the
-// top 1X2 probability (≥65% HOCH/green ~73% hit · 55-65% MITTEL/gold · else grey).
-// Mirrors MatchDetail.confidenceTier; validated 2026-05-28 cross-season, see
-// docs/FORECAST-QUALITY-ANALYSIS.md. Lets you scan the list for green = sicher.
-function confColor(p: number): { fg: string; bg: string; border: string; title: string } {
-  if (p >= 0.65) return { fg: "#6aad55", bg: "#6aad5518", border: "#6aad5540", title: "HOCH · histor. ~73% Treffer" };
-  if (p >= 0.55) return { fg: "#c4a265", bg: "#c4a26518", border: "#c4a26540", title: "MITTEL · histor. ~53%" };
-  return { fg: "#c4a26585", bg: "transparent", border: "#c4a26522", title: p >= 0.45 ? "NIEDRIG · ~48%" : "TOSS-UP · offen" };
+// Compact confidence-pill colour for the list view — maps the shared tier
+// (boundaries + calibrated claims in src/lib/confidence-tier.ts, validated
+// 2026-05-28 against the production Benter-blended path) to raw hex per this
+// file's convention: green HOCH (scan-for-sicher) · gold MITTEL · faint grey
+// below. NIEDRIG + TOSS-UP share grey; the tooltip carries the exact tier.
+function tierHex(key: ConfTierKey): { fg: string; bg: string; border: string } {
+  if (key === "HOCH") return { fg: "#6aad55", bg: "#6aad5518", border: "#6aad5540" };
+  if (key === "MITTEL") return { fg: "#c4a265", bg: "#c4a26518", border: "#c4a26540" };
+  // grey (NIEDRIG + TOSS-UP) — fg at 0.75 alpha (#bf) clears WCAG-AA ~4.8:1 on
+  // leather; transparent bg + faint border keep it visually muted vs MITTEL.
+  return { fg: "#c4a265bf", bg: "transparent", border: "#c4a26522" };
 }
 
 // Shortened team name: "FC Bayern München" → "Bayern München", "Bayer 04 Leverkusen" → "Leverkusen"
@@ -108,9 +112,10 @@ export default function MatchCard({ match, calc, isOpen, onClick }: {
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, marginLeft: 8 }}>
           {calc && (() => {
             const top = Math.max(calc.mk.H, calc.mk.D, calc.mk.A);
-            const c = confColor(top);
+            const t = confidenceTier(top);
+            const c = tierHex(t.key);
             return (
-              <span title={`Confidence ${pc(top)} · ${c.title}`}
+              <span title={`Confidence ${pc(top)} · ${t.label} · ${t.hist}`}
                 style={{ fontSize: 9, fontWeight: 700, color: c.fg, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 4, padding: "1px 5px" }}>
                 {pc(top)}
               </span>

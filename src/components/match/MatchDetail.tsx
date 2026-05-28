@@ -10,23 +10,26 @@ import XGHistoryBreakdown from "@/components/shared/XGHistoryBreakdown";
 import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
 import { color } from "@/styles/tokens";
+import { confidenceTier, type ConfTierKey } from "@/lib/confidence-tier";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
-// Confidence-Tier für die Top-Outcome-Wahrscheinlichkeit einer Vorhersage.
-// Die höchste 1X2-Wkt IST die Confidence des Tipps — und sie ist KALIBRIERT
-// Trefferquoten = dev-03 (Production-Default) standalone auf 25/26 OOT (das ist,
-// was das Badge zeigt — NICHT der Blend): ≥65% ~73% · 55-65% ~53% · 45-55% ~48% ·
-// <45% ~40%. KERNAUSSAGE: nur der HOCH-Tier (≥65%, ~73%) ist klar über-
-// durchschnittlich; darunter ~Münzwurf. Validiert 2026-05-28, siehe
-// docs/FORECAST-QUALITY-ANALYSIS.md.
-function confidenceTier(p: number): { label: string; fg: string; bg: string; border: string; hist: string } {
-  if (p >= 0.65) return { label: "HOCH", fg: color.value, bg: color.valueBg, border: color.valueBorder, hist: "histor. ~73% Treffer" };
-  if (p >= 0.55) return { label: "MITTEL", fg: color.gold, bg: `${color.goldMid}14`, border: `${color.goldMid}40`, hist: "histor. ~53%" };
-  if (p >= 0.45) return { label: "NIEDRIG", fg: color.goldMid, bg: `${color.goldMid}0c`, border: `${color.goldMid}24`, hist: "histor. ~48%" };
-  return { label: "TOSS-UP", fg: `${color.goldMid}90`, bg: "transparent", border: `${color.goldMid}20`, hist: "offen ~40%" };
+// Confidence-Tier badge colors (design tokens). The tier boundaries + the
+// calibrated hit-rate claims live in src/lib/confidence-tier.ts (single source
+// of truth, unit-tested, validated against the production Benter-blended path
+// on 2026-05-28). THIS maps the tier key → leather/gold/green tokens for the
+// full badge — green HOCH (only tier clearly above-average) down to faint
+// grey TOSS-UP.
+function tierTokens(key: ConfTierKey): { fg: string; bg: string; border: string } {
+  switch (key) {
+    case "HOCH":    return { fg: color.value, bg: color.valueBg, border: color.valueBorder };
+    case "MITTEL":  return { fg: color.gold, bg: `${color.goldMid}14`, border: `${color.goldMid}40` };
+    case "NIEDRIG": return { fg: color.goldMid, bg: `${color.goldMid}0c`, border: `${color.goldMid}24` };
+    // TOSS-UP fg at 0.75 alpha (bf) clears WCAG-AA on leather; still the faintest tier.
+    default:        return { fg: `${color.goldMid}bf`, bg: "transparent", border: `${color.goldMid}20` };
+  }
 }
 
 // Count comma-separated injury entries — the format the Transfermarkt
@@ -374,11 +377,12 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
             const fav = fi === 0 ? (match.home?.name?.split(" ").pop() || "Heim")
               : fi === 2 ? (match.away?.name?.split(" ").pop() || "Ausw.") : "Remis";
             const t = confidenceTier(top);
+            const tc = tierTokens(t.key);
             return (
-              <div title="Confidence = Modell-Wahrscheinlichkeit des Top-Tipps. Kalibriert (validiert 2026-05-28 cross-season): die angegebene Wkt entspricht ~der tatsächlichen Trefferquote. Nur HOCH-Tipps (≥65%) sind verlässlich."
+              <div title="Confidence = Modell-Wahrscheinlichkeit des Top-Tipps (dev-03, Benter-geblendet Richtung Pinnacle). Kalibriert (validiert 2026-05-28 cross-season, Production-Pfad): die angegebene Wkt entspricht ~der tatsächlichen Trefferquote. Nur HOCH-Tipps (≥65%) sind verlässlich."
                    style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 10, color: `${color.goldMid}70`, letterSpacing: 0.5, fontWeight: 600 }}>CONFIDENCE</span>
-                <span style={{ fontSize: 10, fontWeight: 700, color: t.fg, background: t.bg, border: `1px solid ${t.border}`, borderRadius: 6, padding: "2px 8px" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: tc.fg, background: tc.bg, border: `1px solid ${tc.border}`, borderRadius: 6, padding: "2px 8px" }}>
                   {t.label} · {pc(top)}
                 </span>
                 <span style={{ fontSize: 10, color: `${color.goldMid}70` }}>Tipp {fav} · {t.hist}</span>
