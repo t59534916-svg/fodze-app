@@ -73,10 +73,12 @@ def main() -> int:
         return float(np.sqrt(np.mean((a - b) ** 2)))
 
     rs = np.concatenate([rh[m], ra[m]])
+    # All metrics on the matched-xG subset [m] so both axes share the same n
+    # (6,750) and the headline Brier matches the dossier/detail analysis.
     metrics = {
-        "dev-03": (rmse(np.concatenate([lh03[m], la03[m]]), rs), float(((p03 - y1h) ** 2).sum(1).mean())),
-        "dev-09": (rmse(np.concatenate([lh09[m], la09[m]]), rs), float(((p09 - y1h) ** 2).sum(1).mean())),
-        "Blend":  (rmse(np.concatenate([lhB[m], laB[m]]), rs), float(((pB - y1h) ** 2).sum(1).mean())),
+        "dev-03": (rmse(np.concatenate([lh03[m], la03[m]]), rs), float(((p03[m] - y1h[m]) ** 2).sum(1).mean())),
+        "dev-09": (rmse(np.concatenate([lh09[m], la09[m]]), rs), float(((p09[m] - y1h[m]) ** 2).sum(1).mean())),
+        "Blend":  (rmse(np.concatenate([lhB[m], laB[m]]), rs), float(((pB[m] - y1h[m]) ** 2).sum(1).mean())),
     }
     print(f"  matched n={m.sum():,}  metrics={metrics}")
 
@@ -92,11 +94,13 @@ def main() -> int:
     axA = fig.add_subplot(gs[0, 0])
     tot_pred = (lhB + laB)[m]
     tot_real = (rh + ra)[m]
+    tot_rmse = rmse(tot_pred, tot_real)  # RMSE on the plotted quantity (totals)
     hb = axA.hexbin(tot_real, tot_pred, gridsize=35, cmap="YlOrBr", mincnt=1)
     axA.plot([0, 6], [0, 6], "--", color=C_GRID, lw=1.5)
     axA.set_xlim(0, 6); axA.set_ylim(0, 6)
     axA.set_xlabel("Realisierte Gesamt-xG"); axA.set_ylabel("Vorhergesagte Gesamt-xG (Blend)")
-    axA.set_title(f"A · xG-Genauigkeit  (RMSE {metrics['Blend'][0]:.3f})", fontweight="bold", fontsize=11)
+    axA.set_title(f"A · Gesamt-xG-Genauigkeit  (RMSE {tot_rmse:.2f} · pro Seite {metrics['Blend'][0]:.3f})",
+                  fontweight="bold", fontsize=11)
     fig.colorbar(hb, ax=axA, shrink=0.8, label="Spiele")
 
     # ── B: reliability of P(home win) ──

@@ -75,10 +75,12 @@ def main() -> int:
     def rmse(a, b):
         return float(np.sqrt(np.mean((a - b) ** 2)))
     rs = np.concatenate([rh[m], ra[m]])
+    # All metrics on the matched-xG subset [m] (same n on both axes; headline
+    # Brier matches the dossier/detail analysis).
     met = {
-        "dev-03": (rmse(np.concatenate([lh03[m], la03[m]]), rs), float(((p03 - y1h) ** 2).sum(1).mean())),
-        "dev-09": (rmse(np.concatenate([lh09[m], la09[m]]), rs), float(((p09 - y1h) ** 2).sum(1).mean())),
-        "Blend":  (rmse(np.concatenate([lhB[m], laB[m]]), rs), float(((pB - y1h) ** 2).sum(1).mean())),
+        "dev-03": (rmse(np.concatenate([lh03[m], la03[m]]), rs), float(((p03[m] - y1h[m]) ** 2).sum(1).mean())),
+        "dev-09": (rmse(np.concatenate([lh09[m], la09[m]]), rs), float(((p09[m] - y1h[m]) ** 2).sum(1).mean())),
+        "Blend":  (rmse(np.concatenate([lhB[m], laB[m]]), rs), float(((pB[m] - y1h[m]) ** 2).sum(1).mean())),
     }
     n = int(m.sum())
     print(f"  matched n={n:,}")

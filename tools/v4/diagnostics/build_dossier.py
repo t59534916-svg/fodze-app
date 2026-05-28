@@ -96,7 +96,7 @@ def chart_alpha_sweep(detail):
     br = [s["brier"] for s in sweep]
     fig, ax1 = plt.subplots(figsize=(7.2, 3.4))
     ax2 = ax1.twinx()
-    l1, = ax1.plot(a, rm, "o-", color=BLUE.hexval().replace("0x", "#")[:7] if False else "#3a7ca5", lw=2, label="xG-RMSE")
+    l1, = ax1.plot(a, rm, "o-", color="#3a7ca5", lw=2, label="xG-RMSE")
     l2, = ax2.plot(a, br, "s-", color="#b8923f", lw=2, label="Brier")
     # mark pure + optimum
     ax1.axvline(0, color="#bbb", ls=":", lw=1); ax1.axvline(1, color="#bbb", ls=":", lw=1)
@@ -292,6 +292,10 @@ def main() -> int:
                        f"<b>{'ja' if ms['all_seeds_better'] else 'nein'}</b>; alle signifikant: "
                        f"<b>{'ja' if ms['all_seeds_significant'] else 'nein'}</b>; mittleres Δ {ms['mean_delta']:+.5f}. "
                        f"Kein Seed-000-Zufall.", SMALL))
+    s.append(Paragraph("<i>Hinweis zur Stichprobe:</i> Die Multi-Seed-Validierung nutzt den vollen Korpus "
+                       "(n=6.868 — Brier braucht keine realisierte xG); die Blend-Analyse (§6) den xG-gematchten "
+                       "Teil (n=6.750). Daher minimale absolute-Brier-Differenzen (≤0.001) zwischen den "
+                       "Abschnitten — die Δ- und Richtungs-Schlüsse sind identisch.", SMALL))
     s.append(Paragraph("5.2 Kalibriert — schließt dev-03s Isotonic die Lücke?", H2))
     cb = dr["b_calibrated"]
     s.append(Paragraph(
