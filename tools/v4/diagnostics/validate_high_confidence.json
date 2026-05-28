@@ -1,0 +1,154 @@
+{
+  "25/26": {
+    "n": 6868,
+    "tiers": [
+      {
+        "tier": "<45%",
+        "n": 3153,
+        "share": 0.4590856144437973,
+        "accuracy": 0.4018395179194418,
+        "claim": 0.39988361833547986
+      },
+      {
+        "tier": "45-55%",
+        "n": 2062,
+        "share": 0.30023296447291786,
+        "accuracy": 0.49903006789524734,
+        "claim": 0.49415963960920467
+      },
+      {
+        "tier": "55-65%",
+        "n": 942,
+        "share": 0.13715783343040186,
+        "accuracy": 0.5636942675159236,
+        "claim": 0.594206246290574
+      },
+      {
+        "tier": "\u226565%",
+        "n": 711,
+        "share": 0.10352358765288293,
+        "accuracy": 0.7454289732770746,
+        "claim": 0.7275610815506746
+      }
+    ],
+    "selective": [
+      {
+        "coverage": 1.0,
+        "n": 6868,
+        "accuracy": 0.48878858474082704,
+        "min_conf": 0.33575649714217615
+      },
+      {
+        "coverage": 0.75,
+        "n": 5151,
+        "accuracy": 0.5198990487284022,
+        "min_conf": 0.40297444695023155
+      },
+      {
+        "coverage": 0.5,
+        "n": 3434,
+        "accuracy": 0.5687245195107746,
+        "min_conf": 0.45983281756179706
+      },
+      {
+        "coverage": 0.25,
+        "n": 1717,
+        "accuracy": 0.638905066977286,
+        "min_conf": 0.5456994641692071
+      },
+      {
+        "coverage": 0.1,
+        "n": 686,
+        "accuracy": 0.7434402332361516,
+        "min_conf": 0.6536283676122048
+      },
+      {
+        "coverage": 0.05,
+        "n": 343,
+        "accuracy": 0.8075801749271136,
+        "min_conf": 0.7211572785350614
+      }
+    ]
+  },
+  "24/25": {
+    "n": 7018,
+    "tiers": [
+      {
+        "tier": "<45%",
+        "n": 3029,
+        "share": 0.4316044457110288,
+        "accuracy": 0.41135688345988775,
+        "claim": 0.4002268877489403
+      },
+      {
+        "tier": "45-55%",
+        "n": 2059,
+        "share": 0.29338842975206614,
+        "accuracy": 0.4847013113161729,
+        "claim": 0.4946376905792828
+      },
+      {
+        "tier": "55-65%",
+        "n": 1004,
+        "share": 0.14306070105443147,
+        "accuracy": 0.5747011952191236,
+        "claim": 0.5936531458284143
+      },
+      {
+        "tier": "\u226565%",
+        "n": 926,
+        "share": 0.13194642348247365,
+        "accuracy": 0.7073434125269978,
+        "claim": 0.7367284073562966
+      }
+    ],
+    "selective": [
+      {
+        "coverage": 1.0,
+        "n": 7018,
+        "accuracy": 0.4952978056426332,
+        "min_conf": 0.3337919389415303
+      },
+      {
+        "coverage": 0.75,
+        "n": 5263,
+        "accuracy": 0.5316359490784723,
+        "min_conf": 0.40734048969282655
+      },
+      {
+        "coverage": 0.5,
+        "n": 3509,
+        "accuracy": 0.5722428042177259,
+        "min_conf": 0.46845468694376086
+      },
+      {
+        "coverage": 0.25,
+        "n": 1754,
+        "accuracy": 0.6470923603192702,
+        "min_conf": 0.5623312298019763
+      },
+      {
+        "coverage": 0.1,
+        "n": 701,
+        "accuracy": 0.7275320970042796,
+        "min_conf": 0.6849189099417189
+      },
+      {
+        "coverage": 0.05,
+        "n": 350,
+        "accuracy": 0.7714285714285715,
+        "min_conf": 0.749445989337636
+      }
+    ]
+  },
+  "headroom_25_26": {
+    "hi_share_of_brier": 0.0684399883243551,
+    "contested_share_of_brier": 0.8004674395651095,
+    "hi_acc": 0.7454289732770746,
+    "hi_claim": 0.7275610815506746,
+    "overall_acc": 0.48878858474082704,
+    "max_gain_if_hi_perfect": 0.026354105998835173
+  },
+  "verdict_validation": "ROBUST \u2014 \u226565% tier hits 75% (25/26) vs 71% (24/25 OOT), both calibrated",
+  "verdict_training_focus": "Training-Fokus auf High-Conf = falscher Hebel: die \u226565%-Region tr\u00e4gt nur 7% des Brier-Verlusts und ist bereits kalibriert (gap +1.8%, ~Obergrenze wg. Upsets). Das Signal-/Verlust-Gewicht liegt in der umk\u00e4mpften Region (80% des Brier). Besserer Hebel: SELEKTIVE Vorhersage (nur High-Conf-Tipps nutzen), nicht Retraining."
+}
