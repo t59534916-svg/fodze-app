@@ -1,35 +1,50 @@
 #!/usr/bin/env python3
-"""score_xg_forecast — the NEW-objective scoreboard (2026-05-28).
+"""score_xg_forecast — multi-engine xG-FORECAST leaderboard (new objective).
 
-Objective change: we now optimize/score for FORECAST QUALITY, not betting edge.
+Objective change (2026-05-28): score for FORECAST QUALITY, not betting edge.
   PRIMARY (coupled): predicted λ (expected goals) vs REALIZED xG  →  xG-RMSE/MAE/bias
-                     + the 1X2-Brier derived from the SAME λ via the DC matrix.
-  SECONDARY (tiebreaker, NOT a veto): Pinnacle ROI (handled by dev09_g5_directional_roi.py).
+                     + the 1X2-Brier derived from the SAME λ.
+  SECONDARY (tiebreaker, NOT a veto): Pinnacle ROI (see score_roi_leaderboard.py).
 
-This harness scores each engine's λ_home/λ_away against the realized home_xg/away_xg
-from team_xg_history (via load_match_pairs — 100% coverage on 25/26) on the exact
-same 25/26 holdout the dev-03-vs-dev-09 H2H used. Both engines use RAW DC→1X2
-(no isotonic) so the comparison is model-vs-model, not pipeline-vs-pipeline.
+Engines scored on ONE common realized-xG spine (team_xg_history via
+load_match_pairs):
+  - Standard (ensemble-v1), v1 (poisson-ml), v2 (poisson-ml-v2):
+        from tools/backtest/*-oot-predictions.parquet (stored λ + raw probs).
+  - dev-03 (production) + dev-09 (archived): predicted live from the pickles
+        on the Sofa-native 25/26 corpus.
+All probabilities are RAW (no isotonic/benter) → model-vs-model, not pipeline.
 
-Caveat (documented): "realized xG" is itself a model output (Understat/Sofa), not
-ground truth like goals. Scoring λ against it is lower-variance than scoring against
-goals, but measures agreement with another model's chance-quality estimate.
+Robust realized-xG join (fixes the 77% → ~99% coverage gap): key on
+(league, canonical_home, canonical_away) and pick the nearest realized-xG row
+within a ±7-day window. This (a) absorbs the Sofa UTC-timestamp off-by-one that
+the parquet engines (clean date strings) didn't have, and (b) disambiguates the
+310 double-round-robin pairings (austria_bl / scottish_prem / swiss_sl play the
+same venue twice a season, months apart → nearest-date picks the right leg).
+
+Two leaderboards:
+  1. BEST-EFFORT — each engine on all its joinable 25/26 matches (max n).
+  2. COMMON-INTERSECTION — only matches ALL engines predicted → strict paired
+     ranking (the fair head-to-head).
+
+Caveat (documented): realized xG is itself a model output (Understat/Sofa), not
+ground truth like goals. Lower-variance to score against than goals, but it
+measures agreement with another model's chance-quality estimate.
 
 Output: tools/v4/diagnostics/score_xg_forecast.json
 
 Usage:
   tools/venv/bin/python3 -I tools/v4/diagnostics/score_xg_forecast.py
-  tools/venv/bin/python3 -I tools/v4/diagnostics/score_xg_forecast.py \
-    --dev09-tag dev-09-phase42-seed-000 --dev03-tag dev-03
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
-from datetime import date
+import unicodedata
+from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
@@ -42,256 +57,301 @@ from v4.modules.m3_xg.feature_builder_dev09 import FeatureBuilderDev09, extract_
 from v4.modules.m3_xg.canonical_team_map import canonical_team
 from v4.modules.m1_score.distributions import DixonColesModel, PoissonGoalModel
 from v4.modules.m1_score.coarse_graining import get_1x2
-from v4.eval.metrics import xg_forecast_report, bootstrap_ci
+from v4.eval.metrics import xg_forecast_report
 from v4.data.loaders import load_team_xg_history, load_match_pairs
 
 ARTIFACTS_DIR = REPO_ROOT / "tools" / "v4" / "artifacts"
+BACKTEST_DIR = REPO_ROOT / "tools" / "backtest"
 SQLITE_PATH = REPO_ROOT / "tools" / "sofascore" / "data" / "local_extras.db"
 OUT_PATH = REPO_ROOT / "tools" / "v4" / "diagnostics" / "score_xg_forecast.json"
 
-LAMBDA_MIN = 0.05
-LAMBDA_MAX = 6.0
+LAMBDA_MIN, LAMBDA_MAX = 0.05, 6.0
+JOIN_WINDOW_DAYS = 7
+
+# Prediction-frame contract: every engine is reduced to these columns.
+#   league, ch (canonical home), ca (canonical away), cdate (date),
+#   lam_h, lam_a, p_h, p_d, p_a, y_h (home goals), y_a (away goals)
 
 
-def _outcome_label(h: float, a: float) -> int:
-    if h > a:
-        return 0
-    if h < a:
-        return 2
-    return 1
+def _outcome(h: int, a: int) -> int:
+    return 0 if h > a else (2 if h < a else 1)
 
 
-def _lambdas_to_1x2(lambda_h: np.ndarray, lambda_a: np.ndarray, rho: float) -> np.ndarray:
-    """λ pair → DC score grid → 1X2 probabilities (Poisson fallback on ValueError)."""
-    n = len(lambda_h)
-    p1x2 = np.empty((n, 3))
+def _lambdas_to_1x2(lam_h: np.ndarray, lam_a: np.ndarray, rho: float) -> np.ndarray:
+    n = len(lam_h)
+    out = np.empty((n, 3))
     for i in range(n):
         try:
-            M = DixonColesModel(lambda_h[i], lambda_a[i], rho=rho).matrix(normalize=True)
+            M = DixonColesModel(lam_h[i], lam_a[i], rho=rho).matrix(normalize=True)
         except ValueError:
-            M = PoissonGoalModel(lambda_h[i], lambda_a[i]).matrix(normalize=True)
+            M = PoissonGoalModel(lam_h[i], lam_a[i]).matrix(normalize=True)
         p = get_1x2(M)
-        p1x2[i] = [p["H"], p["D"], p["A"]]
-    return p1x2
+        out[i] = [p["H"], p["D"], p["A"]]
+    return out
 
 
-def _dev09_lambdas(ens_h, ens_a, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
-    mean_h, _ = ens_h.predict(X[ens_h.feature_names])
-    mean_a, _ = ens_a.predict(X[ens_a.feature_names])
-    return (
-        np.clip(mean_h, LAMBDA_MIN, LAMBDA_MAX),
-        np.clip(mean_a, LAMBDA_MIN, LAMBDA_MAX),
-    )
+# ─── name-normalization for the cross-source bridge ──────────────────
+# Sofa's canonical_team() and team_xg_history's stored canonical diverge for a
+# meaningful slice (e.g. "SSC Napoli"↔"Napoli", "Liverpool FC"↔"Liverpool",
+# "Wolverhampton"↔"Wolverhampton Wanderers"). We bridge with tiered matching
+# instead of a hand-maintained alias list.
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")  # strip accents
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser()
-    p.add_argument("--dev09-tag", default="dev-09-phase42-seed-000")
-    p.add_argument("--dev03-tag", default="dev-03")
-    p.add_argument("--test-seasons", default="25/26")
-    p.add_argument("--rho", type=float, default=DEFAULT_RHO)
-    return p.parse_args()
+def _tokens(s: str) -> set:
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return {t for t in re.sub(r"[^a-z0-9 ]", " ", s.lower()).split() if len(t) >= 4}
+
+
+def _name_match(a: str, b: str) -> bool:
+    na, nb = _norm(a), _norm(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    if na in nb or nb in na:  # Liverpool ⊂ LiverpoolFC; Napoli ⊂ SSCNapoli
+        return True
+    return len(_tokens(a) & _tokens(b)) >= 1  # shared significant token (≥4 chars)
+
+
+# ─── realized-xG spine + robust resolver (exact → fuzzy, nearest-date) ─
+
+class XGSpine:
+    def __init__(self, since: str = "2025-07-01"):
+        sp = load_match_pairs(since=since).dropna(subset=["home_xg", "away_xg"]).reset_index(drop=True)
+        sp["mid"] = sp.index
+        self._df = sp
+        # Tier-1: exact canonical-name index.
+        self._cand: Dict[tuple, list] = defaultdict(list)
+        # Tier-2/3: per-league rows for fuzzy fallback.
+        self._by_league: Dict[str, list] = defaultdict(list)
+        for r in sp.itertuples(index=False):
+            row = (pd.Timestamp(r.match_date).date(), int(r.mid), float(r.home_xg), float(r.away_xg))
+            self._cand[(r.league, r.home, r.away)].append(row)
+            self._by_league[r.league].append((r.home, r.away) + row)
+        self.tier_counts = {"exact": 0, "fuzzy": 0, "miss": 0}
+
+    def _nearest(self, opts: list, cdate) -> Optional[Tuple[int, float, float]]:
+        best = min(opts, key=lambda o: abs((o[0] - cdate).days))
+        if abs((best[0] - cdate).days) > JOIN_WINDOW_DAYS:
+            return None
+        return best[1], best[2], best[3]
+
+    def resolve(self, league: str, ch: str, ca, cdate) -> Optional[Tuple[int, float, float]]:
+        # Tier 1: exact canonical key + nearest date.
+        opts = self._cand.get((league, ch, ca))
+        if opts:
+            hit = self._nearest(opts, cdate)
+            if hit:
+                self.tier_counts["exact"] += 1
+                return hit
+        # Tier 2/3: fuzzy — both sides name-match within league, nearest date.
+        cands = [(d, mid, hx, ax) for (h, a, d, mid, hx, ax) in self._by_league.get(league, [])
+                 if _name_match(ch, h) and _name_match(ca, a)]
+        if cands:
+            hit = self._nearest(cands, cdate)
+            if hit:
+                self.tier_counts["fuzzy"] += 1
+                return hit
+        self.tier_counts["miss"] += 1
+        return None
+
+
+def attach_realized_xg(pf: pd.DataFrame, spine: XGSpine) -> pd.DataFrame:
+    mids, rh, ra = [], [], []
+    for r in pf.itertuples(index=False):
+        res = spine.resolve(r.league, r.ch, r.ca, r.cdate)
+        if res:
+            mids.append(res[0]); rh.append(res[1]); ra.append(res[2])
+        else:
+            mids.append(-1); rh.append(np.nan); ra.append(np.nan)
+    return pf.assign(mid=mids, real_h=rh, real_a=ra)
+
+
+def score_engine(pf: pd.DataFrame, mid_filter: Optional[set] = None) -> dict:
+    """xG-forecast report + Brier on the joinable subset (optionally restricted
+    to a set of spine match-ids for the common-intersection leaderboard)."""
+    m = pf["mid"] >= 0
+    if mid_filter is not None:
+        m = m & pf["mid"].isin(mid_filter)
+    sub = pf[m]
+    if len(sub) == 0:
+        return {"n": 0}
+    pred = np.concatenate([sub["lam_h"].to_numpy(float), sub["lam_a"].to_numpy(float)])
+    real = np.concatenate([sub["real_h"].to_numpy(float), sub["real_a"].to_numpy(float)])
+    rep = xg_forecast_report(pred, real)
+    p = sub[["p_h", "p_d", "p_a"]].to_numpy(float)
+    y = np.array([_outcome(h, a) for h, a in zip(sub["y_h"], sub["y_a"])], dtype=int)
+    y1h = np.eye(3)[y]
+    brier = float(((p - y1h) ** 2).sum(axis=1).mean())
+    return {
+        "n_matches": int(len(sub)),
+        "xg_rmse": rep["rmse"], "xg_mae": rep["mae"], "xg_bias": rep["bias"],
+        "pearson_r": rep["pearson_r"], "brier": brier,
+        "mean_lambda": rep["mean_pred"], "mean_realized_xg": rep["mean_realized"],
+    }
+
+
+# ─── engine prediction-frame builders ────────────────────────────────
+
+def parquet_engine(path: Path) -> pd.DataFrame:
+    df = pd.read_parquet(path)
+    ch = df.apply(lambda r: canonical_team(r["home_team"], r["league"]), axis=1)
+    ca = df.apply(lambda r: canonical_team(r["away_team"], r["league"]), axis=1)
+    return pd.DataFrame({
+        "league": df["league"].astype(str),
+        "ch": ch, "ca": ca,
+        "cdate": pd.to_datetime(df["match_date"]).dt.date,
+        "lam_h": np.clip(df["lambda_h_pred"], LAMBDA_MIN, LAMBDA_MAX),
+        "lam_a": np.clip(df["lambda_a_pred"], LAMBDA_MIN, LAMBDA_MAX),
+        "p_h": df["prob_h_raw"], "p_d": df["prob_d_raw"], "p_a": df["prob_a_raw"],
+        "y_h": df["actual_h_goals"], "y_a": df["actual_a_goals"],
+    })
+
+
+def corpus_engines(test_seasons: tuple, rho: float) -> Dict[str, pd.DataFrame]:
+    """dev-03 + dev-09 predicted live on the Sofa-native holdout corpus."""
+    d09_h = BayesianEnsemble.load(ARTIFACTS_DIR / "m3_xg-home-dev-09-phase42-seed-000.pkl")
+    d09_a = BayesianEnsemble.load(ARTIFACTS_DIR / "m3_xg-away-dev-09-phase42-seed-000.pkl")
+    d03 = XGPredictor.from_artifacts(
+        home_path=ARTIFACTS_DIR / "m3_xg-home-dev-03.pkl",
+        away_path=ARTIFACTS_DIR / "m3_xg-away-dev-03.pkl", rho=rho)
+    print("  ✓ dev-09 + dev-03 pickles loaded")
+
+    fb = FeatureBuilderDev09(SQLITE_PATH).fit()
+    test = fb.build_corpus(seasons=test_seasons, leagues=None, verbose=False)
+    test["ch"] = test.apply(lambda r: canonical_team(r["home_team"], r["league"]), axis=1)
+    test["ca"] = test.apply(lambda r: canonical_team(r["away_team"], r["league"]), axis=1)
+    cdate = pd.to_datetime(test["match_date"]).dt.normalize().dt.date
+    league = test["league"].astype(str)
+    print(f"  ✓ Sofa holdout corpus: {len(test):,} matches")
+
+    # dev-09 λ
+    mh, _ = d09_h.predict(extract_X_dev09(test)[d09_h.feature_names])
+    ma, _ = d09_a.predict(extract_X_dev09(test)[d09_a.feature_names])
+    lam_h_09 = np.clip(mh, LAMBDA_MIN, LAMBDA_MAX)
+    lam_a_09 = np.clip(ma, LAMBDA_MIN, LAMBDA_MAX)
+    p09 = _lambdas_to_1x2(lam_h_09, lam_a_09, rho)
+    dev09 = pd.DataFrame({
+        "league": league.values, "ch": test["ch"].values, "ca": test["ca"].values, "cdate": cdate.values,
+        "lam_h": lam_h_09, "lam_a": lam_a_09, "p_h": p09[:, 0], "p_d": p09[:, 1], "p_a": p09[:, 2],
+        "y_h": test["home_goals"].values, "y_a": test["away_goals"].values,
+    })
+
+    # dev-03 (needs team_xg_history)
+    d03_in = pd.DataFrame({
+        "league": league, "match_date": pd.to_datetime(test["match_date"]).dt.normalize(),
+        "home": test["ch"], "away": test["ca"],
+        "home_goals": test["home_goals"], "away_goals": test["away_goals"],
+    })
+    history = load_team_xg_history()
+    dp = d03.predict_batch(d03_in, history, verbose=False)
+    dev03 = pd.DataFrame({
+        "league": league.values, "ch": test["ch"].values, "ca": test["ca"].values, "cdate": cdate.values,
+        "lam_h": np.clip(dp["lambda_h"], LAMBDA_MIN, LAMBDA_MAX),
+        "lam_a": np.clip(dp["lambda_a"], LAMBDA_MIN, LAMBDA_MAX),
+        "p_h": dp["prob_h"].values, "p_d": dp["prob_d"].values, "p_a": dp["prob_a"].values,
+        "y_h": test["home_goals"].values, "y_a": test["away_goals"].values,
+    })
+    return {"dev-09": dev09, "dev-03": dev03}
 
 
 def main() -> int:
-    args = parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--test-seasons", default="25/26")
+    ap.add_argument("--rho", type=float, default=DEFAULT_RHO)
+    args = ap.parse_args()
     test_seasons = tuple(args.test_seasons.split(","))
 
-    print("═" * 72)
-    print(f"xG-FORECAST SCOREBOARD · {test_seasons} holdout · NEW objective")
-    print("  PRIMARY: λ vs realized xG (RMSE/MAE/bias) + 1X2-Brier (coupled)")
-    print("  ROI = secondary tiebreaker (see dev09_g5_directional_roi.py)")
-    print("═" * 72)
+    print("═" * 76)
+    print(f"xG-FORECAST LEADERBOARD · {test_seasons} · PRIMARY=xG-RMSE+Brier (coupled)")
+    print("═" * 76)
 
-    # ─── Load engines ───
-    d09_h = BayesianEnsemble.load(ARTIFACTS_DIR / f"m3_xg-home-{args.dev09_tag}.pkl")
-    d09_a = BayesianEnsemble.load(ARTIFACTS_DIR / f"m3_xg-away-{args.dev09_tag}.pkl")
-    d03 = XGPredictor.from_artifacts(
-        home_path=ARTIFACTS_DIR / f"m3_xg-home-{args.dev03_tag}.pkl",
-        away_path=ARTIFACTS_DIR / f"m3_xg-away-{args.dev03_tag}.pkl",
-        rho=args.rho,
-    )
-    print(f"  ✓ dev-09 ({d09_h.n_models} bagged) + dev-03 loaded")
+    spine = XGSpine()
+    print(f"  realized-xG spine: {len(spine._df):,} matches (team_xg_history)")
 
-    # ─── Build 25/26 holdout corpus (Sofa-native) + canonicalize ───
-    fb = FeatureBuilderDev09(SQLITE_PATH).fit()
-    test = fb.build_corpus(seasons=test_seasons, leagues=None, verbose=False)
-    test["canonical_home"] = test.apply(lambda r: canonical_team(r["home_team"], r["league"]), axis=1)
-    test["canonical_away"] = test.apply(lambda r: canonical_team(r["away_team"], r["league"]), axis=1)
-    test["match_date_d"] = pd.to_datetime(test["match_date"]).dt.normalize()
-    print(f"  ✓ holdout corpus: {len(test):,} matches")
+    engines: Dict[str, pd.DataFrame] = {}
+    # Parquet engines (cheap)
+    engines["Standard"] = parquet_engine(BACKTEST_DIR / "ensemble-v1-oot-predictions.parquet")
+    engines["v1"] = parquet_engine(BACKTEST_DIR / "v1-oot-predictions.parquet")
+    engines["v2"] = parquet_engine(BACKTEST_DIR / "v2-oot-predictions.parquet")
+    print(f"  ✓ parquet engines: Standard/v1/v2")
+    # Corpus engines (expensive)
+    engines.update(corpus_engines(test_seasons, args.rho))
 
-    # ─── Realized xG lookup (team_xg_history via load_match_pairs) ───
-    pairs = load_match_pairs(since="2025-07-01")
-    pairs = pairs.dropna(subset=["home_xg", "away_xg"])
-    xg_lookup: Dict[tuple, Tuple[float, float]] = {}
-    for r in pairs.itertuples(index=False):
-        key = (r.league, pd.Timestamp(r.match_date).date(), r.home, r.away)
-        xg_lookup[key] = (float(r.home_xg), float(r.away_xg))
-
-    real_h = np.full(len(test), np.nan)
-    real_a = np.full(len(test), np.nan)
-    for i, r in enumerate(test.itertuples(index=False)):
-        key = (r.league, pd.Timestamp(r.match_date_d).date(), r.canonical_home, r.canonical_away)
-        hit = xg_lookup.get(key)
-        if hit is not None:
-            real_h[i], real_a[i] = hit
-    has_xg = ~np.isnan(real_h) & ~np.isnan(real_a)
-    print(f"  ✓ realized-xG matched: {has_xg.sum():,}/{len(test):,} ({100*has_xg.mean():.1f}%)")
+    # Attach realized xG (robust join)
+    for name in engines:
+        engines[name] = attach_realized_xg(engines[name], spine)
+        cov = (engines[name]["mid"] >= 0).mean()
+        print(f"    {name:<10} {len(engines[name]):>5} preds · realized-xG join {100*cov:>5.1f}%")
+    tc = spine.tier_counts
+    tot = sum(tc.values()) or 1
+    print(f"  join tiers (all engines): exact {tc['exact']:,} · fuzzy {tc['fuzzy']:,} "
+          f"({100*tc['fuzzy']/tot:.1f}%) · miss {tc['miss']:,}")
     print()
 
-    # ─── dev-03 input + predictions (raw DC, no isotonic) ───
-    d03_input = pd.DataFrame({
-        "league": test["league"].astype(str),
-        "match_date": test["match_date_d"],
-        "home": test["canonical_home"],
-        "away": test["canonical_away"],
-        "home_goals": test["home_goals"],
-        "away_goals": test["away_goals"],
-    })
-    history = load_team_xg_history()
-    d03_preds = d03.predict_batch(d03_input, history, verbose=False)
-    if len(d03_preds) != len(test):
-        print(f"  ✗ dev-03 row-order contract broken ({len(d03_preds)} vs {len(test)})")
-        return 1
-    lam_h_03 = d03_preds["lambda_h"].to_numpy(dtype=float)
-    lam_a_03 = d03_preds["lambda_a"].to_numpy(dtype=float)
-    p03 = np.column_stack([d03_preds["prob_h"], d03_preds["prob_d"], d03_preds["prob_a"]])
+    # ─── Best-effort leaderboard ───
+    best = {name: score_engine(pf) for name, pf in engines.items()}
 
-    # ─── dev-09 predictions ───
-    X_test = extract_X_dev09(test)
-    lam_h_09, lam_a_09 = _dev09_lambdas(d09_h, d09_a, X_test)
-    p09 = _lambdas_to_1x2(lam_h_09, lam_a_09, args.rho)
+    # ─── Common-intersection ───
+    mid_sets = [set(pf.loc[pf["mid"] >= 0, "mid"]) for pf in engines.values()]
+    inter = set.intersection(*mid_sets) if mid_sets else set()
+    common = {name: score_engine(pf, mid_filter=inter) for name, pf in engines.items()}
 
-    # ─── Ground truth ───
-    y = np.array([_outcome_label(h, a) for h, a in zip(test["home_goals"], test["away_goals"])], dtype=int)
-    y1h = np.eye(3)[y]
-    brier09_pm = ((p09 - y1h) ** 2).sum(axis=1)
-    brier03_pm = ((p03 - y1h) ** 2).sum(axis=1)
+    def _table(title, scores):
+        print("─" * 76)
+        print(f"{title}")
+        print("─" * 76)
+        print(f"  {'engine':<10} {'n':>5} {'xG-RMSE':>8} {'xG-MAE':>7} {'xG-bias':>8} {'r':>6} {'Brier':>8}")
+        # sort by xG-RMSE (the new primary axis)
+        for name in sorted(scores, key=lambda k: scores[k].get("xg_rmse", 9)):
+            s = scores[name]
+            if s.get("n_matches", 0) == 0:
+                continue
+            print(f"  {name:<10} {s['n_matches']:>5} {s['xg_rmse']:>8.4f} {s['xg_mae']:>7.4f} "
+                  f"{s['xg_bias']:>+8.4f} {s['pearson_r']:>6.3f} {s['brier']:>8.4f}")
+        print()
 
-    # ─── xG-forecast reports (stacked home+away, only matched rows) ───
-    def _xg_report(lam_h, lam_a):
-        pred = np.concatenate([lam_h[has_xg], lam_a[has_xg]])
-        real = np.concatenate([real_h[has_xg], real_a[has_xg]])
-        return xg_forecast_report(pred, real)
+    _table("BEST-EFFORT (each engine on its own joinable 25/26 matches)", best)
+    _table(f"COMMON-INTERSECTION (n={len(inter):,} matches predicted by ALL engines)", common)
 
-    rep09 = _xg_report(lam_h_09, lam_a_09)
-    rep03 = _xg_report(lam_h_03, lam_a_03)
-
-    # Per-match abs-error (stacked) for paired delta + bootstrap CI
-    ae09 = np.abs(np.concatenate([lam_h_09[has_xg], lam_a_09[has_xg]]) -
-                  np.concatenate([real_h[has_xg], real_a[has_xg]]))
-    ae03 = np.abs(np.concatenate([lam_h_03[has_xg], lam_a_03[has_xg]]) -
-                  np.concatenate([real_h[has_xg], real_a[has_xg]]))
-    se09 = ae09 ** 2
-    se03 = ae03 ** 2
-    rmse_delta = float(np.sqrt(se09.mean()) - np.sqrt(se03.mean()))  # <0 = dev-09 better
-    mae_delta = float(ae09.mean() - ae03.mean())
-    # Bootstrap CI of the paired RMSE delta (resample match-side index)
-    rng = np.random.default_rng(42)
-    idx = np.arange(len(se09))
-    boot = []
-    for _ in range(2000):
-        s = rng.choice(idx, size=len(idx), replace=True)
-        boot.append(np.sqrt(se09[s].mean()) - np.sqrt(se03[s].mean()))
-    rmse_delta_ci = [float(np.percentile(boot, 2.5)), float(np.percentile(boot, 97.5))]
-
-    brier_delta = float(brier09_pm.mean() - brier03_pm.mean())
-
-    # ─── Report ───
-    print("─" * 72)
-    print(f"{'ENGINE':<10} {'xG-RMSE':>8} {'xG-MAE':>8} {'xG-bias':>8} {'pearson_r':>9} {'Brier':>8}")
-    print("─" * 72)
-    print(f"{'dev-03':<10} {rep03['rmse']:>8.4f} {rep03['mae']:>8.4f} {rep03['bias']:>+8.4f} "
-          f"{rep03['pearson_r']:>9.4f} {brier03_pm.mean():>8.4f}")
-    print(f"{'dev-09':<10} {rep09['rmse']:>8.4f} {rep09['mae']:>8.4f} {rep09['bias']:>+8.4f} "
-          f"{rep09['pearson_r']:>9.4f} {brier09_pm.mean():>8.4f}")
-    print("─" * 72)
-    print(f"  Realized-xG mean: {rep03['mean_realized']:.4f}  (n={rep03['n']:,} team-sides)")
+    # Rankings on the intersection (the fair comparison)
+    rmse_rank = sorted([k for k in common if common[k].get("n_matches")],
+                       key=lambda k: common[k]["xg_rmse"])
+    brier_rank = sorted([k for k in common if common[k].get("n_matches")],
+                        key=lambda k: common[k]["brier"])
+    print(f"  xG-RMSE ranking (primary): {' < '.join(rmse_rank)}")
+    print(f"  Brier   ranking:           {' < '.join(brier_rank)}")
     print()
-    print(f"  PAIRED dev-09 − dev-03:")
-    print(f"    xG-RMSE Δ:  {rmse_delta:+.4f}  95%CI [{rmse_delta_ci[0]:+.4f}, {rmse_delta_ci[1]:+.4f}]  "
-          f"({'dev-09 better' if rmse_delta < 0 else 'dev-03 better'})")
-    print(f"    xG-MAE  Δ:  {mae_delta:+.4f}")
-    print(f"    Brier   Δ:  {brier_delta:+.5f}  ({'dev-09 better' if brier_delta < 0 else 'dev-03 better'})")
-    print()
-
-    # ─── Per-league xG-RMSE + Brier ───
-    per_league = []
-    for lg in sorted(test["league"].astype(str).unique()):
-        m = (test["league"].astype(str) == lg).to_numpy() & has_xg
-        if m.sum() < 10:
-            continue
-        n_lg = int(m.sum())
-        pr09 = np.concatenate([lam_h_09[m], lam_a_09[m]])
-        pr03 = np.concatenate([lam_h_03[m], lam_a_03[m]])
-        rl = np.concatenate([real_h[m], real_a[m]])
-        rmse09 = float(np.sqrt(np.mean((pr09 - rl) ** 2)))
-        rmse03 = float(np.sqrt(np.mean((pr03 - rl) ** 2)))
-        # Brier on the 1X2 axis uses the match-level mask
-        bm = (test["league"].astype(str) == lg).to_numpy() & has_xg
-        b09 = float(brier09_pm[bm].mean())
-        b03 = float(brier03_pm[bm].mean())
-        per_league.append({
-            "league": lg, "n": n_lg,
-            "xg_rmse_dev03": rmse03, "xg_rmse_dev09": rmse09, "xg_rmse_delta": rmse09 - rmse03,
-            "brier_dev03": b03, "brier_dev09": b09, "brier_delta": b09 - b03,
-        })
-
-    print("─" * 72)
-    print(f"  {'league':<16} {'n':>4} {'RMSE03':>7} {'RMSE09':>7} {'Δrmse':>7} {'Bri03':>7} {'Bri09':>7}")
-    for h in per_league:
-        print(f"  {h['league']:<16} {h['n']:>4} {h['xg_rmse_dev03']:>7.4f} {h['xg_rmse_dev09']:>7.4f} "
-              f"{h['xg_rmse_delta']:>+7.4f} {h['brier_dev03']:>7.4f} {h['brier_dev09']:>7.4f}")
-    print()
-
-    # ─── Verdict (forecast-primary; ROI is a separate secondary tiebreaker) ───
-    rmse_better = rmse_delta < 0 and rmse_delta_ci[1] < 0   # CI strictly < 0
-    brier_better = brier_delta < 0
-    if rmse_better and brier_better:
-        verdict = "dev-09 wins BOTH axes (xG-RMSE CI<0 + Brier) — strong forecast candidate"
-    elif (rmse_delta < 0) and brier_better:
-        verdict = "dev-09 better on both point-estimates (RMSE CI straddles 0) — lean dev-09"
-    elif brier_better and rmse_delta >= 0:
-        verdict = "split: dev-09 better Brier but NOT better xG-RMSE — investigate"
-    elif rmse_delta < 0 and not brier_better:
-        verdict = "split: dev-09 better xG-RMSE but NOT Brier — investigate"
-    else:
-        verdict = "dev-03 holds both axes — keep dev-03"
 
     out = {
-        "objective": "xg-forecast primary (RMSE/MAE/bias) + 1x2-brier coupled; ROI secondary tiebreaker",
+        "objective": "xg-forecast primary (RMSE/MAE/bias) + 1x2-brier coupled; ROI secondary",
         "test_seasons": list(test_seasons),
-        "dev09_tag": args.dev09_tag,
-        "dev03_tag": args.dev03_tag,
         "rho": args.rho,
-        "n_test": int(len(test)),
-        "n_with_realized_xg": int(has_xg.sum()),
-        "realized_xg_coverage_pct": float(100 * has_xg.mean()),
-        "calibration": "RAW DC→1X2 for both engines (no isotonic/benter) — model-vs-model",
-        "engines": {
-            "dev-03": {"xg": rep03, "brier": float(brier03_pm.mean())},
-            "dev-09": {"xg": rep09, "brier": float(brier09_pm.mean())},
-        },
-        "paired_dev09_minus_dev03": {
-            "xg_rmse_delta": rmse_delta,
-            "xg_rmse_delta_ci95": rmse_delta_ci,
-            "xg_mae_delta": mae_delta,
-            "brier_delta": brier_delta,
-        },
-        "per_league": per_league,
-        "verdict": verdict,
+        "join": f"(league, canon_home, canon_away) nearest-date ±{JOIN_WINDOW_DAYS}d",
+        "calibration": "RAW probs for all engines (no isotonic/benter)",
+        "n_spine": int(len(spine._df)),
+        "n_common_intersection": int(len(inter)),
+        "best_effort": best,
+        "common_intersection": common,
+        "rmse_ranking": rmse_rank,
+        "brier_ranking": brier_rank,
         "_caveats": [
             "Realized xG is a model output (Understat/Sofa), not ground truth like goals.",
-            "Both engines scored on RAW DC→1X2 (no isotonic) — model quality, not pipeline.",
-            "ROI is a SECONDARY tiebreaker (not scored here): see dev09_g5_directional_roi.py.",
+            "All engines on RAW probs (no isotonic) — model quality, not pipeline.",
+            "Parquet engines (Standard/v1/v2) carry stored λ; dev-03/dev-09 predicted live.",
+            "ROI tiebreaker scored separately (score_roi_leaderboard.py).",
         ],
     }
     OUT_PATH.write_text(json.dumps(out, indent=2))
-    print("═" * 72)
-    print(f"VERDICT: {verdict}")
+    print("═" * 76)
     print(f"  ✓ {OUT_PATH.relative_to(REPO_ROOT)}")
-    print("═" * 72)
+    print("═" * 76)
     return 0
 
 

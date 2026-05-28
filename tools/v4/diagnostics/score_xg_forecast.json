@@ -1,276 +1,135 @@
 {
-  "objective": "xg-forecast primary (RMSE/MAE/bias) + 1x2-brier coupled; ROI secondary tiebreaker",
+  "objective": "xg-forecast primary (RMSE/MAE/bias) + 1x2-brier coupled; ROI secondary",
   "test_seasons": [
     "25/26"
   ],
-  "dev09_tag": "dev-09-phase42-seed-000",
-  "dev03_tag": "dev-03",
   "rho": -0.094,
-  "n_test": 6868,
-  "n_with_realized_xg": 5298,
-  "realized_xg_coverage_pct": 77.14036109493301,
-  "calibration": "RAW DC\u21921X2 for both engines (no isotonic/benter) \u2014 model-vs-model",
-  "engines": {
-    "dev-03": {
-      "xg": {
-        "n": 10596,
-        "rmse": 0.7169499159082701,
-        "mae": 0.5471819698903627,
-        "bias": -0.04872248142690577,
-        "mean_pred": 1.3655706480559178,
-        "mean_realized": 1.4142931294828238,
-        "pearson_r": 0.39295777500320755
-      },
-      "brier": 0.6206639341270186
+  "join": "(league, canon_home, canon_away) nearest-date \u00b17d",
+  "calibration": "RAW probs for all engines (no isotonic/benter)",
+  "n_spine": 7719,
+  "n_common_intersection": 4642,
+  "best_effort": {
+    "Standard": {
+      "n_matches": 7154,
+      "xg_rmse": 0.7444355639438748,
+      "xg_mae": 0.5815556803605773,
+      "xg_bias": 0.11480690102526687,
+      "pearson_r": 0.30029327341428136,
+      "brier": 0.6728433958469202,
+      "mean_lambda": 1.5094553494457308,
+      "mean_realized_xg": 1.3946484484204642
+    },
+    "v1": {
+      "n_matches": 6525,
+      "xg_rmse": 0.8074030649078502,
+      "xg_mae": 0.6119301553178691,
+      "xg_bias": -0.03441894329916297,
+      "pearson_r": 0.23191192479591288,
+      "brier": 0.6475486592648592,
+      "mean_lambda": 1.3626753095744002,
+      "mean_realized_xg": 1.3970942528735633
+    },
+    "v2": {
+      "n_matches": 6525,
+      "xg_rmse": 0.7147848053220701,
+      "xg_mae": 0.5432382291492126,
+      "xg_bias": -0.07893536693485793,
+      "pearson_r": 0.31927186597941526,
+      "brier": 0.6237845606657679,
+      "mean_lambda": 1.3181588859387052,
+      "mean_realized_xg": 1.3970942528735633
     },
     "dev-09": {
-      "xg": {
-        "n": 10596,
-        "rmse": 0.7260929281359718,
-        "mae": 0.5514842464525861,
-        "bias": -0.07250820847899052,
-        "mean_pred": 1.3417849210038333,
-        "mean_realized": 1.4142931294828238,
-        "pearson_r": 0.3738420114169368
-      },
-      "brier": 0.6139630557068171
+      "n_matches": 6750,
+      "xg_rmse": 0.7161843556199737,
+      "xg_mae": 0.5432747880090613,
+      "xg_bias": -0.07973627298268979,
+      "pearson_r": 0.3776643538333021,
+      "brier": 0.6128406665115584,
+      "mean_lambda": 1.3408089122024955,
+      "mean_realized_xg": 1.4205451851851851
+    },
+    "dev-03": {
+      "n_matches": 6750,
+      "xg_rmse": 0.7176465137916698,
+      "xg_mae": 0.5451207330192699,
+      "xg_bias": -0.06267806448659104,
+      "pearson_r": 0.36616760682341576,
+      "brier": 0.6204819308929508,
+      "mean_lambda": 1.357867120698594,
+      "mean_realized_xg": 1.4205451851851851
     }
   },
-  "paired_dev09_minus_dev03": {
-    "xg_rmse_delta": 0.009143012227701752,
-    "xg_rmse_delta_ci95": [
-      0.003942457714050054,
-      0.014404003654603934
-    ],
-    "xg_mae_delta": 0.004302276562223373,
-    "brier_delta": -0.006700878420201506
-  },
-  "per_league": [
-    {
-      "league": "austria_bl",
-      "n": 149,
-      "xg_rmse_dev03": 0.779248681148843,
-      "xg_rmse_dev09": 0.7726195147882765,
-      "xg_rmse_delta": -0.006629166360566541,
-      "brier_dev03": 0.6611767122044959,
-      "brier_dev09": 0.6395746606811515,
-      "brier_delta": -0.02160205152334438
+  "common_intersection": {
+    "Standard": {
+      "n_matches": 6276,
+      "xg_rmse": 0.7540929472033352,
+      "xg_mae": 0.5894893209474306,
+      "xg_bias": 0.11961549672822988,
+      "pearson_r": 0.29634467679194837,
+      "brier": 0.6703316022683494,
+      "mean_lambda": 1.5101397159761585,
+      "mean_realized_xg": 1.3905242192479286
     },
-    {
-      "league": "bundesliga",
-      "n": 261,
-      "xg_rmse_dev03": 0.8642311441971965,
-      "xg_rmse_dev09": 0.8744511564491921,
-      "xg_rmse_delta": 0.010220012251995647,
-      "brier_dev03": 0.5597702477928492,
-      "brier_dev09": 0.5665264553374186,
-      "brier_delta": 0.006756207544569404
+    "v1": {
+      "n_matches": 4932,
+      "xg_rmse": 0.8057420524528328,
+      "xg_mae": 0.6108252459550116,
+      "xg_bias": -0.03236461865980298,
+      "pearson_r": 0.23506041293676996,
+      "brier": 0.6483413070509109,
+      "mean_lambda": 1.3572917073742603,
+      "mean_realized_xg": 1.3896563260340633
     },
-    {
-      "league": "bundesliga2",
-      "n": 258,
-      "xg_rmse_dev03": 0.7947092104060186,
-      "xg_rmse_dev09": 0.7959230226441605,
-      "xg_rmse_delta": 0.0012138122381418759,
-      "brier_dev03": 0.622358621096057,
-      "brier_dev09": 0.6255351572491512,
-      "brier_delta": 0.0031765361530942116
+    "v2": {
+      "n_matches": 4932,
+      "xg_rmse": 0.7200274506720377,
+      "xg_mae": 0.5479142487080375,
+      "xg_bias": -0.07464560312305095,
+      "pearson_r": 0.3122563749912452,
+      "brier": 0.6231739317235415,
+      "mean_lambda": 1.3150107229110124,
+      "mean_realized_xg": 1.3896563260340633
     },
-    {
-      "league": "championship",
-      "n": 458,
-      "xg_rmse_dev03": 0.7055955906973035,
-      "xg_rmse_dev09": 0.714859026866323,
-      "xg_rmse_delta": 0.009263436169019479,
-      "brier_dev03": 0.6398717391021868,
-      "brier_dev09": 0.6418622635144019,
-      "brier_delta": 0.0019905244122151444
+    "dev-09": {
+      "n_matches": 4642,
+      "xg_rmse": 0.7006012322587888,
+      "xg_mae": 0.5324258733084152,
+      "xg_bias": -0.06492905719455659,
+      "pearson_r": 0.3775386323977753,
+      "brier": 0.6135333125338785,
+      "mean_lambda": 1.3251463413405575,
+      "mean_realized_xg": 1.3900753985351142
     },
-    {
-      "league": "eerste_divisie",
-      "n": 20,
-      "xg_rmse_dev03": 0.5785078774654692,
-      "xg_rmse_dev09": 0.5854351198118773,
-      "xg_rmse_delta": 0.00692724234640818,
-      "brier_dev03": 0.6432258009064786,
-      "brier_dev09": 0.6384916591619823,
-      "brier_delta": -0.0047341417444963785
-    },
-    {
-      "league": "epl",
-      "n": 316,
-      "xg_rmse_dev03": 0.7508388685788828,
-      "xg_rmse_dev09": 0.7681740982013779,
-      "xg_rmse_delta": 0.01733522962249512,
-      "brier_dev03": 0.6233654579955884,
-      "brier_dev09": 0.6172955344596913,
-      "brier_delta": -0.0060699235358970816
-    },
-    {
-      "league": "eredivisie",
-      "n": 288,
-      "xg_rmse_dev03": 0.7813224671365547,
-      "xg_rmse_dev09": 0.7933719766796244,
-      "xg_rmse_delta": 0.012049509543069714,
-      "brier_dev03": 0.5954925521042257,
-      "brier_dev09": 0.5933958430970185,
-      "brier_delta": -0.0020967090072071537
-    },
-    {
-      "league": "greek_sl",
-      "n": 11,
-      "xg_rmse_dev03": 0.7267655010240273,
-      "xg_rmse_dev09": 0.5623479840001396,
-      "xg_rmse_delta": -0.16441751702388763,
-      "brier_dev03": 0.5055756992481117,
-      "brier_dev09": 0.40244577822132843,
-      "brier_delta": -0.10312992102678331
-    },
-    {
-      "league": "jupiler_pro",
-      "n": 106,
-      "xg_rmse_dev03": 0.8012203353982597,
-      "xg_rmse_dev09": 0.8425933904276787,
-      "xg_rmse_delta": 0.041373055029419015,
-      "brier_dev03": 0.6868865559226173,
-      "brier_dev09": 0.6928979056189154,
-      "brier_delta": 0.006011349696298129
-    },
-    {
-      "league": "la_liga",
-      "n": 278,
-      "xg_rmse_dev03": 0.7496873116847431,
-      "xg_rmse_dev09": 0.7512162572792852,
-      "xg_rmse_delta": 0.001528945594542086,
-      "brier_dev03": 0.5614482677257605,
-      "brier_dev09": 0.5584335407842407,
-      "brier_delta": -0.0030147269415198297
-    },
-    {
-      "league": "la_liga2",
-      "n": 191,
-      "xg_rmse_dev03": 0.5057082535432719,
-      "xg_rmse_dev09": 0.5607491411930963,
-      "xg_rmse_delta": 0.0550408876498244,
-      "brier_dev03": 0.6466346495089982,
-      "brier_dev09": 0.6458936150134469,
-      "brier_delta": -0.000741034495551296
-    },
-    {
-      "league": "league_one",
-      "n": 456,
-      "xg_rmse_dev03": 0.46476857208231115,
-      "xg_rmse_dev09": 0.46499348092409043,
-      "xg_rmse_delta": 0.00022490884177928105,
-      "brier_dev03": 0.6304348600705372,
-      "brier_dev09": 0.6191848044120349,
-      "brier_delta": -0.011250055658502234
-    },
-    {
-      "league": "league_two",
-      "n": 381,
-      "xg_rmse_dev03": 0.45404172946826404,
-      "xg_rmse_dev09": 0.47467588517199855,
-      "xg_rmse_delta": 0.020634155703734502,
-      "brier_dev03": 0.6415661064329143,
-      "brier_dev09": 0.6366948590181829,
-      "brier_delta": -0.004871247414731439
-    },
-    {
-      "league": "liga3",
-      "n": 330,
-      "xg_rmse_dev03": 0.81988581148547,
-      "xg_rmse_dev09": 0.8423687134238275,
-      "xg_rmse_delta": 0.022482901938357447,
-      "brier_dev03": 0.6164915046806342,
-      "brier_dev09": 0.6288909990795422,
-      "brier_delta": 0.012399494398907973
-    },
-    {
-      "league": "ligue_1",
-      "n": 147,
-      "xg_rmse_dev03": 0.8413439270178898,
-      "xg_rmse_dev09": 0.8543203874634843,
-      "xg_rmse_delta": 0.012976460445594418,
-      "brier_dev03": 0.6054141015159468,
-      "brier_dev09": 0.6172449155299058,
-      "brier_delta": 0.011830814013959023
-    },
-    {
-      "league": "ligue_2",
-      "n": 177,
-      "xg_rmse_dev03": 0.44029496684281627,
-      "xg_rmse_dev09": 0.45971512835394307,
-      "xg_rmse_delta": 0.0194201615111268,
-      "brier_dev03": 0.6586545869326246,
-      "brier_dev09": 0.6592115591480923,
-      "brier_delta": 0.0005569722154676882
-    },
-    {
-      "league": "primeira_liga",
-      "n": 169,
-      "xg_rmse_dev03": 0.7264993943866473,
-      "xg_rmse_dev09": 0.7359603703019725,
-      "xg_rmse_delta": 0.009460975915325132,
-      "brier_dev03": 0.5458555110525535,
-      "brier_dev09": 0.5351625213334509,
-      "brier_delta": -0.010692989719102597
-    },
-    {
-      "league": "scottish_prem",
-      "n": 175,
-      "xg_rmse_dev03": 0.8233779565487666,
-      "xg_rmse_dev09": 0.8114190096968926,
-      "xg_rmse_delta": -0.01195894685187393,
-      "brier_dev03": 0.577890258706004,
-      "brier_dev09": 0.5912443485717801,
-      "brier_delta": 0.013354089865776131
-    },
-    {
-      "league": "serie_a",
-      "n": 353,
-      "xg_rmse_dev03": 0.7383035421766933,
-      "xg_rmse_dev09": 0.7329254992279195,
-      "xg_rmse_delta": -0.0053780429487737536,
-      "brier_dev03": 0.5950899335137374,
-      "brier_dev09": 0.5925445949708514,
-      "brier_delta": -0.0025453385428859665
-    },
-    {
-      "league": "serie_b",
-      "n": 380,
-      "xg_rmse_dev03": 0.7497826207792516,
-      "xg_rmse_dev09": 0.7505809785668883,
-      "xg_rmse_delta": 0.0007983577876367054,
-      "brier_dev03": 0.6141817944914405,
-      "brier_dev09": 0.6239599131523785,
-      "brier_delta": 0.009778118660938029
-    },
-    {
-      "league": "super_lig",
-      "n": 184,
-      "xg_rmse_dev03": 0.7436290081228181,
-      "xg_rmse_dev09": 0.7499218648833897,
-      "xg_rmse_delta": 0.0062928567605716745,
-      "brier_dev03": 0.5949154192648628,
-      "brier_dev09": 0.5969398409026079,
-      "brier_delta": 0.0020244216377450774
-    },
-    {
-      "league": "swiss_sl",
-      "n": 210,
-      "xg_rmse_dev03": 0.857462850403218,
-      "xg_rmse_dev09": 0.8718668936075176,
-      "xg_rmse_delta": 0.014404043204299555,
-      "brier_dev03": 0.6161492598917564,
-      "brier_dev09": 0.6216561554724991,
-      "brier_delta": 0.005506895580742688
+    "dev-03": {
+      "n_matches": 4642,
+      "xg_rmse": 0.7016194807371128,
+      "xg_mae": 0.5333010890450084,
+      "xg_bias": -0.05329074055767504,
+      "pearson_r": 0.37196349747171426,
+      "brier": 0.6193195405284969,
+      "mean_lambda": 1.336784657977439,
+      "mean_realized_xg": 1.3900753985351142
     }
+  },
+  "rmse_ranking": [
+    "dev-09",
+    "dev-03",
+    "v2",
+    "Standard",
+    "v1"
   ],
-  "verdict": "split: dev-09 better Brier but NOT better xG-RMSE \u2014 investigate",
+  "brier_ranking": [
+    "dev-09",
+    "dev-03",
+    "v2",
+    "v1",
+    "Standard"
+  ],
   "_caveats": [
     "Realized xG is a model output (Understat/Sofa), not ground truth like goals.",
-    "Both engines scored on RAW DC\u21921X2 (no isotonic) \u2014 model quality, not pipeline.",
-    "ROI is a SECONDARY tiebreaker (not scored here): see dev09_g5_directional_roi.py."
+    "All engines on RAW probs (no isotonic) \u2014 model quality, not pipeline.",
+    "Parquet engines (Standard/v1/v2) carry stored \u03bb; dev-03/dev-09 predicted live.",
+    "ROI tiebreaker scored separately (score_roi_leaderboard.py)."
   ]
 }
