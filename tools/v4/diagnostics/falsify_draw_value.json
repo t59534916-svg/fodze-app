@@ -1,0 +1,94 @@
+{
+  "rule": "bet draw when Blend P(draw) > 1/pscd + edge",
+  "primary_metric": "edge\u22650pp ROI (pre-registered, largest n)",
+  "seasons": {
+    "25/26": {
+      "n_matches_with_odds": 1560,
+      "edges": [
+        {
+          "edge_pp": 0.0,
+          "n_bets": 507,
+          "win_rate": 0.2583826429980276,
+          "mean_odds": 4.422623274161735,
+          "roi_pct": 6.01,
+          "ci95": [
+            -9.52,
+            22.84
+          ],
+          "ci_excludes_0": false
+        },
+        {
+          "edge_pp": 2.0,
+          "n_bets": 148,
+          "win_rate": 0.22972972972972974,
+          "mean_odds": 5.241554054054054,
+          "roi_pct": 9.74,
+          "ci95": [
+            -25.95,
+            46.21
+          ],
+          "ci_excludes_0": false
+        },
+        {
+          "edge_pp": 4.0,
+          "n_bets": 42,
+          "win_rate": 0.23809523809523808,
+          "mean_odds": 6.4016666666666655,
+          "roi_pct": 31.69,
+          "ci95": [
+            -42.12,
+            123.82
+          ],
+          "ci_excludes_0": false
+        }
+      ],
+      "role": "discovery"
+    },
+    "24/25": {
+      "n_matches_with_odds": 3319,
+      "edges": [
+        {
+          "edge_pp": 0.0,
+          "n_bets": 1107,
+          "win_rate": 0.22854561878952123,
+          "mean_odds": 4.5984643179765134,
+          "roi_pct": -6.71,
+          "ci95": [
+            -17.08,
+            4.23
+          ],
+          "ci_excludes_0": false
+        },
+        {
+          "edge_pp": 2.0,
+          "n_bets": 444,
+          "win_rate": 0.19594594594594594,
+          "mean_odds": 5.3644369369369365,
+          "roi_pct": -10.05,
+          "ci95": [
+            -26.28,
+            7.48
+          ],
+          "ci_excludes_0": false
+        },
+        {
+          "edge_pp": 4.0,
+          "n_bets": 172,
+          "win_rate": 0.1569767441860465,
+          "mean_odds": 5.946046511627907,
+          "roi_pct": -16.85,
+          "ci95": [
+            -45.53,
+            13.84
+          ],
+          "ci_excludes_0": false
+        }
+      ],
+      "role": "OOT-replication"
+    }
+  },
+  "discovery_25_26_edge0_roi": 6.01,
+  "oot_24_25_edge0_roi": -6.71,
+  "oot_24_25_ci_excludes_0": false,
+  "verdict": "NOT REPLICATED \u2014 positive 25/26 but flat/negative on 24/25 OOT \u2192 likely 25/26 noise"
+}
