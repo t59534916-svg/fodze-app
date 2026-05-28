@@ -11,9 +11,12 @@
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("Missing env vars: SUPABASE_URL and SUPABASE_ANON_KEY required");
+// 2026-05-28: service_role EXCLUSIVELY (ingestion script). Bypasses RLS
+// entirely — no per-row auth-subquery CPU (migration-rls-auth-subquery.sql),
+// and anon can't INSERT past the service-only write policies anyway.
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  console.error("Missing env vars: SUPABASE_URL and SUPABASE_SERVICE_KEY required");
   process.exit(1);
 }
 
@@ -357,7 +360,7 @@ async function main() {
     process.exit(1);
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   // 1. Einloggen
   console.log(`Logging in as ${email}...`);

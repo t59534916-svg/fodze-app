@@ -39,7 +39,9 @@ for (const line of readFileSync(resolve(REPO_ROOT, ".env.local"), "utf8").split(
   if (m) env[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, "");
 }
 const SUPA_URL = env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPA_KEY = env.SUPABASE_SERVICE_KEY ?? env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// service_role EXCLUSIVELY (2026-05-28) — bypasses RLS; reads epistemic_trails
+// + match_outcomes without per-row auth-subquery CPU. Cron job, server-side only.
+const SUPA_KEY = env.SUPABASE_SERVICE_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
 if (!SUPA_URL || !SUPA_KEY) {
   console.error("✗ missing Supabase env vars");
   process.exit(1);

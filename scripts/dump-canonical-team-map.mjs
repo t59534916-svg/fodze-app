@@ -40,11 +40,13 @@ if (existsSync(envPath)) {
   }
 }
 const SUPA_URL = env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+// service_role EXCLUSIVELY (2026-05-28) — bypasses RLS read-side auth-subquery
+// CPU when dumping team_xg_history + odds_closing_history. Local/cron only.
 const SUPA_KEY =
   env.SUPABASE_SERVICE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
-  env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!SUPA_URL || !SUPA_KEY) {
   console.error("✗ missing Supabase env vars");
   process.exit(1);

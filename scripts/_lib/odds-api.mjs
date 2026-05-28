@@ -17,6 +17,8 @@
 // passing a shared state explicitly.
 // ═══════════════════════════════════════════════════════════════════════
 
+import { fetchWithRetry } from "./fetch-retry.mjs";
+
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
 
 function collectKeys() {
@@ -71,7 +73,14 @@ export async function fetchOddsApi(path, { params = {}, signal, minRemaining = 2
 
     const qs = new URLSearchParams({ ...params, apiKey: pick.key });
     const url = `${ODDS_API_BASE}${path}?${qs.toString()}`;
-    const resp = await fetch(url, { signal });
+    // Retry transient upstream (502/503/504 + network) on THIS key before
+    // giving up. EXCLUDE 429 from retry — quota is handled by key-rotation
+    // below (89-93), not by hammering the same exhausted key.
+    const resp = await fetchWithRetry(
+      url,
+      { signal },
+      { retries: 3, retryableStatus: [502, 503, 504], label: `odds-api ${path}` },
+    );
 
     const remStr = resp.headers.get("x-requests-remaining");
     const useStr = resp.headers.get("x-requests-used");

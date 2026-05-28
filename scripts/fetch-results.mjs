@@ -34,6 +34,7 @@ if (existsSync(envPath)) {
 }
 
 import { fetchOddsApi } from "./_lib/odds-api.mjs";
+import { fetchWithRetry } from "./_lib/fetch-retry.mjs";
 
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -130,9 +131,11 @@ const SUPA_HEADERS = {
 };
 
 async function getPendingBets() {
-  const resp = await fetch(
+  // Retry transient Supabase 503/network (free-tier + macOS sleep/wake DNS race)
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/bets?result=eq.pending&select=*`,
     { headers: SUPA_HEADERS },
+    { retries: 4, label: "GET pending bets" },
   );
   if (!resp.ok) throw new Error(`Supabase GET bets: ${resp.status}`);
   return resp.json();
@@ -211,13 +214,16 @@ async function settleBet(bet, result) {
     // record and subsequent runs don't re-query the history table.
     ...(recoveredFromHistory && closingOdds != null ? { closing_odds: closingOdds } : {}),
   };
-  const resp = await fetch(
+  // Settlement write — retry transient failures so a DNS hiccup doesn't
+  // leave a bet stuck 'pending' until the next cron.
+  const resp = await fetchWithRetry(
     `${SUPA_URL}/rest/v1/bets?id=eq.${bet.id}`,
     {
       method: "PATCH",
       headers: { ...SUPA_HEADERS, Prefer: "return=minimal" },
       body: JSON.stringify(payload),
     },
+    { retries: 4, label: `PATCH bet ${bet.id}` },
   );
   if (!resp.ok) {
     const msg = await resp.text();
