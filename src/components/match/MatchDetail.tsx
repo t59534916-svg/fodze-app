@@ -17,12 +17,15 @@ const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
 // Confidence-Tier für die Top-Outcome-Wahrscheinlichkeit einer Vorhersage.
 // Die höchste 1X2-Wkt IST die Confidence des Tipps — und sie ist KALIBRIERT
-// (cross-season validiert 2026-05-28: ≥65%-Tier ~73% [25/26 74.5% · 24/25 70.7%
-// OOT], 55-65% ~57%, 45-55% ~50%, <45% ~40%; siehe docs/FORECAST-QUALITY-ANALYSIS.md).
+// Trefferquoten = dev-03 (Production-Default) standalone auf 25/26 OOT (das ist,
+// was das Badge zeigt — NICHT der Blend): ≥65% ~73% · 55-65% ~53% · 45-55% ~48% ·
+// <45% ~40%. KERNAUSSAGE: nur der HOCH-Tier (≥65%, ~73%) ist klar über-
+// durchschnittlich; darunter ~Münzwurf. Validiert 2026-05-28, siehe
+// docs/FORECAST-QUALITY-ANALYSIS.md.
 function confidenceTier(p: number): { label: string; fg: string; bg: string; border: string; hist: string } {
   if (p >= 0.65) return { label: "HOCH", fg: color.value, bg: color.valueBg, border: color.valueBorder, hist: "histor. ~73% Treffer" };
-  if (p >= 0.55) return { label: "MITTEL", fg: color.gold, bg: `${color.goldMid}14`, border: `${color.goldMid}40`, hist: "histor. ~56%" };
-  if (p >= 0.45) return { label: "NIEDRIG", fg: color.goldMid, bg: `${color.goldMid}0c`, border: `${color.goldMid}24`, hist: "histor. ~50%" };
+  if (p >= 0.55) return { label: "MITTEL", fg: color.gold, bg: `${color.goldMid}14`, border: `${color.goldMid}40`, hist: "histor. ~53%" };
+  if (p >= 0.45) return { label: "NIEDRIG", fg: color.goldMid, bg: `${color.goldMid}0c`, border: `${color.goldMid}24`, hist: "histor. ~48%" };
   return { label: "TOSS-UP", fg: `${color.goldMid}90`, bg: "transparent", border: `${color.goldMid}20`, hist: "offen ~40%" };
 }
 

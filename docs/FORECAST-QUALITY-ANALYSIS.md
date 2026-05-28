@@ -114,6 +114,15 @@ Tiers (Treffer ≈ Anspruch in beiden Saisons):
 Zusätzlich liefert dev-03 eine **λ-Varianz** pro Vorhersage + der **Conformal-
 Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 
+> **UI-Badge-Hinweis (Self-Eval 2026-05-28):** Obige Tabelle ist der **Blend**.
+> Das Frontend-Confidence-Badge zeigt aber den *aktiven* Engine (Default
+> **dev-03**), nicht den Blend. dev-03-standalone (25/26 OOT) bestätigt den
+> HOCH-Tier (73.7% ≈ Blend 74.5%), liegt in den Mittel-Bändern aber etwas tiefer
+> (55-65% **~53%** vs Blend 56%; 45-55% ~48%) — dev-03 ist dort leicht
+> überkonfident. Die Badge-Claims nutzen daher die **dev-03-Zahlen**, nicht die
+> Blend-Zahlen. **Praktisch: nur der ≥65%-Tier ist klar handlungsrelevant;
+> darunter ist es ~Münzwurf.**
+
 ---
 
 ## 6 · Rigoros getestete & ABGELEHNTE Ideen (5-Gate / Persistenz)

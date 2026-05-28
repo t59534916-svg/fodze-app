@@ -29,8 +29,8 @@ const pc = (v: number) => (v * 100).toFixed(0) + "%";
 // docs/FORECAST-QUALITY-ANALYSIS.md. Lets you scan the list for green = sicher.
 function confColor(p: number): { fg: string; bg: string; border: string; title: string } {
   if (p >= 0.65) return { fg: "#6aad55", bg: "#6aad5518", border: "#6aad5540", title: "HOCH · histor. ~73% Treffer" };
-  if (p >= 0.55) return { fg: "#c4a265", bg: "#c4a26518", border: "#c4a26540", title: "MITTEL · histor. ~56%" };
-  return { fg: "#c4a26585", bg: "transparent", border: "#c4a26522", title: p >= 0.45 ? "NIEDRIG · ~50%" : "TOSS-UP · offen" };
+  if (p >= 0.55) return { fg: "#c4a265", bg: "#c4a26518", border: "#c4a26540", title: "MITTEL · histor. ~53%" };
+  return { fg: "#c4a26585", bg: "transparent", border: "#c4a26522", title: p >= 0.45 ? "NIEDRIG · ~48%" : "TOSS-UP · offen" };
 }
 
 // Shortened team name: "FC Bayern München" → "Bayern München", "Bayer 04 Leverkusen" → "Leverkusen"
