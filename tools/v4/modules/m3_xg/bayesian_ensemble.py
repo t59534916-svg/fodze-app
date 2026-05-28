@@ -93,6 +93,7 @@ class BayesianEnsemble:
         y: np.ndarray,
         *,
         categorical_columns: Optional[Sequence[str]] = None,
+        sample_weight: Optional[np.ndarray] = None,
     ) -> "BayesianEnsemble":
         """Train 5 LightGBM models on independent bootstrap samples.
 
@@ -101,6 +102,9 @@ class BayesianEnsemble:
             y: target array (1D). Length must match X.
             categorical_columns: list of categorical column names. LightGBM uses
                                  these as natively-handled categoricals.
+            sample_weight: optional per-row weights (length == len(X)). Subset per
+                           bootstrap draw and passed to LightGBM. Default None =
+                           uniform (unchanged behavior).
 
         Returns: self (for chaining)
         """
@@ -108,6 +112,10 @@ class BayesianEnsemble:
             raise ValueError(f"X and y length mismatch: {len(X)} vs {len(y)}")
         if len(X) < 50:
             raise ValueError(f"insufficient training data: {len(X)} (need ≥ 50)")
+        if sample_weight is not None:
+            sample_weight = np.asarray(sample_weight, dtype=float)
+            if len(sample_weight) != len(X):
+                raise ValueError(f"sample_weight length {len(sample_weight)} != len(X) {len(X)}")
 
         y = np.asarray(y, dtype=float)
         if not np.all(np.isfinite(y)):
@@ -131,10 +139,12 @@ class BayesianEnsemble:
             indices = rng.integers(0, n, size=sample_size)
             X_sub = X.iloc[indices].reset_index(drop=True)
             y_sub = y[indices]
+            w_sub = sample_weight[indices] if sample_weight is not None else None
             params = {**self.base_params, "random_state": int(seed)}
             model = lgb.LGBMRegressor(**params)
             model.fit(
                 X_sub, y_sub,
+                sample_weight=w_sub,
                 categorical_feature=self.categorical_columns or "auto",
             )
             self.models.append(model)

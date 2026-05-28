@@ -1,0 +1,24 @@
+{
+  "base": {
+    "engine": "base0 (uniform)",
+    "overall_acc": 0.4801980198019802,
+    "overall_brier": 0.618564013876098,
+    "hi_n": 707,
+    "hi_acc": 0.7256011315417256,
+    "hi_brier": 0.42743729500418093,
+    "hi_claim": 0.7354249172161547,
+    "contested_brier": 0.6489835182516615
+  },
+  "conf_weighted": {
+    "engine": "conf-weighted",
+    "overall_acc": 0.483401281304601,
+    "overall_brier": 0.6185844141488787,
+    "hi_n": 708,
+    "hi_acc": 0.7217514124293786,
+    "hi_brier": 0.4308377076599083,
+    "hi_claim": 0.7402781286634291,
+    "contested_brier": 0.6490792173862928
+  },
+  "overall_brier_cost": 2.040027278060741e-05,
+  "verdict": "CONFIRMS HEADROOM: conf-weighting does NOT help high-conf (Brier \u0394 +0.0034) while overall Brier \u0394 +0.0000 (flat) and high-conf size shrank 707\u2192708. Training-focus on high-conf is the wrong lever; use selective prediction."
+}

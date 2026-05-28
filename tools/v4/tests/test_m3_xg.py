@@ -180,6 +180,34 @@ def _trained_ensemble() -> BayesianEnsemble:
     return ens
 
 
+def _synth_xy(n=500, seed=42):
+    rng = np.random.default_rng(seed)
+    X = pd.DataFrame({"f1": rng.normal(0, 1, n), "f2": rng.normal(0, 1, n),
+                      "league": pd.Categorical(["a"] * (n // 2) + ["b"] * (n // 2))})
+    y = np.clip(X["f1"] * 0.5 + 1.4 + rng.normal(0, 0.2, n), 0, 5).to_numpy()
+    return X, y
+
+
+def test_ensemble_sample_weight_length_check():
+    X, y = _synth_xy()
+    ens = BayesianEnsemble(n_models=2, base_params={"n_estimators": 20, "verbose": -1})
+    with pytest.raises(ValueError, match="sample_weight length"):
+        ens.fit(X, y, categorical_columns=["league"], sample_weight=np.ones(len(y) - 1))
+
+
+def test_ensemble_sample_weight_changes_fit():
+    # Non-uniform weights must change the learned model (effect, not no-op);
+    # default None must equal explicit uniform-ones (backward-compatible).
+    X, y = _synth_xy()
+    fp = {"n_estimators": 30, "learning_rate": 0.1, "verbose": -1}
+    base = BayesianEnsemble(n_models=3, base_params=fp).fit(X, y, categorical_columns=["league"])
+    w = 1.0 + 5.0 * (np.abs(X["f1"].to_numpy()) / np.abs(X["f1"].to_numpy()).std())
+    wt = BayesianEnsemble(n_models=3, base_params=fp).fit(X, y, categorical_columns=["league"], sample_weight=w)
+    Xp, _ = _synth_xy(n=100, seed=7)
+    pb, _ = base.predict(Xp); pw, _ = wt.predict(Xp)
+    assert np.mean(np.abs(pb - pw)) > 1e-4  # weighting had an effect
+
+
 def test_ensemble_rejects_unfitted_predict():
     ens = BayesianEnsemble(n_models=2)
     with pytest.raises(RuntimeError, match="not yet fitted"):

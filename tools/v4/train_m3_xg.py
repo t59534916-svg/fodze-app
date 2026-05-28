@@ -73,6 +73,10 @@ def parse_args() -> argparse.Namespace:
                         "lineup_quality_player_*) which need 5-Gate-Falsification first.")
     p.add_argument("--dry-run", action="store_true",
                    help="Build features but skip training + save (verify data flow only)")
+    p.add_argument("--conf-weight-k", type=float, default=0.0,
+                   help="EXPERIMENT: up-weight lopsided (high-confidence-proxy) matches in "
+                        "training by sample-weight = 1 + k*(|elo_diff|/std). Default 0 = uniform "
+                        "(unchanged). Used to test 'train with focus on high-confidence games'.")
     return p.parse_args()
 
 
@@ -219,11 +223,19 @@ def main() -> int:
         print("  --dry-run: skipping training + save")
         return 0
 
+    # ─────────── Confidence-weighting (experiment, default off) ───────────
+    sw = None
+    if args.conf_weight_k > 0:
+        g = np.abs(features["elo_diff"].to_numpy(float))
+        sw = 1.0 + args.conf_weight_k * (g / (g.std() + 1e-9))
+        print(f"  conf-weight k={args.conf_weight_k}: sample-weight range "
+              f"[{sw.min():.2f}, {sw.max():.2f}], mean {sw.mean():.2f} (up-weights lopsided matches)")
+
     # ─────────── Train home-goals ensemble ───────────
     t0 = time.time()
     print(f"  Training home-goals ensemble (n_models={args.n_models})...")
     ens_h = BayesianEnsemble(n_models=args.n_models, seeds=[42 + i + args.seed_offset for i in range(args.n_models)])
-    ens_h.fit(X, y_h, categorical_columns=["league"])
+    ens_h.fit(X, y_h, categorical_columns=["league"], sample_weight=sw)
     print(f"    Done in {time.time()-t0:.1f}s")
 
     # In-sample sanity check
@@ -235,7 +247,7 @@ def main() -> int:
     t0 = time.time()
     print(f"  Training away-goals ensemble (n_models={args.n_models})...")
     ens_a = BayesianEnsemble(n_models=args.n_models, seeds=[42 + i + args.seed_offset for i in range(args.n_models)])
-    ens_a.fit(X, y_a, categorical_columns=["league"])
+    ens_a.fit(X, y_a, categorical_columns=["league"], sample_weight=sw)
     print(f"    Done in {time.time()-t0:.1f}s")
 
     mean_a, var_a = ens_a.predict(X)
