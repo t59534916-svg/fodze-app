@@ -13,8 +13,7 @@ import {
   getFirstGoalTime, getWinningMargin, calcLambdas,
   type SecondHalfMarkets,
 } from "@/lib/dixon-coles";
-import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
-import { isLGBMModelLoaded, getLGBMRho } from "@/lib/lgbm-runtime";
+import { dispatchLambdas } from "@/lib/engine-dispatch";
 import { TEAM_SCRAPER_MAP } from "@/lib/scrapers/team-map";
 import { resolveTeam } from "@/lib/team-resolver";
 import { computeSoSRatings, type SoSRatings } from "@/lib/sos";
@@ -931,12 +930,11 @@ export default function FuckBettingPage() {
           kickoff = matchdayDate;
         }
 
-        // Compute lambdas — try @annafrick13 v2 first, fallback to standard
+        // Compute lambdas — central dispatch (try v2 → standard fallback).
+        // engineUsed is "poisson-ml-v2" when v2 fired; "standard-fallback"
+        // when the cascade fell through. Replaces the inline 40-line
+        // try-cascade that was here before 2026-05-28.
         const hf = getHomeFactor(h.name, ld.hf);
-        let lambdaH: number;
-        let lambdaA: number;
-        let engine: "annafrick13-v2" | "standard" = "standard";
-        let effectiveRho = -0.05;
 
         // Parse injuries → structured absences (mirrors MatchdayContext.calcMatch:289-300).
         // Without this, fuck-betting's predictions ignore suspended stars — the
@@ -949,39 +947,26 @@ export default function FuckBettingPage() {
             ? { home: homeAbsences, away: awayAbsences }
             : undefined;
 
-        // Try v2: needs LightGBM model + per-match xG history
         const hHist = h.xg_h_history;
         const aHist = a.xg_a_history;
-        if (isLGBMModelLoaded() && hHist?.length && aHist?.length) {
-          const leagueSos = sosMap.get(league);
-          const v2Result = calcMatchPoissonMLv2({
-            xgHS: xgH8, xgaHC: xgaH8, hGames,
-            xgAS: xgA8, xgaAC: xgaA8, aGames,
-            leagueAvg: ld.avg, homeFactor: hf, league,
-            tags: match.tags || [],
-            hHistory: hHist, aHistory: aHist,
-            homeTeam: h.name, awayTeam: a.name,
-            fraction: 0.25,
-            sosRatings: leagueSos,
-            absences,
-          });
-          if (v2Result) {
-            lambdaH = v2Result.lambdaH;
-            lambdaA = v2Result.lambdaA;
-            engine = "annafrick13-v2";
-            effectiveRho = getLGBMRho();
-          } else {
-            // v2 refused (missing data) → standard fallback
-            const std = calcLambdas(xgH8, xgaH8, xgA8, xgaA8, hGames, aGames, ld.avg, hf);
-            lambdaH = std.lambdaH;
-            lambdaA = std.lambdaA;
-          }
-        } else {
-          // No model or no history → standard engine
-          const std = calcLambdas(xgH8, xgaH8, xgA8, xgaA8, hGames, aGames, ld.avg, hf);
-          lambdaH = std.lambdaH;
-          lambdaA = std.lambdaA;
-        }
+        const leagueSos = sosMap.get(league);
+        const dispatch = dispatchLambdas("poisson-ml-v2", {
+          xgHS: xgH8, xgaHC: xgaH8, hGames,
+          xgAS: xgA8, xgaAC: xgaA8, aGames,
+          leagueAvg: ld.avg, homeFactor: hf, league,
+          tags: match.tags || [],
+          hHistory: hHist, aHistory: aHist,
+          homeTeam: h.name, awayTeam: a.name,
+          sosRatings: leagueSos,
+          absences,
+          fraction: 0.25,
+        });
+        const lambdaH = dispatch.lambdaH;
+        const lambdaA = dispatch.lambdaA;
+        const effectiveRho = dispatch.rho;
+        // Legacy local label preserved so downstream UI strings keep working.
+        const engine: "annafrick13-v2" | "standard" =
+          dispatch.engineUsed === "poisson-ml-v2" ? "annafrick13-v2" : "standard";
 
         // For v2: compute EWMA-based xG per game from history (more accurate than raw sums)
         let xgPgH = xgH8 / hGames;

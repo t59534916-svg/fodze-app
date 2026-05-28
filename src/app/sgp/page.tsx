@@ -1,4 +1,19 @@
 "use client";
+// ═══════════════════════════════════════════════════════════════════════
+// /sgp — Same-Game Parlay calculator
+//
+// Uses CANONICAL dixon-coles helpers (`buildMatrix`, `vigAdjust`,
+// `getHomeFactor`) — no duplicate engine logic. The page accepts user-
+// tweakable λ inputs (or live-odds-derived fair-λ) and walks the
+// resulting score matrix with arbitrary functional conditions
+// (`Cond = (h, a) => bool`).
+//
+// Reviewed for engine-duplication cleanup 2026-05-28: this page does NOT
+// pick its own engine (no v1/v2/dev-03 cascade) — it operates on a single
+// (λ_h, λ_a) pair the user provides, then derives parlay probabilities
+// from the standard Dixon-Coles matrix. Engine-registry adoption isn't
+// applicable here. Leave as-is.
+// ═══════════════════════════════════════════════════════════════════════
 import { useState, useEffect, useMemo } from "react";
 import { createClient, loadLiveOdds } from "@/lib/supabase";
 import { LEAGUES, TEAM_HOME_FACTORS, getHomeFactor, buildMatrix, vigAdjust } from "@/lib/dixon-coles";

@@ -1,4 +1,17 @@
 "use client";
+// ═══════════════════════════════════════════════════════════════════════
+// /simulator — Monte Carlo BANKROLL-growth simulator
+//
+// NOT a match-prediction page. The user supplies edge + average odds +
+// Kelly fraction as INPUTS, and `runMonteCarlo` projects N bankroll
+// trajectories from those parameters. There is no FODZE engine in scope:
+// no MatchdayContext, no dixon-coles λ-build, no v2/v3/dev-03 dispatch.
+//
+// Reviewed for engine-duplication cleanup 2026-05-28: this page intentionally
+// does not consume engine-registry.ts because its purpose is downstream of
+// engine output — testing what bankroll trajectories look like GIVEN a
+// stated edge, not computing the edge itself. Leave as-is.
+// ═══════════════════════════════════════════════════════════════════════
 import { useState, useMemo, useCallback } from "react";
 import AppShell from "@/components/layout/AppShell";
 import { color, fontSize, fontWeight, fontFamily, space, radius } from "@/styles/tokens";
