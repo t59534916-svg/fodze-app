@@ -81,21 +81,36 @@ def predict_blend_draws(season, d03_tag, d09_tag):
 
 
 class DrawOdds:
+    """pscd lookup with the SAME tiered fuzzy resolver as OddsSpine/XGSpine
+    (exact → name-match within league, nearest-date ±7d) so coverage + the
+    discovery number reconcile with decision_thresholds."""
+
     def __init__(self, parquet):
         od = pd.read_parquet(parquet).dropna(subset=["pscd"]).reset_index(drop=True)
         od["ch"] = od.apply(lambda r: canonical_team(r["home_team"], r["league"]), axis=1)
         od["ca"] = od.apply(lambda r: canonical_team(r["away_team"], r["league"]), axis=1)
         od["d"] = pd.to_datetime(od["match_date"]).dt.date
         self._by = defaultdict(list)
+        self._by_league = defaultdict(list)
         for r in od.itertuples(index=False):
             self._by[(r.league, r.ch, r.ca)].append((r.d, float(r.pscd)))
+            self._by_league[r.league].append((r.ch, r.ca, r.d, float(r.pscd)))
+
+    def _pick(self, opts, cdate):
+        best = min(opts, key=lambda o: abs((o[0] - cdate).days))
+        return best[1] if abs((best[0] - cdate).days) <= WINDOW else None
 
     def resolve(self, league, ch, ca, cdate):
         opts = self._by.get((league, ch, ca))
-        if not opts:
-            return None
-        best = min(opts, key=lambda o: abs((o[0] - cdate).days))
-        return best[1] if abs((best[0] - cdate).days) <= WINDOW else None
+        if opts:
+            v = self._pick(opts, cdate)
+            if v is not None:
+                return v
+        cands = [(d, v) for (h, a, d, v) in self._by_league.get(league, [])
+                 if X._name_match(ch, h) and X._name_match(ca, a)]
+        if cands:
+            return self._pick(cands, cdate)
+        return None
 
 
 def boot_ci(profits, n=2000, seed=42):

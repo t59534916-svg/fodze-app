@@ -3,41 +3,41 @@
   "primary_metric": "edge\u22650pp ROI (pre-registered, largest n)",
   "seasons": {
     "25/26": {
-      "n_matches_with_odds": 1560,
+      "n_matches_with_odds": 2268,
       "edges": [
         {
           "edge_pp": 0.0,
-          "n_bets": 507,
-          "win_rate": 0.2583826429980276,
-          "mean_odds": 4.422623274161735,
-          "roi_pct": 6.01,
+          "n_bets": 860,
+          "win_rate": 0.2593023255813954,
+          "mean_odds": 4.440302325581396,
+          "roi_pct": 5.88,
           "ci95": [
-            -9.52,
-            22.84
+            -6.26,
+            18.12
           ],
           "ci_excludes_0": false
         },
         {
           "edge_pp": 2.0,
-          "n_bets": 148,
-          "win_rate": 0.22972972972972974,
-          "mean_odds": 5.241554054054054,
-          "roi_pct": 9.74,
+          "n_bets": 320,
+          "win_rate": 0.240625,
+          "mean_odds": 5.133062499999999,
+          "roi_pct": 11.17,
           "ci95": [
-            -25.95,
-            46.21
+            -11.04,
+            34.76
           ],
           "ci_excludes_0": false
         },
         {
           "edge_pp": 4.0,
-          "n_bets": 42,
-          "win_rate": 0.23809523809523808,
-          "mean_odds": 6.4016666666666655,
-          "roi_pct": 31.69,
+          "n_bets": 121,
+          "win_rate": 0.2231404958677686,
+          "mean_odds": 5.86900826446281,
+          "roi_pct": 19.54,
           "ci95": [
-            -42.12,
-            123.82
+            -21.64,
+            64.43
           ],
           "ci_excludes_0": false
         }
@@ -45,41 +45,41 @@
       "role": "discovery"
     },
     "24/25": {
-      "n_matches_with_odds": 3319,
+      "n_matches_with_odds": 5140,
       "edges": [
         {
           "edge_pp": 0.0,
-          "n_bets": 1107,
-          "win_rate": 0.22854561878952123,
-          "mean_odds": 4.5984643179765134,
-          "roi_pct": -6.71,
+          "n_bets": 1875,
+          "win_rate": 0.2224,
+          "mean_odds": 4.589610666666667,
+          "roi_pct": -8.16,
           "ci95": [
-            -17.08,
-            4.23
+            -16.44,
+            -0.07
           ],
           "ci_excludes_0": false
         },
         {
           "edge_pp": 2.0,
-          "n_bets": 444,
-          "win_rate": 0.19594594594594594,
-          "mean_odds": 5.3644369369369365,
-          "roi_pct": -10.05,
+          "n_bets": 842,
+          "win_rate": 0.19239904988123516,
+          "mean_odds": 5.2623515439429935,
+          "roi_pct": -11.04,
           "ci95": [
-            -26.28,
-            7.48
+            -24.02,
+            2.04
           ],
           "ci_excludes_0": false
         },
         {
           "edge_pp": 4.0,
-          "n_bets": 172,
-          "win_rate": 0.1569767441860465,
-          "mean_odds": 5.946046511627907,
-          "roi_pct": -16.85,
+          "n_bets": 366,
+          "win_rate": 0.16666666666666666,
+          "mean_odds": 5.819207650273224,
+          "roi_pct": -12.37,
           "ci95": [
-            -45.53,
-            13.84
+            -32.66,
+            10.24
           ],
           "ci_excludes_0": false
         }
@@ -87,8 +87,8 @@
       "role": "OOT-replication"
     }
   },
-  "discovery_25_26_edge0_roi": 6.01,
-  "oot_24_25_edge0_roi": -6.71,
+  "discovery_25_26_edge0_roi": 5.88,
+  "oot_24_25_edge0_roi": -8.16,
   "oot_24_25_ci_excludes_0": false,
   "verdict": "NOT REPLICATED \u2014 positive 25/26 but flat/negative on 24/25 OOT \u2192 likely 25/26 noise"
 }
