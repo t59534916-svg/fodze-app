@@ -200,6 +200,21 @@ const phases = [
     abortOnFail: false,  // experimental data-source, must not break the pipeline
   },
   {
+    name: "rolling-8-refresh",
+    emoji: "♻️",
+    // sofascore_team_rolling_8 is a MATERIALIZED VIEW since 2026-05-28
+    // (escapes ~1.7-3s/query I/O timeout on the regular VIEW). This phase
+    // calls the public.refresh_team_rolling_8() RPC which executes
+    // `REFRESH MATERIALIZED VIEW CONCURRENTLY`. Migration:
+    // scripts/migration-sofascore-team-rolling-8-materialized.sql
+    description: "REFRESH MATERIALIZED VIEW CONCURRENTLY sofascore_team_rolling_8",
+    skip: () => !(process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+    run: () => runScript("scripts/refresh-rolling-8.mjs", [], "rolling-8-refresh"),
+    // Materialized view: stale data is degraded UX but not corrupt. Failure
+    // here just means engine reads run on slightly-older rolling stats.
+    abortOnFail: false,
+  },
+  {
     name: "bridge-sofascore",
     emoji: "🔗",
     description: "Sofascore-xG → team_xg_history bridge (last 30d window, premium+partial tier)",
