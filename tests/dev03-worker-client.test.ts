@@ -28,6 +28,9 @@ import {
 function makeMinimalModel(): Dev03Model_FullPayload {
   const leafTree = { leaf_value: 0.0 }; // exp(0) = 1.0 lambda
   return {
+    version: "test-1.0",
+    engine: "dev-03",
+    exported_at: "2026-05-28T00:00:00Z",
     home_ensemble: {
       n_models: 1,
       seeds: [42],
@@ -52,8 +55,14 @@ function makeMinimalModel(): Dev03Model_FullPayload {
     categorical_features: ["league"],
     pandas_categorical: [["bundesliga", "epl", "la_liga"]],
     rho: -0.094,
-    benter_weights: null,
+    benter: {
+      default_betas: [0.5, 0.5],
+      global_weights: null,
+      liga_weights: {},
+      min_liga_samples: 50,
+    },
     golden_tests: [],
+    meta: {},
   };
 }
 
