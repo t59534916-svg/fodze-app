@@ -10,7 +10,7 @@ import {
   LEAGUES, getHomeFactor, buildMatrix, deriveAllMarkets, queryMatrix,
   getCorrectScores, getAsianHandicap, getHtFt, getGoalBothHalves,
   predictYellowCards, getHT1X2, getHTCorrectScores, getSecondHalfMarkets,
-  getFirstGoalTime, getWinningMargin, calcLambdas,
+  getFirstGoalTime, getWinningMargin,
   type SecondHalfMarkets,
 } from "@/lib/dixon-coles";
 import { dispatchLambdas } from "@/lib/engine-dispatch";
