@@ -1,0 +1,232 @@
+{
+  "n": 6868,
+  "n_odds": 2268,
+  "reliability": {
+    "Heimsieg": [
+      {
+        "band": "0.00-0.35",
+        "n": 2027,
+        "mean_pred": 0.2608825209549316,
+        "actual_rate": 0.265416872224963
+      },
+      {
+        "band": "0.35-0.45",
+        "n": 2027,
+        "mean_pred": 0.4003508331102892,
+        "actual_rate": 0.4094721262950173
+      },
+      {
+        "band": "0.45-0.55",
+        "n": 1555,
+        "mean_pred": 0.4949751437719937,
+        "actual_rate": 0.5112540192926045
+      },
+      {
+        "band": "0.55-0.65",
+        "n": 729,
+        "mean_pred": 0.5937200311839524,
+        "actual_rate": 0.5679012345679012
+      },
+      {
+        "band": "0.65-1.01",
+        "n": 530,
+        "mean_pred": 0.7310237687820663,
+        "actual_rate": 0.7566037735849057
+      }
+    ],
+    "Remis": [
+      {
+        "band": "0.00-0.35",
+        "n": 6868,
+        "mean_pred": 0.2644084516463006,
+        "actual_rate": 0.2582993593476995
+      }
+    ],
+    "Ausw\u00e4rtssieg": [
+      {
+        "band": "0.00-0.35",
+        "n": 4662,
+        "mean_pred": 0.2363836130635378,
+        "actual_rate": 0.24345774345774346
+      },
+      {
+        "band": "0.35-0.45",
+        "n": 1305,
+        "mean_pred": 0.3936451735159859,
+        "actual_rate": 0.3839080459770115
+      },
+      {
+        "band": "0.45-0.55",
+        "n": 507,
+        "mean_pred": 0.49165843847875723,
+        "actual_rate": 0.46153846153846156
+      },
+      {
+        "band": "0.55-0.65",
+        "n": 213,
+        "mean_pred": 0.5958703346132357,
+        "actual_rate": 0.5492957746478874
+      },
+      {
+        "band": "0.65-1.01",
+        "n": 181,
+        "mean_pred": 0.7174217211493616,
+        "actual_rate": 0.712707182320442
+      }
+    ]
+  },
+  "closeness": [
+    {
+      "bucket": "<0.15",
+      "n": 1308,
+      "mean_p_draw": 0.2895636327700545,
+      "draw_rate": 0.2805810397553517
+    },
+    {
+      "bucket": "0.15-0.40",
+      "n": 1938,
+      "mean_p_draw": 0.2855118175173708,
+      "draw_rate": 0.2724458204334365
+    },
+    {
+      "bucket": "0.40-0.80",
+      "n": 1988,
+      "mean_p_draw": 0.27011650466089043,
+      "draw_rate": 0.2681086519114688
+    },
+    {
+      "bucket": ">0.80",
+      "n": 1634,
+      "mean_p_draw": 0.21229773600308843,
+      "draw_rate": 0.211750305997552
+    }
+  ],
+  "value_roi": {
+    "Heimsieg": [
+      {
+        "min_edge_pp": 0.0,
+        "n_bets": 870,
+        "total_profit": -95.97,
+        "roi_pct": -11.031,
+        "mean_odds_taken": 2.956
+      },
+      {
+        "min_edge_pp": 2.0,
+        "n_bets": 639,
+        "total_profit": -53.79,
+        "roi_pct": -8.418,
+        "mean_odds_taken": 2.895
+      },
+      {
+        "min_edge_pp": 4.0,
+        "n_bets": 451,
+        "total_profit": -67.93,
+        "roi_pct": -15.062,
+        "mean_odds_taken": 2.904
+      },
+      {
+        "min_edge_pp": 6.0,
+        "n_bets": 293,
+        "total_profit": -40.89,
+        "roi_pct": -13.956,
+        "mean_odds_taken": 2.96
+      },
+      {
+        "min_edge_pp": 8.0,
+        "n_bets": 186,
+        "total_profit": -36.89,
+        "roi_pct": -19.833,
+        "mean_odds_taken": 2.96
+      }
+    ],
+    "Remis": [
+      {
+        "min_edge_pp": 0.0,
+        "n_bets": 860,
+        "total_profit": 50.59,
+        "roi_pct": 5.883,
+        "mean_odds_taken": 4.44
+      },
+      {
+        "min_edge_pp": 2.0,
+        "n_bets": 320,
+        "total_profit": 35.73,
+        "roi_pct": 11.166,
+        "mean_odds_taken": 5.133
+      },
+      {
+        "min_edge_pp": 4.0,
+        "n_bets": 121,
+        "total_profit": 23.64,
+        "roi_pct": 19.537,
+        "mean_odds_taken": 5.869
+      },
+      {
+        "min_edge_pp": 6.0,
+        "n_bets": 54,
+        "total_profit": 27.26,
+        "roi_pct": 50.481,
+        "mean_odds_taken": 6.514
+      },
+      {
+        "min_edge_pp": 8.0,
+        "n_bets": 20,
+        "total_profit": -0.74,
+        "roi_pct": -3.7,
+        "mean_odds_taken": 7.979
+      }
+    ],
+    "Ausw\u00e4rtssieg": [
+      {
+        "min_edge_pp": 0.0,
+        "n_bets": 1003,
+        "total_profit": -43.73,
+        "roi_pct": -4.36,
+        "mean_odds_taken": 4.57
+      },
+      {
+        "min_edge_pp": 2.0,
+        "n_bets": 738,
+        "total_profit": -27.49,
+        "roi_pct": -3.725,
+        "mean_odds_taken": 4.358
+      },
+      {
+        "min_edge_pp": 4.0,
+        "n_bets": 490,
+        "total_profit": -26.82,
+        "roi_pct": -5.473,
+        "mean_odds_taken": 4.283
+      },
+      {
+        "min_edge_pp": 6.0,
+        "n_bets": 326,
+        "total_profit": -31.76,
+        "roi_pct": -9.742,
+        "mean_odds_taken": 4.131
+      },
+      {
+        "min_edge_pp": 8.0,
+        "n_bets": 203,
+        "total_profit": -34.47,
+        "roi_pct": -16.98,
+        "mean_odds_taken": 4.042
+      }
+    ]
+  },
+  "recommended": {
+    "win_call_home": [
+      "0.55-0.65",
+      0.5679012345679012,
+      729
+    ],
+    "win_call_away": [
+      "0.55-0.65",
+      0.5492957746478874,
+      213
+    ],
+    "draw_note": "P(Remis) deckelt ~0.35 \u2192 nie Favorit; Remis nur via Value oder Closeness",
+    "draw_value_edge_pp": 0.0,
+    "draw_prone_flag": "|\u03bb_h\u2212\u03bb_a| < 0.15  (Remis-Rate 28%)"
+  }
+}
