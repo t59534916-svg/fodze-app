@@ -1,0 +1,56 @@
+{
+  "objective_role": "SECONDARY tiebreaker (forecast quality primary)",
+  "test_seasons": [
+    "25/26"
+  ],
+  "min_edge_pp": 0.0,
+  "n_common_universe": 1721,
+  "directional_bar_pct": 2.5,
+  "engines": {
+    "Standard": {
+      "n_matches": 2389,
+      "n_bets": 2787,
+      "win_rate_pct": 32.65159669895946,
+      "total_profit_u": -75.84000000000002,
+      "roi_pct": -2.7212055974165774,
+      "se_roi_pct": 3.108933693603978
+    },
+    "v1": {
+      "n_matches": 1817,
+      "n_bets": 2276,
+      "win_rate_pct": 29.964850615114237,
+      "total_profit_u": -118.20000000000002,
+      "roi_pct": -5.193321616871705,
+      "se_roi_pct": 3.4207637147040986
+    },
+    "v2": {
+      "n_matches": 1817,
+      "n_bets": 2327,
+      "win_rate_pct": 27.331327889987104,
+      "total_profit_u": -158.56,
+      "roi_pct": -6.813923506660936,
+      "se_roi_pct": 3.527499391493148
+    },
+    "dev-09": {
+      "n_matches": 1725,
+      "n_bets": 2111,
+      "win_rate_pct": 32.970156324017054,
+      "total_profit_u": -5.5900000000000105,
+      "roi_pct": -0.26480341070582714,
+      "se_roi_pct": 3.5458615877937305
+    },
+    "dev-03": {
+      "n_matches": 1725,
+      "n_bets": 2111,
+      "win_rate_pct": 32.11747986736144,
+      "total_profit_u": -7.990000000000013,
+      "roi_pct": -0.3784936049265757,
+      "se_roi_pct": 3.641135301608318
+    }
+  },
+  "_caveats": [
+    "Flat-stake, RAW probs, identical universe + odds for all engines.",
+    "Directional bar only (ROI > vig); no CI>0 hurdle (\u03c3_bet\u2248148%).",
+    "Odds join via tiered fuzzy resolver (same as xG leaderboard)."
+  ]
+}
