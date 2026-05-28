@@ -13,10 +13,19 @@
 --
 -- Schema note (Phase 4.1+ correction): the prior VIEW GROUP'd by `team` AND
 -- `team_id` simultaneously. This produced duplicate rows for 5 teams whose
--- Sofa names drifted mid-season (e.g. epl|25/26|44 = Liverpool / Liverpool FC).
--- The MATERIALIZED VIEW GROUP BYs `team_id` ONLY and picks MAX(team) for the
--- display name. Both name spellings still resolve via canonical_team() in
--- TS/Python read paths.
+-- Sofa names drifted mid-season. The MATERIALIZED VIEW GROUP BYs `team_id`
+-- ONLY and picks MAX(team) for the display name.
+--
+-- Known caveat (2026-05-28 affected teams + MAX-winner names):
+--   epl|25/26|44       → 'Liverpool FC'        (vs 'Liverpool')
+--   la_liga2|25/26|2832 → 'Deportivo La Coruña' (vs 'Deportivo de La Coruña')
+--   serie_a|25/26|2692 → 'Milan'               (vs 'AC Milan')
+--   serie_a|25/26|2702 → 'Roma'                (vs 'AS Roma')
+--   serie_a|25/26|2714 → 'SSC Napoli'          (vs 'Napoli')
+-- For these 5 teams, a caller querying by the non-MAX name spelling will
+-- get an empty row. Preferred read pattern: JOIN by `team_id`. Fallback:
+-- resolve raw name → canonical via canonical_team() (TS) /
+-- canonical_team_map.canonical_team() (Python) BEFORE the lookup.
 --
 -- Refresh is wired as `phase: rolling-8-refresh` in scripts/refresh-all.mjs,
 -- after the sofascore-shotmap sync phase so the view reflects the latest data.

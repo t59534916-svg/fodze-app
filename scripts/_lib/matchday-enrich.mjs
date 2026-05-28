@@ -16,7 +16,12 @@
 // No external npm deps; may import sibling _lib/*.mjs files.
 // ═══════════════════════════════════════════════════════════════════════
 
-import { slugifyReferee, resolveRefereeName } from "./referee-aliases.mjs";
+// referee-aliases.mjs moved to scripts/_archive/ on 2026-05-28 (referees
+// table dropped). Helpers still imported so unit tests that hand-craft
+// a populated referee map keep working — production code paths receive
+// only empty Maps from the no-op loadRefereesForLeague, so the chain is
+// silently dead at runtime.
+import { slugifyReferee, resolveRefereeName } from "../_archive/referee-aliases.mjs";
 import { haversineKm } from "./geo.mjs";
 
 // ─── 1. Name normalization ──────────────────────────────────────────
@@ -720,39 +725,12 @@ export function inferMatchdayLabel(openLigaMatches, aroundDate = new Date()) {
  * Safe to call with a missing table or wrong creds (returns an empty Map
  * and warns once). Never throws — enrichment must never crash the pipeline.
  */
-export async function loadRefereesForLeague(supaUrl, supaKey, league, season) {
-  const out = new Map();
-  if (!supaUrl || !supaKey || !league || !season) return out;
-  const selectCols = "referee_name,referee_slug,yellows_per_game,reds_per_game,pens_per_game,home_yellow_bias,home_pen_bias,matches_analyzed,source";
-  const url = `${supaUrl}/rest/v1/referees?` + new URLSearchParams({
-    select: selectCols,
-    league: `eq.${league}`,
-    season: `eq.${season}`,
-  });
-  try {
-    const resp = await fetch(url, {
-      headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
-    });
-    if (!resp.ok) {
-      // 404 / relation-does-not-exist in dev environments is expected
-      // until the migration is applied. Warn once, return empty.
-      if (!loadRefereesForLeague._warned) {
-        console.warn(`[referees] query ${league}/${season} returned ${resp.status} — table may be missing?`);
-        loadRefereesForLeague._warned = true;
-      }
-      return out;
-    }
-    const rows = await resp.json();
-    for (const row of rows || []) {
-      if (row.referee_slug) out.set(row.referee_slug, row);
-    }
-  } catch (e) {
-    if (!loadRefereesForLeague._warned) {
-      console.warn(`[referees] unexpected: ${e.message || e}`);
-      loadRefereesForLeague._warned = true;
-    }
-  }
-  return out;
+export async function loadRefereesForLeague(_supaUrl, _supaKey, _league, _season) {
+  // 2026-05-28: `referees` table dropped (verified leakage baggage, never
+  // wired as engine feature). Function preserved as no-op to keep the
+  // generate-matchday.mjs Promise.all shape stable. Resurrect by reverting
+  // this commit and re-creating the table via scripts/_archive/migration-referees.sql.
+  return new Map();
 }
 
 /**
@@ -830,35 +808,12 @@ export function deriveRefereeFeatures(refereeMap, rawName) {
  * Read-only REST against `stadiums` (populated by scripts/scrape-stadiums.mjs).
  * Safe to call before the migration lands — returns an empty map + logs once.
  */
-export async function loadStadiumsForTeams(supaUrl, supaKey, teamNames) {
-  const out = new Map();
-  const unique = Array.from(new Set((teamNames || []).filter(Boolean)));
-  if (!supaUrl || !supaKey || unique.length === 0) return out;
-  // PostgREST `in.()` with URL-encoded comma-separated list.
-  const inList = unique.map(t => `"${t.replace(/"/g, '""')}"`).join(",");
-  const url = `${supaUrl}/rest/v1/stadiums?select=team,lat,lng,altitude_m,capacity,surface,stadium_name&team=in.(${encodeURIComponent(inList)})`;
-  try {
-    const resp = await fetch(url, {
-      headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
-    });
-    if (!resp.ok) {
-      if (!loadStadiumsForTeams._warned) {
-        console.warn(`[stadium] query returned ${resp.status} — table may be missing?`);
-        loadStadiumsForTeams._warned = true;
-      }
-      return out;
-    }
-    const rows = await resp.json();
-    for (const r of rows || []) {
-      if (r.team) out.set(r.team, r);
-    }
-  } catch (e) {
-    if (!loadStadiumsForTeams._warned) {
-      console.warn(`[stadium] unexpected: ${e.message || e}`);
-      loadStadiumsForTeams._warned = true;
-    }
-  }
-  return out;
+export async function loadStadiumsForTeams(_supaUrl, _supaKey, _teamNames) {
+  // 2026-05-28: `stadiums` table dropped (verified leakage baggage, never
+  // wired as engine feature). Function preserved as no-op to keep the
+  // generate-matchday.mjs call shape stable. deriveTravelCongestion
+  // already degrades to null travel when stadiumMap is empty.
+  return new Map();
 }
 
 /**

@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { predictYellowCards } from "@/lib/dixon-coles";
+// referee-aliases.mjs archived 2026-05-28 (referees table dropped). Test
+// preserved as regression coverage for the archived chain — if a future
+// sprint resurrects the referee feature, this catches breakage at the
+// helper-function level. Import path points to _archive/.
 // .mjs helpers — vitest + native ESM handle the extension explicitly.
-import { slugifyReferee, resolveRefereeName } from "../scripts/_lib/referee-aliases.mjs";
+import { slugifyReferee, resolveRefereeName } from "../scripts/_archive/referee-aliases.mjs";
 import {
   deriveRefereeFeatures,
   formatRefereeCardString,
