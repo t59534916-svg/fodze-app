@@ -15,6 +15,17 @@ import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/typ
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
 
+// Confidence-Tier für die Top-Outcome-Wahrscheinlichkeit einer Vorhersage.
+// Die höchste 1X2-Wkt IST die Confidence des Tipps — und sie ist KALIBRIERT
+// (cross-season validiert 2026-05-28: ≥65%-Tier trifft ~75%, 55-65% ~56%,
+// 45-55% ~50%, <45% ~40%; siehe docs/FORECAST-QUALITY-ANALYSIS.md).
+function confidenceTier(p: number): { label: string; fg: string; bg: string; border: string; hist: string } {
+  if (p >= 0.65) return { label: "HOCH", fg: color.value, bg: color.valueBg, border: color.valueBorder, hist: "histor. ~75% Treffer" };
+  if (p >= 0.55) return { label: "MITTEL", fg: color.gold, bg: `${color.goldMid}14`, border: `${color.goldMid}40`, hist: "histor. ~56%" };
+  if (p >= 0.45) return { label: "NIEDRIG", fg: color.goldMid, bg: `${color.goldMid}0c`, border: `${color.goldMid}24`, hist: "histor. ~50%" };
+  return { label: "TOSS-UP", fg: `${color.goldMid}90`, bg: "transparent", border: `${color.goldMid}20`, hist: "offen ~40%" };
+}
+
 // Count comma-separated injury entries — the format the Transfermarkt
 // scrape produces is "Name (Pos, Reason), Name (Pos, Reason)". Split on
 // ", " between bracket-closes-then-comma so commas inside parens don't
@@ -353,6 +364,24 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
           spielanalyse überblick"). Kept on fuck-betting. */}
       {calc && (
         <div style={{ marginBottom: 16 }}>
+          {(() => {
+            const probs = [calc.mk.H, calc.mk.D, calc.mk.A];
+            const top = Math.max(...probs);
+            const fi = probs.indexOf(top);
+            const fav = fi === 0 ? (match.home?.name?.split(" ").pop() || "Heim")
+              : fi === 2 ? (match.away?.name?.split(" ").pop() || "Ausw.") : "Remis";
+            const t = confidenceTier(top);
+            return (
+              <div title="Confidence = Modell-Wahrscheinlichkeit des Top-Tipps. Kalibriert (validiert 2026-05-28 cross-season): die angegebene Wkt entspricht ~der tatsächlichen Trefferquote. Nur HOCH-Tipps (≥65%) sind verlässlich."
+                   style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: `${color.goldMid}70`, letterSpacing: 0.5, fontWeight: 600 }}>CONFIDENCE</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: t.fg, background: t.bg, border: `1px solid ${t.border}`, borderRadius: 6, padding: "2px 8px" }}>
+                  {t.label} · {pc(top)}
+                </span>
+                <span style={{ fontSize: 10, color: `${color.goldMid}70` }}>Tipp {fav} · {t.hist}</span>
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 11 }}>
             <span style={{ color: color.value, fontWeight: 600 }}>{match.home?.name?.split(" ").pop()} {pc(calc.mk.H)}</span>
             <span style={{ color: `${color.goldMid}60` }}>X {pc(calc.mk.D)}</span>
