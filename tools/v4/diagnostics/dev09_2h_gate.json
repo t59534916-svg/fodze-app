@@ -1,0 +1,176 @@
+{
+  "gate": "2nd-holdout-temporal",
+  "train": "22/23+23/24",
+  "test": "24/25",
+  "n_corpus": 7018,
+  "n_xg_matched": 6608,
+  "brier_dev03": 0.6194945317203882,
+  "brier_dev09": 0.6135679502317112,
+  "brier_delta": -0.005926581488676974,
+  "brier_delta_95": 0.0047187529529381395,
+  "xg_rmse_dev03": 0.7007535064742074,
+  "xg_rmse_dev09": 0.7135549736420695,
+  "xg_rmse_delta": 0.012801467167862124,
+  "xg_rmse_ci95": [
+    0.006618172156978824,
+    0.019013857651301418
+  ],
+  "per_league": [
+    {
+      "league": "austria_bl",
+      "n": 192,
+      "brier_dev03": 0.6479448803197986,
+      "brier_dev09": 0.6154433240193592,
+      "brier_delta": -0.03250155630043938
+    },
+    {
+      "league": "bundesliga",
+      "n": 306,
+      "brier_dev03": 0.6147501483379753,
+      "brier_dev09": 0.6323369481660608,
+      "brier_delta": 0.01758679982808553
+    },
+    {
+      "league": "bundesliga2",
+      "n": 306,
+      "brier_dev03": 0.6670163483252143,
+      "brier_dev09": 0.6514529286442376,
+      "brier_delta": -0.015563419680976631
+    },
+    {
+      "league": "championship",
+      "n": 457,
+      "brier_dev03": 0.6220193222323475,
+      "brier_dev09": 0.6248215847434391,
+      "brier_delta": 0.0028022625110916133
+    },
+    {
+      "league": "eerste_divisie",
+      "n": 310,
+      "brier_dev03": 0.635076849095897,
+      "brier_dev09": 0.6260321031905953,
+      "brier_delta": -0.009044745905301688
+    },
+    {
+      "league": "epl",
+      "n": 380,
+      "brier_dev03": 0.6114359558519931,
+      "brier_dev09": 0.598513853407542,
+      "brier_delta": -0.012922102444451022
+    },
+    {
+      "league": "eredivisie",
+      "n": 306,
+      "brier_dev03": 0.5976288671738658,
+      "brier_dev09": 0.6055979157916853,
+      "brier_delta": 0.007969048617819552
+    },
+    {
+      "league": "greek_sl",
+      "n": 236,
+      "brier_dev03": 0.6723280953424066,
+      "brier_dev09": 0.5974372356006996,
+      "brier_delta": -0.07489085974170695
+    },
+    {
+      "league": "jupiler_pro",
+      "n": 304,
+      "brier_dev03": 0.6553243441522545,
+      "brier_dev09": 0.6087692832741012,
+      "brier_delta": -0.04655506087815331
+    },
+    {
+      "league": "la_liga",
+      "n": 380,
+      "brier_dev03": 0.5685376126302126,
+      "brier_dev09": 0.5638462435875379,
+      "brier_delta": -0.004691369042674753
+    },
+    {
+      "league": "la_liga2",
+      "n": 418,
+      "brier_dev03": 0.6302730427593694,
+      "brier_dev09": 0.6400063404282629,
+      "brier_delta": 0.009733297668893526
+    },
+    {
+      "league": "league_one",
+      "n": 324,
+      "brier_dev03": 0.6174167579222221,
+      "brier_dev09": 0.632759402106623,
+      "brier_delta": 0.0153426441844009
+    },
+    {
+      "league": "league_two",
+      "n": 288,
+      "brier_dev03": 0.6374575792653662,
+      "brier_dev09": 0.6602645378492488,
+      "brier_delta": 0.022806958583882597
+    },
+    {
+      "league": "liga3",
+      "n": 380,
+      "brier_dev03": 0.6225651685086122,
+      "brier_dev09": 0.6280918557922581,
+      "brier_delta": 0.005526687283645915
+    },
+    {
+      "league": "ligue_1",
+      "n": 306,
+      "brier_dev03": 0.619252347116969,
+      "brier_dev09": 0.5773883265232819,
+      "brier_delta": -0.0418640205936871
+    },
+    {
+      "league": "ligue_2",
+      "n": 306,
+      "brier_dev03": 0.6209176595991344,
+      "brier_dev09": 0.6160944872104269,
+      "brier_delta": -0.004823172388707442
+    },
+    {
+      "league": "primeira_liga",
+      "n": 306,
+      "brier_dev03": 0.5695367460521286,
+      "brier_dev09": 0.5738708284531757,
+      "brier_delta": 0.004334082401047157
+    },
+    {
+      "league": "scottish_prem",
+      "n": 228,
+      "brier_dev03": 0.583988020960659,
+      "brier_dev09": 0.5914705766275639,
+      "brier_delta": 0.007482555666904811
+    },
+    {
+      "league": "serie_a",
+      "n": 380,
+      "brier_dev03": 0.6046792937293192,
+      "brier_dev09": 0.5949573936368013,
+      "brier_delta": -0.009721900092517832
+    },
+    {
+      "league": "serie_b",
+      "n": 380,
+      "brier_dev03": 0.6554094189862182,
+      "brier_dev09": 0.6520558026482687,
+      "brier_delta": -0.0033536163379495054
+    },
+    {
+      "league": "super_lig",
+      "n": 297,
+      "brier_dev03": 0.5560010571421973,
+      "brier_dev09": 0.5562672199151996,
+      "brier_delta": 0.0002661627730022875
+    },
+    {
+      "league": "swiss_sl",
+      "n": 228,
+      "brier_dev03": 0.6410189315822007,
+      "brier_dev09": 0.6413206825419014,
+      "brier_delta": 0.00030175095970075283
+    }
+  ],
+  "n_brier_regress": 3,
+  "verdict": "GREEN: edge HOLDS temporally (dev-09 Brier better on 24/25 OOT too)"
+}
