@@ -25,6 +25,11 @@ from v4.modules.m3_xg.sofa_context import (
     stats_for_context,
 )
 
+# NOTE: most tests in this file build SYNTHETIC temp SQLite DBs (CI-safe,
+# including the critical per-league Elo isolation test). ONLY
+# test_real_db_smoke needs the 1.13 GB local mirror — it carries its own
+# @pytest.mark.requires_data (excluded in CI via -m "not requires_data").
+
 
 def _build_test_db(matches: list) -> Path:
     """Create a temp SQLite with sofascore_match populated by `matches`.
@@ -307,6 +312,7 @@ def test_zero_sum_elo_updates():
 # ─── Integration smoke (real DB) ────────────────────────────────────────────
 
 
+@pytest.mark.requires_data
 def test_real_db_smoke():
     """Real-DB smoke: sofa_context produces sane stats on the actual mirror."""
     real_db = Path(__file__).resolve().parents[3] / "tools" / "sofascore" / "data" / "local_extras.db"

@@ -27,6 +27,11 @@ from v4.modules.m3_xg.bottom_up_features import (
     BottomUpCalculator,
 )
 
+# NOTE: no module-level requires_data mark. The sqlite_path / fitted_calculator
+# fixtures already pytest.skip() when the mirror is absent, so data tests skip
+# gracefully in CI while the pure-unit ones (constants, feature-list shape,
+# source-pattern leakage + bug-class-A scans) still RUN.
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SQLITE_PATH = REPO_ROOT / "tools" / "sofascore" / "data" / "local_extras.db"
 TOP5 = ("epl", "la_liga", "serie_a", "bundesliga", "ligue_1")
@@ -42,8 +47,12 @@ TEAM_ROLLING_N_MVP = 5
 
 @pytest.fixture(scope="module")
 def sqlite_path() -> Path:
-    if not SQLITE_PATH.exists():
-        pytest.skip(f"SQLite mirror not at {SQLITE_PATH}")
+    # Guard on BOTH existence AND non-empty: a stray 0-byte stub (e.g. from a
+    # plain sqlite3.connect in another tool) would pass .exists() but then
+    # fail every query with "no such table". size>0 defeats that. (CI
+    # determinism — 2026-05-28.)
+    if not SQLITE_PATH.exists() or SQLITE_PATH.stat().st_size == 0:
+        pytest.skip(f"SQLite mirror not at {SQLITE_PATH} (or empty)")
     return SQLITE_PATH
 
 

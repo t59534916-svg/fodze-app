@@ -165,6 +165,7 @@ export function buildTeamXgRows(cqRows, canonicalizeFn = canonicalize) {
   const rows = [];
   let skippedNoOpponent = 0;
   let skippedCanonicalize = 0;
+  /** @type {Record<string, number>} */
   const perLeague = {};
 
   for (const [, game] of byGame.entries()) {

@@ -73,7 +73,9 @@ def compute_sofa_context(
 
     Leakage-safe: pre-match state recorded BEFORE applying current match's update.
     """
-    con = sqlite3.connect(str(sqlite_path))
+    # Read-only connect — never create an empty stub (CI determinism). A plain
+    # sqlite3.connect would auto-create a 0-byte file when the mirror is absent.
+    con = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
     cur = con.cursor()
     cur.execute("""
         SELECT game_id, league, home_team_id, away_team_id,

@@ -6,7 +6,28 @@ import {
   calcMatchEnhanced,
   calculateBetsEnhanced,
   getHomeFactor,
+  type Markets,
 } from "@/lib/dixon-coles";
+
+// Build a fully-typed Markets fixture from the few fields a test cares about.
+// calculateBetsEnhanced only reads H/D/A/O25/U25 for 1X2 + O/U bets, but the
+// Markets interface has 28 required fields — this helper fills the rest with
+// neutral defaults so the call is type-correct (was 2 pre-existing tsc errors
+// documented in CLAUDE.md; fixed 2026-05-28 to flip CI tsc-enforcement on).
+function mkFixture(p: Partial<Markets> = {}): Markets {
+  return {
+    H: 0.45, D: 0.27, A: 0.28,
+    O15: 0.75, O25: 0.52, O35: 0.30, O45: 0.15, O55: 0.06,
+    U15: 0.25, U25: 0.48, U35: 0.70, U45: 0.85, U55: 0.94,
+    BY: 0.55, BN: 0.45,
+    best: "1", bestP: 0.45,
+    DC_1X: 0.72, DC_X2: 0.55, DC_12: 0.73,
+    CS_H: 0.30, CS_A: 0.25,
+    HO05: 0.78, HO15: 0.45, HO25: 0.20,
+    AO05: 0.70, AO15: 0.38, AO25: 0.15,
+    ...p,
+  };
+}
 
 describe("LEAGUES", () => {
   it("has 24 leagues defined", () => {
@@ -100,7 +121,7 @@ describe("calcMatchEnhanced", () => {
 
 describe("calculateBetsEnhanced", () => {
   it("identifies value bets when model prob > market prob", () => {
-    const mk = { H: 0.6, D: 0.2, A: 0.2, O25: 0.7, U25: 0.3, best: "1" };
+    const mk = mkFixture({ H: 0.6, D: 0.2, A: 0.2, O25: 0.7, U25: 0.3 });
     const odds = { h: 2.0, d: 4.0, a: 5.0 }; // implied: 50% / 25% / 20%
     const bets = calculateBetsEnhanced(mk, mk, mk, odds, 0.33);
     // Bets should be generated for all markets
@@ -112,7 +133,7 @@ describe("calculateBetsEnhanced", () => {
   });
 
   it("calculates Kelly stake correctly", () => {
-    const mk = { H: 0.6, D: 0.2, A: 0.2, O25: 0.7, U25: 0.3, best: "1" };
+    const mk = mkFixture({ H: 0.6, D: 0.2, A: 0.2, O25: 0.7, U25: 0.3 });
     const odds = { h: 2.0, d: 4.0, a: 5.0 };
     const bets = calculateBetsEnhanced(mk, mk, mk, odds, 0.25);
     const homeBet = bets.find((b: any) => b.label === "Heim" || b.label === "1");

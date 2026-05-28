@@ -92,7 +92,12 @@ class BottomUpCalculator:
         if not self.sqlite_path.exists():
             raise FileNotFoundError(f"SQLite mirror not found: {self.sqlite_path}")
 
-        con = sqlite3.connect(str(self.sqlite_path))
+        # Read-only connect (mode=ro + uri) — this is a READ path; it must
+        # NEVER create an empty DB stub. A plain sqlite3.connect(path) would
+        # silently create a 0-byte file when the mirror is absent, which then
+        # defeats .exists() guards downstream (CI determinism bug found
+        # 2026-05-28). Read-only raises OperationalError instead.
+        con = sqlite3.connect(f"file:{self.sqlite_path}?mode=ro", uri=True)
         df = pd.read_sql_query("""
             SELECT pms.player_id, pms.game_id, pms.position,
                    pms.minutes_played, pms.expected_goals, pms.expected_assists,

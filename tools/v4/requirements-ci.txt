@@ -1,0 +1,11 @@
+# Pinned deps for the v4 pytest CI gate (GitHub Actions ci.yml).
+# Versions mirror tools/venv (the local dev environment) as of 2026-05-28.
+# CI runs ONLY the data-independent subset: pytest -m "not requires_data".
+# Data-dependent tests (need the 1.13 GB local_extras.db SQLite mirror, which
+# is gitignored) are excluded — they run locally + pre-deploy.
+numpy==2.0.2
+pandas==2.3.3
+scipy==1.13.1
+scikit-learn==1.6.1
+lightgbm==4.6.0
+pytest==8.4.2

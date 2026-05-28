@@ -22,15 +22,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
+      # Lint stays advisory — Next lint emits warnings (non-blocking) by
+      # project policy. Types + tests + build are the hard gates.
+      - name: Lint (advisory)
         run: npm run lint
         continue-on-error: true
 
-      - name: Type check
+      # 2026-05-28: flipped from continue-on-error:true → BLOCKING. Previously
+      # type errors could land on main silently (vitest doesn't type-check).
+      # The tree is now at 0 tsc errors; keep it that way.
+      - name: Type check (BLOCKING)
         run: npx tsc --noEmit
-        continue-on-error: true
 
-      - name: Unit tests
+      - name: Unit tests (vitest)
         run: npm run test
 
       - name: Build
@@ -38,3 +42,44 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-key-for-build
+
+  # 2026-05-28: NEW — the v4 Python invariant gates (bug-class-A leakage,
+  # determinism, eval-metric identities, m1-m9 module contracts) were
+  # local-only until now. This job runs the data-INDEPENDENT subset
+  # (pytest -m "not requires_data"); data-dependent tests need the 1.13 GB
+  # gitignored SQLite mirror and run locally + pre-deploy.
+  python-v4-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+
+      # Guard: the v4 Python package (tools/) is gitignored. Until the full
+      # source + conftest is force-added to git, a fresh CI checkout won't
+      # have the tests. This step detects presence so the job no-ops cleanly
+      # instead of red-X'ing, and auto-activates the moment the source lands.
+      - name: Detect v4 source
+        id: v4check
+        run: |
+          if [ -f tools/v4/tests/conftest.py ] && [ -f tools/v4/data/loaders.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::v4 Python package not in git — pytest gate inactive. Force-add tools/v4/{modules,data,tests,pipeline,utils,eval}/**/*.py + conftest to activate."
+          fi
+
+      - name: Install v4 deps
+        if: steps.v4check.outputs.present == 'true'
+        run: pip install -r tools/v4/requirements-ci.txt
+
+      - name: v4 pytest (data-independent gates)
+        if: steps.v4check.outputs.present == 'true'
+        run: python -m pytest tools/v4/tests/ -m "not requires_data" -q
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools
