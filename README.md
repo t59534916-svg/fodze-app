@@ -2,7 +2,7 @@
 
 Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson, **isotonic + Benter calibration**, **Conformal Prediction Gates** und Kelly-Criterion Staking. **22 Ligen** live + 2 European cups, **4 Prediction-Engines** parallel, **~87.000 xG-history-rows** aus 7 Datenquellen, **6.856 Sofa-extras games** (100% v1+v2 coverage seit 2026-05-10), **550+ Tests** grün.
 
-**Next.js 14** · TypeScript · Supabase · Vercel
+**Next.js 16** · React 19 · TypeScript · Supabase · Vercel
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ bash scripts/launchd/install.sh   # täglich 07:30 + Di/Fr 19:00
 | Feature | Beschreibung |
 |---|---|
 | **4 Engines parallel** | Standard Ensemble · @annafrick13 v1 (Poisson-ML) · v2 (LightGBM Tweedie, production) · v3 (Lean 20-Feature LightGBM, Brier 0.6318, preview-only). Engine-Toggle microsecond-fast dank Pre-Compute |
-| **Phase 2.x Calibration Layer** ✨ | Dirichlet 3-Klassen-Kalibrierung (ECE -67% ggü. Platt), per-Liga Benter Market×Modell-Blend (super_lig β₂=1.31, EPL β₂=1.17), Conformal Staking-Gate mit 96.7% empirischer Coverage, fitted Per-Liga Negative-Binomial-Overdispersion (-30% bis -52% vs. Defaults). Alle 4 Layer LIVE in Production seit 2026-04-26 |
+| **Phase 2.x Calibration Layer** ✨ | **isotonic** Kalibrierung (Dirichlet wurde 2026-04-26 nach current-season-Backtest wieder REVERTED — drift +0.0075 Brier; siehe CLAUDE.md), per-Liga Benter Market×Modell-Blend (super_lig β₂=1.31, EPL β₂=1.17), Conformal Staking-Gate in `warn`-Mode (flip-to-enforce seit 2026-05-28-Refit freigeschaltet), fitted Per-Liga Negative-Binomial-Overdispersion (-30% bis -52% vs. Defaults). Aktiv: isotonic + Benter + Conformal(warn) + Overdispersion |
 | **Goldilocks-Zone Per-Liga 3-Tier** | Sharp (1.5-5%) / Moderate (2.5-7.5%) / Soft (3.5-8.5%) — automatische Tier-Erkennung pro Liga. Soft-Skip + Hard-Trap-Banner getrennt. Dual-source Edge (Markt vig-removed + Engine-Prob) als Konsens-Indikator |
 | **Team-Logos + Colors** | 398 Teams via TheSportsDB mit echten Badges statt Generic-Kit-SVG. Accent-Gradient pro MatchCard (home-color → away-color linke Border) |
 | **Live-Injuries** | Pro Team via Transfermarkt + Groq HTML-Parser ODER api-sports structured endpoint (kein Scraping-Risk). Im UI als 🩹 H:2 · 🩹 A:3 Counter |
@@ -154,7 +154,7 @@ v1 (ensemble-v1)    4-Modell Ensemble: Dixon-Coles (6%) + Elo (22%) + Logistic (
 
 | Layer | Technologie |
 |---|---|
-| Frontend | Next.js 14 App Router, React 18, TypeScript 5.5 |
+| Frontend | Next.js 16 App Router, React 19, TypeScript 5.5 |
 | Styling | Inline tokens (Leather + Gold), Team-Colors via TheSportsDB |
 | State | AppContext + MatchdayContext + sessionStorage |
 | Backend | Supabase PostgreSQL + Auth + Row-Level Security |

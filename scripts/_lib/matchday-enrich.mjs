@@ -389,6 +389,15 @@ export function buildManagerHistoryByTeam(rows, n = 5) {
  * Detect if EITHER team had a coaching change between their two most-
  * recent settled matches. Returns ["NEUER-TRAINER"] or [].
  *
+ * ⚠ NOT YET WIRED INTO PRODUCTION (verified 2026-05-29): this function is
+ * implemented + covered by tests/coaching-change-tag.test.ts (16 cases) and
+ * called by enrichMatch() below, but no production write-path invokes it —
+ * generate-matchday.mjs derives tags via deriveTags()/deriveStandingsTags()
+ * and does NOT import enrichMatch, and backfill-enrich-matchdays.mjs has its
+ * own local enrichMatchday() that skips coaching tags. Until a Sofa
+ * match_managers join is wired into generate-matchday, NEUER-TRAINER in
+ * practice still only comes from manual AI-enrichment (/api/matchday).
+ *
  * Implementation:
  *   - Look up team's manager history in the pre-built Map (O(1))
  *   - Need ≥2 entries (1 = no comparison possible, no tag)

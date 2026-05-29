@@ -98,6 +98,19 @@ describe("canonicalizeTeamName — TS mirror of scripts/_lib/canonical-team.mjs"
     expect(canonicalizeTeamName("Bayern", "")).toBe("Bayern");
   });
 
+  it("2026-05-29 sync: 5 aliases that were missing TS-side (JS had 27, TS had 22)", () => {
+    // Regression guard for the EXTRA_ALIASES JS↔TS desync fixed 2026-05-29.
+    // These five entries existed in scripts/_lib/canonical-team.mjs but were
+    // absent from team-resolver.ts, so the engine read-side under-canonicalized
+    // them (tier-1 miss → fuzzy fallback or silent drift).
+    expect(canonicalizeTeamName("OFI Crete", "greek_sl")).toBe("OFI Kreta");
+    expect(canonicalizeTeamName("Milton Keynes Dons", "league_two")).toBe("MK Dons");
+    expect(canonicalizeTeamName("Rennes", "ligue_1")).toBe("Stade Rennes");
+    expect(canonicalizeTeamName("Sporting Lisbon", "primeira_liga")).toBe("Sporting CP");
+    expect(canonicalizeTeamName("Sporting Lissabon", "primeira_liga")).toBe("Sporting CP");
+    expect(canonicalizeTeamName("WSG Tirol", "austria_bl")).toBe("Wattens");
+  });
+
   it("Cross-league: same name in different leagues resolves per-league", () => {
     // Hertha BSC is canonical in bundesliga2 (current). In bundesliga (Top-5
     // registry), it's also canonical. Both should resolve correctly.
