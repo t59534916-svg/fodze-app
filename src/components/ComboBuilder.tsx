@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { createLeg, calcCombo, analyzeLegImpact, calcAllSystems, recommendBankers, calcCorrelationImpact, type ComboLeg, type SystemResult } from "@/lib/system-bets";
+import { confidenceTier, type ConfTierKey } from "@/lib/confidence-tier";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
@@ -24,6 +25,14 @@ const S = {
 const multColor = (m: number) => m >= 1.05 ? "#6aad55" : m >= 0.98 ? "#c4a265" : m >= 0.93 ? "#c4a265" : "#c47070";
 const multLabel = (m: number) => m >= 1.05 ? "BOOST" : m >= 0.98 ? "FAIR" : m >= 0.93 ? "SCHADEN" : "ZERSTÖRT";
 const multIcon = (m: number) => m >= 1.05 ? "↑" : m >= 0.98 ? "→" : "↓";
+
+// Confidence-Tier-Farbe pro Leg — magnitude-basierter Verlässlichkeits-Flag
+// (HOCH=verlässlich grün · MITTEL gold · NIEDRIG/TOSS-UP grau, Münzwurf-nah),
+// nutzt die kalibrierten Schwellen aus src/lib/confidence-tier.ts. Wir zeigen
+// nur den TIER (nicht die 1X2-spezifische Trefferquote), weil ein Kombi-Bein
+// jeder Markt sein kann — der Tier flaggt, wie sicher das Modell bei DIESEM Bein ist.
+const tierHex = (key: ConfTierKey) =>
+  key === "HOCH" ? "#6aad55" : key === "MITTEL" ? "#c4a265" : "#c4a265a0";
 
 interface CustomLeg { id: string; label: string; match: string; p: string; quote: string }
 
@@ -136,6 +145,7 @@ export default function ComboBuilder({
           const isSelected = selectedIds.has(l.id);
           const isBanker = bankerIds.has(l.id);
           const mult = l.pModel * l.quote;
+          const tier = confidenceTier(l.pModel);
           const atLimit = !isSelected && totalSelected >= MAX_LEGS;
 
           return (
@@ -159,6 +169,7 @@ export default function ComboBuilder({
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 2, fontSize: 10, flexWrap: "wrap" as const }}>
                     <span style={{ color: "#c4a26545" }}>P:{pc(l.pModel)}</span>
+                    <span style={{ color: tierHex(tier.key), fontWeight: 600 }} title="Kalibrierter Confidence-Tier des Modells für dieses Bein (Magnitude). Nur HOCH ist klar überdurchschnittlich; darunter Münzwurf-nah.">{tier.label}</span>
                     <span style={{ color: "#c4a26545" }}>Q:{l.quote.toFixed(2)}</span>
                     <span style={{ color: multColor(mult), fontWeight: 600 }}>{multIcon(mult)}{mult.toFixed(2)}× {multLabel(mult)}</span>
                     {l.edge > 0 && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#5a8c4a12", color: "#6aad55", fontWeight: 600 }}>VALUE</span>}
@@ -200,7 +211,7 @@ export default function ComboBuilder({
               }}>{isSelected ? "✓" : ""}</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 500, color: "#ede4d4" }}>{c.label} <span style={{ color: "#c4a26530", fontSize: 10 }}>{c.match}</span></div>
-                <div style={{ fontSize: 10, color: "#c4a26545" }}>P:{c.p}% · Q:{c.quote} · <span style={{ color: multColor(mult), fontWeight: 600 }}>{mult.toFixed(2)}×</span></div>
+                <div style={{ fontSize: 10, color: "#c4a26545" }}>P:{c.p}% · <span style={{ color: tierHex(confidenceTier(p).key), fontWeight: 600 }}>{confidenceTier(p).label}</span> · Q:{c.quote} · <span style={{ color: multColor(mult), fontWeight: 600 }}>{mult.toFixed(2)}×</span></div>
               </div>
               {isSelected && <div onClick={() => toggleBanker(c.id)} style={{
                 padding: "3px 6px", borderRadius: 4, cursor: "pointer", fontSize: 9, flexShrink: 0,
@@ -254,6 +265,45 @@ export default function ComboBuilder({
           )}
         </div>
       )}
+
+      {/* ═══ EHRLICHKEIT — fair vs angeboten · Hausvorteil · schwache Beine ═══ */}
+      {/* Kein Edge-Versprechen (gemessen: Modell schlägt Pinnacle weder 1X2 noch Ü/U).
+          Dieses Panel ist ein internes Disziplin-Instrument: es zeigt die WAHREN Kosten
+          + die unsichere Basis einer Kombi, bevor man sie aus Bauchgefühl spielt. */}
+      {legs.length >= 2 && combo && (() => {
+        const fairQuote = combo.pModel > 0 ? 1 / combo.pModel : Infinity;
+        const houseEdge = Math.max(0, -combo.ev);      // erwarteter Verlust / Marge pro €1
+        const weak = legs.filter(l => confidenceTier(l.pModel).key !== "HOCH");
+        const vigBar = Math.min(100, (houseEdge / 0.30) * 100);  // Balken: 30% = voll
+        return (
+          <div style={S.card}>
+            <div style={{ fontSize: 10, color: "#c4a26550", letterSpacing: 1, marginBottom: 8 }}>EHRLICHKEIT</div>
+            <div style={{ fontSize: 12, color: "#ede4d4", marginBottom: 8 }}>
+              Zahlt <b style={{ color: "#d4b86a" }}>{combo.quote.toFixed(1)}×</b> — fair wäre{" "}
+              <b style={{ color: "#6aad55" }}>{isFinite(fairQuote) ? fairQuote.toFixed(1) + "×" : "—"}</b>
+              {houseEdge > 0.001 && <span style={{ color: "#c47070" }}> ({(houseEdge * 100).toFixed(0)}% Marge)</span>}
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#c4a26545", marginBottom: 3 }}>
+                <span>HAUSVORTEIL (was du im Schnitt verlierst)</span>
+                <span style={{ color: houseEdge > 0.10 ? "#c47070" : "#c4a265", fontWeight: 600 }}>{(houseEdge * 100).toFixed(1)}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: "#c4a26510" }}>
+                <div style={{ height: "100%", borderRadius: 3, width: `${vigBar}%`, transition: "width 0.3s", background: "linear-gradient(90deg, #c4a265, #c47070)" }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: "#c4a26560", marginBottom: weak.length ? 8 : 0, lineHeight: 1.5 }}>
+              Diese {legs.length}-er Kombi gewinnt laut Modell nur in{" "}
+              <b style={{ color: "#ede4d4" }}>{combo.pModel < 0.01 ? (combo.pModel * 100).toFixed(2) : (combo.pModel * 100).toFixed(0)}%</b> der Fälle.
+            </div>
+            {weak.length > 0 && (
+              <div style={{ padding: "6px 10px", borderRadius: 6, background: "#8c4a4a0a", border: "1px solid #c4707015", fontSize: 10, color: "#c47070", lineHeight: 1.5 }}>
+                {weak.length} von {legs.length} Beinen unter HOCH-Confidence (Münzwurf-nah) → hohe Varianz, unzuverlässige Kombi-Basis.
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ═══ CORRELATION ═══ */}
       {corrInfo && legs.length >= 2 && (
