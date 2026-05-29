@@ -19,6 +19,7 @@ interface AllEnginesMk {
   "poisson-ml-v2": EngineMk | null;
   "poisson-ml-v3": EngineMk | null;
   "poisson-ml-dev03": EngineMk | null;
+  "poisson-ml-blend": EngineMk | null;
   "footbayes-hierarchical": EngineMk | null;
 }
 

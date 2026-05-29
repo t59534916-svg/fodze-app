@@ -370,6 +370,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     v3Calc: MatchCalc | null;
     dev03Calc: MatchCalc | null;
     bayesCalc: MatchCalc | null;
+    blendCalc: MatchCalc | null;
   } | null {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
@@ -544,7 +545,37 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       } as MatchCalc;
     }
 
-    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc };
+    // ── dev-03 ⊕ v2 Blend (50/50 λ-average) ──────────────────────────
+    // The Blend's forecast-precision gain is ensemble VARIANCE REDUCTION from
+    // averaging two strong decorrelated models — NOT lineup info
+    // (eval_blend_partners.py: dev-03⊕v2 −0.0066 Brier vs dev-03 ≈ dev-03⊕dev-09,
+    // gap 0.0003). So we blend the two already-computed production engines and
+    // need no dev-09/lineup pipeline. Built only when BOTH produced a calc;
+    // else null → selector falls back to ensemble. RAW λ-blend → DC matrix,
+    // routed through the shared Benter/Kelly/Shield bet pipeline (engine="ensemble"
+    // like the footBayes path, so the display mk stays the raw blend forecast).
+    let blendCalc: MatchCalc | null = null;
+    if (dev03Calc && v2Calc) {
+      const blH = 0.5 * (dev03Calc.lambdaH + v2Calc.lambdaH);
+      const blA = 0.5 * (dev03Calc.lambdaA + v2Calc.lambdaA);
+      const blendMx = buildMatrix(blH, blA);
+      const blendMk = deriveAllMarkets(blendMx);
+      const blendPin = o._sharp && o._sharp.h != null && o._sharp.d != null && o._sharp.a != null
+        ? { sharp_h: o._sharp.h, sharp_d: o._sharp.d, sharp_a: o._sharp.a }
+        : undefined;
+      const blendBets = calculateBetsEnhanced(
+        blendMk, enh.mk_low, enh.mk_high, no, frac, blendPin, undefined, league, "ensemble", leagueKellyMultiplier, shieldVetoes,
+      );
+      blendCalc = {
+        lambdaH: blH, lambdaA: blA,
+        lambdaH_raw: blH, lambdaA_raw: blA,
+        mk: blendMk, bets: blendBets, enh, topScores: topScores.slice(0, 5),
+        ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
+        hasValue: blendBets.some(b => b.isValue), hasOdds, warnings,
+      } as MatchCalc;
+    }
+
+    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc, blendCalc };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -558,7 +589,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null; blendCalc: MatchCalc | null } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -777,6 +808,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const all = allEngineCalcs[i];
       if (!all) return { ...m, idx: i, calc: null };
       const chosen =
+        engine === "poisson-ml-blend" && all.blendCalc ? all.blendCalc :
         engine === "poisson-ml-dev03" && all.dev03Calc ? all.dev03Calc :
         engine === "poisson-ml-v3" && all.v3Calc ? all.v3Calc :
         engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
@@ -791,6 +823,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           "poisson-ml-v2": all.v2Calc?.mk || null,
           "poisson-ml-v3": all.v3Calc?.mk || null,
           "poisson-ml-dev03": all.dev03Calc?.mk || null,
+          "poisson-ml-blend": all.blendCalc?.mk || null,
           "footbayes-hierarchical": all.bayesCalc?.mk || null,
         },
       };

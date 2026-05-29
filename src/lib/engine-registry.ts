@@ -11,6 +11,7 @@ export type PredictionEngine =
   | "poisson-ml-v2"
   | "poisson-ml-v3"
   | "poisson-ml-dev03"
+  | "poisson-ml-blend"
   | "footbayes-hierarchical";
 
 export interface EngineInfo {
@@ -49,6 +50,11 @@ export const ENGINES: EngineInfo[] = [
     id: "poisson-ml-dev03",
     name: "v4 dev-03",
     description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Cross-season-validated Money-Edge under Holm-Bonferroni (2026-05-25 audit): la_liga +36.27%, scottish_prem +36.17%, bundesliga +30.15%, primeira_liga +27.32% mean ROI across 24/25 walkfwd + 25/26 holdout — see bet-edge-policy.ts. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
+  },
+  {
+    id: "poisson-ml-blend",
+    name: "Blend (dev-03 ⊕ v2)",
+    description: "50/50 λ-Mittel aus dev-03 + v2. Schärfster Forecaster der Suite durch Ensemble-Varianzreduktion zweier starker, dekorrelierter Modelle (Brier −0.0066 vs dev-03 auf 25/26 OOT; Mechanismus cross-season via dev-09 bestätigt, eval_blend_partners.py). Kein Lineup / keine neue Pipeline nötig — beide Beine werden ohnehin pro Match berechnet. Null wenn dev-03 oder v2 fehlt (Fallback: ensemble). Hinweis: die Confidence-Badge-Trefferquoten sind auf dev-03 (Benter-blended) kalibriert — für den Blend (roher λ-Blend) eine Näherung, nicht engine-spezifisch validiert.",
   },
   {
     id: "footbayes-hierarchical",
