@@ -177,6 +177,42 @@ Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 
 ---
 
+## 5b · Markt-Head-to-Head — schlagen wir Pinnacle? (2026-05-29)
+
+Der härteste Test, direkt gegen Pinnacle-Closing (`analyze_pick_quality.py` für
+1X2, `analyze_ou_vs_market.py` für Ü/U). Production-Pfad = dev-03 Benter-blended.
+
+| | uns | Markt | Disagreement (wo wir ≠ Markt) |
+|---|---|---|---|
+| **1X2** (25/26, n=2202) | 48.4% Treffer · Brier 0.6033 | 50.0% · **0.5949** | uns **26.6%** vs Markt 44.3% |
+| **Ü/U 2.5** (25/26, n=2209) | 55.7% · Brier 0.2478 | 57.3% · **0.2437** | uns **46.7%** vs Markt 53.3% |
+
+**Auf BEIDEN pickbaren Märkten verlieren wir gegen den Markt** — Treffer, Brier
+und v.a. den Disagreement-Test (wo wir eine eigene Meinung haben, trifft der
+Markt deutlich häufiger → unser Eigensignal ist Anti-Signal). Ü/U-**Flat-Stake-ROI
+gegen die Closing-Line ist negativ** auf allen Edge-Schwellen (−0.3%→−2.1% in
+25/26, −3.7%→−7.1% in 24/25) und wird *schlechter* je größer der behauptete Edge.
+
+**Per-Liga-Ausreißer sind Rauschen, kein Edge:** Ü/U-ROI-„Gewinner" persistieren
+nicht cross-season (serie_a +18.7% 25/26, aber nicht 24/25; scottish_prem +18.6%
+→ −9.6% Vorzeichen-Flip). Die frühere Behauptung „ligue_1/la_liga/serie_a haben
+echten O/U-Edge" ist damit **falsifiziert** — klassisches Multiple-Comparison-Artefakt.
+
+**Methodik-Falle (Double-Check 2026-05-29):** Die erste O/U-Analyse hatte „Markt-
+Vergleich unmöglich, ~1% Coverage" behauptet — gemessen am **stale Backtest-Parquet**.
+Die kanonische `odds_closing_history` hat **80% O/U-Coverage (24.617 Zeilen)**.
+Lektion: Markt-Ü/U-Analysen über `odds_closing_history`, NICHT über die Parquets
+(1X2-vollständig, aber Ü/U-arm). Der Irrtum war doppelt bestätigt (stale Doc +
+stale Parquet) — nur die Live-Abfrage der Quelle deckte ihn auf.
+
+**Konsequenz für die Kombi-Strategie:** +EV-Kombis brauchen markt-schlagende
+Beine. Da weder 1X2 noch Ü/U den Buch schlagen, ist die Kombi-These als
+Marginal-Stapel **tot**. Einziger nicht-falsifizierter Rest: reiner
+Korrelations-Mispricing-Edge (Joint ≠ Produkt) — unmessbar ohne SGP-Quoten,
+und moderne Bücher bepreisen Korrelation. Long shot, nicht verfolgt.
+
+---
+
 ## 6 · Rigoros getestete & ABGELEHNTE Ideen (5-Gate / Persistenz)
 
 | Idee | Befund | Verdikt |
@@ -215,6 +251,8 @@ ist mit der xG-Historie redundant. Der Wert liegt in der **Prognose-Güte**.
 | `decision_thresholds.py` | Sieg-/Remis-Schwellen + Value-by-Edge |
 | `falsify_draw_value.py` | Multi-Saison-Validierung der Remis-Value (rejected) |
 | `system_performance.py` | interpretierbare Scorecard (Ergebnis + xG + Confidence) |
+| `analyze_pick_quality.py` | 1X2-Markt-Head-to-Head + Disagreement-Test (§5b) |
+| `analyze_ou_vs_market.py` | **Ü/U-vs-Pinnacle** Brier/Disagreement/Flat-Stake-ROI — liest `odds_closing_history` (§5b) |
 | `validate_high_confidence.py` | High-Conf cross-season + Headroom |
 | `validate_confidence_production_path.py` | Badge-Tiers auf Production-Pfad (Benter-blend, nicht raw/isotonic) — Self-Eval c |
 | `xg_skill_baseline.py` | xG-Skill-Score vs Liga-Mittel-Klimatologie — Self-Eval b |
