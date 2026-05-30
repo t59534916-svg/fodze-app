@@ -272,6 +272,7 @@ export interface MatchCalc extends LambdaEstimates {
     "poisson-ml-v2": MarketProbs | null;
     "poisson-ml-v3": MarketProbs | null;
     "poisson-ml-dev03": MarketProbs | null;
+    "poisson-ml-blend": MarketProbs | null;
     "footbayes-hierarchical": MarketProbs | null;
   };
 }

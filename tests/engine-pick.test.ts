@@ -11,6 +11,7 @@ const full: EngineCalcBundle<string> = {
   v3Calc: "V3",
   dev03Calc: "DEV03",
   bayesCalc: "BAYES",
+  blendCalc: "BLEND",
 };
 
 describe("pickPrimaryCalc — hot-path engine selection + fallback", () => {
@@ -20,6 +21,7 @@ describe("pickPrimaryCalc — hot-path engine selection + fallback", () => {
     expect(pickPrimaryCalc("poisson-ml-v2", full)).toBe("V2");
     expect(pickPrimaryCalc("poisson-ml-v3", full)).toBe("V3");
     expect(pickPrimaryCalc("poisson-ml-dev03", full)).toBe("DEV03");
+    expect(pickPrimaryCalc("poisson-ml-blend", full)).toBe("BLEND");
     expect(pickPrimaryCalc("footbayes-hierarchical", full)).toBe("BAYES");
   });
 
@@ -30,11 +32,14 @@ describe("pickPrimaryCalc — hot-path engine selection + fallback", () => {
     const noV3 = { ...full, v3Calc: null };
     const noDev03 = { ...full, dev03Calc: null };
     const noBayes = { ...full, bayesCalc: null };
+    const noBlend = { ...full, blendCalc: null };
     expect(pickPrimaryCalc("poisson-ml", noV1)).toBe("ENS");
     expect(pickPrimaryCalc("poisson-ml-v2", noV2)).toBe("ENS");
     expect(pickPrimaryCalc("poisson-ml-v3", noV3)).toBe("ENS");
     expect(pickPrimaryCalc("poisson-ml-dev03", noDev03)).toBe("ENS");
     expect(pickPrimaryCalc("footbayes-hierarchical", noBayes)).toBe("ENS");
+    // Blend is null until BOTH dev-03 (async overlay) + v2 are present.
+    expect(pickPrimaryCalc("poisson-ml-blend", noBlend)).toBe("ENS");
   });
 
   it("dev-03 worker-overlay race: dev03Calc null on first tick → ensemble, then dev-03", () => {
@@ -50,10 +55,11 @@ describe("pickPrimaryCalc — hot-path engine selection + fallback", () => {
     // Even if every optional engine is null, ensemble stands.
     const onlyEns: EngineCalcBundle<string> = {
       ensembleCalc: "ENS", v1Calc: null, v2Calc: null,
-      v3Calc: null, dev03Calc: null, bayesCalc: null,
+      v3Calc: null, dev03Calc: null, bayesCalc: null, blendCalc: null,
     };
     expect(pickPrimaryCalc("ensemble-v1", onlyEns)).toBe("ENS");
     expect(pickPrimaryCalc("poisson-ml-dev03", onlyEns)).toBe("ENS");
+    expect(pickPrimaryCalc("poisson-ml-blend", onlyEns)).toBe("ENS");
   });
 
   it("unknown / unexpected engine id resolves to ensemble", () => {

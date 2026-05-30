@@ -26,6 +26,7 @@ export interface EngineCalcBundle<T> {
   v3Calc: T | null;
   dev03Calc: T | null;
   bayesCalc: T | null;
+  blendCalc: T | null;
 }
 
 /**
@@ -43,6 +44,7 @@ export function pickPrimaryCalc<T>(
   all: EngineCalcBundle<T>,
 ): T {
   switch (engine) {
+    case "poisson-ml-blend": return all.blendCalc ?? all.ensembleCalc;
     case "poisson-ml-dev03": return all.dev03Calc ?? all.ensembleCalc;
     case "poisson-ml-v3": return all.v3Calc ?? all.ensembleCalc;
     case "poisson-ml-v2": return all.v2Calc ?? all.ensembleCalc;

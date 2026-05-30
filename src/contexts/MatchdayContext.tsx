@@ -361,9 +361,52 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     setOddsHistory(prev => { const n = { ...prev }; delete n[idx]; return n; });
   }, [data, league, supabase]);
 
-  // Computes all 3 engines per match. Expensive (~15ms per match on a warm
-  // LightGBM runtime). Memoized on inputs that actually change the output —
-  // deliberately NOT on `engine` so toggling the engine dropdown is instant.
+  // Per-match context the dev-03 ⊕ v2 Blend needs to build its calc in the
+  // merge step (after the async dev-03 overlay resolves), without re-running
+  // the expensive per-match feature/enh pipeline.
+  type BlendCtx = {
+    enh: ReturnType<typeof calcMatchEnhanced>;
+    no: Record<string, number>;
+    frac: number;
+    blendPin: { sharp_h: number; sharp_d: number; sharp_a: number } | undefined;
+    league: string;
+    leagueKellyMultiplier: number;
+    shieldVetoes: ReturnType<typeof buildCsdVetoes>;
+    hasOdds: boolean;
+    warnings: ReturnType<typeof validateXGData>;
+    topScores: { s: string; p: number }[];
+    ov: number | null;
+  };
+
+  // Build the 50/50 dev-03 ⊕ v2 λ-blend calc. Cheap (DC matrix + bet pipeline)
+  // — the expensive 5-bagged dev-03 inference already happened. Returns null
+  // unless BOTH dev-03 and v2 produced a calc. Same RAW-λ → DC → Benter/Kelly/
+  // Shield path as the footBayes engine (engine="ensemble" so the display mk
+  // stays the raw blend forecast).
+  function buildBlendCalc(
+    dev03Calc: MatchCalc | null, v2Calc: MatchCalc | null, ctx: BlendCtx,
+  ): MatchCalc | null {
+    if (!dev03Calc || !v2Calc) return null;
+    const blH = 0.5 * (dev03Calc.lambdaH + v2Calc.lambdaH);
+    const blA = 0.5 * (dev03Calc.lambdaA + v2Calc.lambdaA);
+    const blendMx = buildMatrix(blH, blA);
+    const blendMk = deriveAllMarkets(blendMx);
+    const blendBets = calculateBetsEnhanced(
+      blendMk, ctx.enh.mk_low, ctx.enh.mk_high, ctx.no, ctx.frac, ctx.blendPin,
+      undefined, ctx.league, "ensemble", ctx.leagueKellyMultiplier, ctx.shieldVetoes,
+    );
+    return {
+      lambdaH: blH, lambdaA: blA, lambdaH_raw: blH, lambdaA_raw: blA,
+      mk: blendMk, bets: blendBets, enh: ctx.enh, topScores: ctx.topScores,
+      ov: ctx.ov, hasValue: blendBets.some(b => b.isValue),
+      hasOdds: ctx.hasOdds, warnings: ctx.warnings,
+    } as MatchCalc;
+  }
+
+  // Computes all engines per match (dev-03 deferred to the async overlay).
+  // Expensive (~15ms per match on a warm LightGBM runtime). Memoized on inputs
+  // that actually change the output — deliberately NOT on `engine` so toggling
+  // the engine dropdown is instant.
   function computeAllEngines(match: RawMatch, idx: number): {
     ensembleCalc: MatchCalc;
     v1Calc: MatchCalc | null;
@@ -371,9 +414,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     v3Calc: MatchCalc | null;
     dev03Calc: MatchCalc | null;
     bayesCalc: MatchCalc | null;
+    blendCalc: MatchCalc | null;
     // dev-03 inputs are returned so the off-main-thread Web-Worker overlay
     // effect can compute calcMatchDev03Async without rebuilding mlInputs.
     mlInputs: Parameters<typeof calcMatchDev03Async>[0];
+    // context for buildBlendCalc, applied in the merge step post-overlay.
+    blendCtx: BlendCtx;
   } | null {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
@@ -550,7 +596,26 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       } as MatchCalc;
     }
 
-    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc, mlInputs };
+    // ── dev-03 ⊕ v2 Blend (50/50 λ-average) ──────────────────────────
+    // The Blend's forecast-precision gain is ensemble VARIANCE REDUCTION from
+    // averaging two strong decorrelated models — NOT lineup info
+    // (eval_blend_partners.py: dev-03⊕v2 −0.0066 Brier vs dev-03 ≈ dev-03⊕dev-09,
+    // gap 0.0003). Because dev-03 now computes OFF the main thread (async
+    // overlay below), `dev03Calc` is null here in the sync memo, so the blend
+    // cannot be built yet. We return the per-match `blendCtx` instead; the
+    // merge step (engineCalcsMerged) builds blendCalc once the dev-03 overlay
+    // lands, via buildBlendCalc — the λ-blend → DC-matrix → Benter/Kelly/Shield
+    // pipeline is cheap (only the 5-bagged dev-03 inference was expensive).
+    // blendCalc stays null in this sync return; selector falls back to ensemble
+    // until the overlay resolves.
+    const blendCtx: BlendCtx = {
+      enh, no, frac, blendPin: ensemblePin, league,
+      leagueKellyMultiplier, shieldVetoes, hasOdds, warnings,
+      topScores: topScores.slice(0, 5),
+      ov: hasOdds ? vigAdjustBest([no.h, no.d, no.a]).overround : null,
+    };
+
+    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc, blendCalc: null, mlInputs, blendCtx };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -564,7 +629,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null; mlInputs: Parameters<typeof calcMatchDev03Async>[0] } | null;
+  // Derived from computeAllEngines' return so the two can't drift (carries
+  // dev03Calc, blendCalc, mlInputs + blendCtx for the async overlay merge).
+  type EngineResult = ReturnType<typeof computeAllEngines>;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -640,17 +707,22 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [allEngineCalcs]);
 
-  // Fold the async dev-03 result back into each per-match engine bundle. This
-  // merged array is the single source consumed by `processed`, the shadow-log,
-  // and the /backtest capture — so dev-03 stays selectable + logged once the
+  // Fold the async dev-03 result back into each per-match engine bundle, and
+  // build the dev-03 ⊕ v2 Blend now that dev-03 is available. This merged array
+  // is the single source consumed by `processed`, the shadow-log, and the
+  // /backtest capture — so dev-03 + Blend stay selectable + logged once the
   // overlay lands (the shadow-log dedup layers make the slightly-delayed POST
   // safe). Until then (or after a matchday switch, when the tag no longer
-  // matches), dev-03 selection falls back to ensemble via pickPrimaryCalc.
+  // matches), dev-03 + Blend selection fall back to ensemble via pickPrimaryCalc.
   const engineCalcsMerged = useMemo(() => {
     const overlay = dev03Overlay.src === allEngineCalcs ? dev03Overlay.results : [];
-    return allEngineCalcs.map((all, i) =>
-      all ? { ...all, dev03Calc: all.dev03Calc ?? overlay[i] ?? null } : all,
-    );
+    return allEngineCalcs.map((all, i) => {
+      if (!all) return all;
+      const dev03Calc = all.dev03Calc ?? overlay[i] ?? null;
+      const blendCalc = all.blendCalc ?? buildBlendCalc(dev03Calc, all.v2Calc, all.blendCtx);
+      return { ...all, dev03Calc, blendCalc };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allEngineCalcs, dev03Overlay]);
 
   // ── Shadow-log: fire-and-forget POST after engines finish ──
@@ -828,9 +900,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const all = engineCalcsMerged[i];
       if (!all) return { ...m, idx: i, calc: null };
       // Selection + ensemble-fallback extracted to the pure, unit-tested
-      // pickPrimaryCalc (tests/engine-pick.test.ts). dev03Calc here is the
-      // merged value (sync-null until the Web-Worker overlay resolves → falls
-      // back to ensemble for that tick).
+      // pickPrimaryCalc (tests/engine-pick.test.ts). dev03Calc + blendCalc here
+      // are the merged values (sync-null until the Web-Worker overlay resolves
+      // → fall back to ensemble for that tick).
       const chosen = pickPrimaryCalc(engine, all);
       const primary: MatchCalc = {
         ...chosen,
@@ -840,6 +912,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           "poisson-ml-v2": all.v2Calc?.mk || null,
           "poisson-ml-v3": all.v3Calc?.mk || null,
           "poisson-ml-dev03": all.dev03Calc?.mk || null,
+          "poisson-ml-blend": all.blendCalc?.mk || null,
           "footbayes-hierarchical": all.bayesCalc?.mk || null,
         },
       };
