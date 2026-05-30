@@ -16,9 +16,10 @@ import {
 } from "@/lib/dixon-coles";
 import { calcMatchPoissonML } from "@/lib/poisson-ml-engine";
 import { calcMatchPoissonMLv2 } from "@/lib/poisson-ml-engine-v2";
-import { calcMatchDev03 } from "@/lib/dev03-engine";
+import { calcMatchDev03Async } from "@/lib/dev03-engine";
 import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
+import { pickPrimaryCalc } from "@/lib/engine-pick";
 import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
@@ -370,6 +371,9 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     v3Calc: MatchCalc | null;
     dev03Calc: MatchCalc | null;
     bayesCalc: MatchCalc | null;
+    // dev-03 inputs are returned so the off-main-thread Web-Worker overlay
+    // effect can compute calcMatchDev03Async without rebuilding mlInputs.
+    mlInputs: Parameters<typeof calcMatchDev03Async>[0];
   } | null {
     const h = match.home, a = match.away;
     if (!h?.xg_h8 || !a?.xg_a8) return null;
@@ -444,13 +448,15 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       try { v3Calc = calcMatchPoissonMLv3(mlInputs); }
       catch (e) { console.warn("[FODZE] poisson-ml-v3 failed:", (e as Error).message); }
     }
-    // dev-03 (v4 specialist): returns null when either /dev03-model.json or
-    // /dev03-feature-cache.json failed to load — its internal guards in
-    // calcMatchDev03 check both, no need to gate here. Same try/catch
-    // isolation as the other engines so a broken artifact doesn't crash
-    // the whole computation pipeline.
-    try { dev03Calc = calcMatchDev03(mlInputs); }
-    catch (e) { console.warn("[FODZE] poisson-ml-dev03 failed:", (e as Error).message); }
+    // dev-03 (v4 specialist): NOT computed here. The 5-bagged LightGBM
+    // inference is the most expensive engine, so it runs OFF the main thread
+    // via the Web Worker in the `dev03Overlay` effect below
+    // (calcMatchDev03Async — byte-equivalent to the old sync calcMatchDev03,
+    // with a sync fallback when no Worker). `dev03Calc` stays null in this
+    // sync memo; `engineCalcsMerged` folds the async result back in. mlInputs
+    // is returned (below) so the overlay needn't rebuild it. Until the overlay
+    // resolves (one tick), the dev-03 selection falls back to ensemble.
+    // dev03Calc stays null (declared above, returned below).
     // footBayes (Phase 2.2) — returns null until posteriors are ingested
     // from services/footbayes/. Handled below after enh is built so we can
     // swap its λ-pair into the standard matrix pipeline.
@@ -544,7 +550,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       } as MatchCalc;
     }
 
-    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc };
+    return { ensembleCalc, v1Calc, v2Calc, v3Calc, dev03Calc, bayesCalc, mlInputs };
   }
 
   const matches: RawMatch[] = data?.matches || [];
@@ -558,7 +564,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Cache key includes HOME+AWAY team names, not just matchIdx. A server-side
   // matchday refresh with the same count but different sort order would
   // otherwise serve another match's cached result under the same idx.
-  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null } | null;
+  type EngineResult = { ensembleCalc: MatchCalc; v1Calc: MatchCalc | null; v2Calc: MatchCalc | null; v3Calc: MatchCalc | null; dev03Calc: MatchCalc | null; bayesCalc: MatchCalc | null; mlInputs: Parameters<typeof calcMatchDev03Async>[0] } | null;
   const engineCache = useRef<Map<string, EngineResult>>(new Map());
   const lastVersionRef = useRef<string>("");
 
@@ -602,6 +608,46 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheVersionKey, oddsData]);
 
+  // ── dev-03 off-main-thread overlay (Web Worker) ──────────────────────
+  // The 5-bagged dev-03 LightGBM is the heaviest engine. Rather than running
+  // it synchronously inside `allEngineCalcs` (which blocked the React render
+  // thread across a whole matchday — ~15 ms × N matches in one tick), it
+  // computes here via the dev-03 Web Worker: calcMatchDev03Async is
+  // byte-equivalent to the old sync calcMatchDev03 and transparently falls
+  // back to a sync predict when no Worker exists (SSR / tests / CSP). A token
+  // ref discards stale batches when the matchday/odds change (league switch)
+  // so an in-flight batch can't clobber the newer one.
+  const [dev03Overlay, setDev03Overlay] = useState<(MatchCalc | null)[]>([]);
+  const dev03TokenRef = useRef(0);
+  useEffect(() => {
+    if (!allEngineCalcs.length) { setDev03Overlay([]); return; }
+    const token = ++dev03TokenRef.current;
+    let cancelled = false;
+    Promise.all(
+      allEngineCalcs.map(all =>
+        all?.mlInputs
+          ? calcMatchDev03Async(all.mlInputs).catch(() => null)
+          : Promise.resolve(null),
+      ),
+    ).then(results => {
+      if (!cancelled && token === dev03TokenRef.current) setDev03Overlay(results);
+    });
+    return () => { cancelled = true; };
+  }, [allEngineCalcs]);
+
+  // Fold the async dev-03 result back into each per-match engine bundle. This
+  // merged array is the single source consumed by `processed`, the shadow-log,
+  // and the /backtest capture — so dev-03 stays selectable + logged once the
+  // overlay lands (the shadow-log dedup layers make the slightly-delayed POST
+  // safe). Until then, dev-03 selection falls back to ensemble via
+  // pickPrimaryCalc (dev03Calc === null).
+  const engineCalcsMerged = useMemo(
+    () => allEngineCalcs.map((all, i) =>
+      all ? { ...all, dev03Calc: all.dev03Calc ?? dev03Overlay[i] ?? null } : all,
+    ),
+    [allEngineCalcs, dev03Overlay],
+  );
+
   // ── Shadow-log: fire-and-forget POST after engines finish ──
   // Captures each variant's 1X2/O25 posterior for later OOT evaluation
   // against odds_closing_history.ft_result. Dedup lives at 3 levels:
@@ -611,7 +657,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // Network failure must NEVER surface in the UI — all errors swallowed.
   useEffect(() => {
     if (!user?.id) return;
-    if (!matches.length || !allEngineCalcs.length) return;
+    if (!matches.length || !engineCalcsMerged.length) return;
     if (typeof window === "undefined" || typeof sessionStorage === "undefined") return;
 
     const todayUTC = new Date().toISOString().slice(0, 10);
@@ -634,7 +680,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
 
     for (let i = 0; i < matches.length; i++) {
       const m = matches[i];
-      const calcs = allEngineCalcs[i];
+      const calcs = engineCalcsMerged[i];
       if (!calcs || !m.home?.name || !m.away?.name) continue;
 
       let kickoffIso: string | null = null;
@@ -709,7 +755,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       const preds: MatchPrediction[] = [];
       for (let i = 0; i < matches.length; i++) {
         const m = matches[i];
-        const calcs = allEngineCalcs[i];
+        const calcs = engineCalcsMerged[i];
         if (!calcs || !m.home?.name || !m.away?.name) continue;
         const mKey = matchKey(league, m.home.name, m.away.name);
 
@@ -761,7 +807,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allEngineCalcs, matches, league, user?.id, data?.date]);
+  }, [engineCalcsMerged, matches, league, user?.id, data?.date]);
 
   // Outer memo: cheap — picks primary from the precomputed 3 based on
   // currently selected engine. Switching engines is now microseconds
@@ -774,15 +820,13 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // toggles (benign in practice, trap for refactors).
   const processed: ProcessedMatch[] = useMemo(() =>
     matches.map((m: RawMatch, i: number) => {
-      const all = allEngineCalcs[i];
+      const all = engineCalcsMerged[i];
       if (!all) return { ...m, idx: i, calc: null };
-      const chosen =
-        engine === "poisson-ml-dev03" && all.dev03Calc ? all.dev03Calc :
-        engine === "poisson-ml-v3" && all.v3Calc ? all.v3Calc :
-        engine === "poisson-ml-v2" && all.v2Calc ? all.v2Calc :
-        engine === "poisson-ml" && all.v1Calc ? all.v1Calc :
-        engine === "footbayes-hierarchical" && all.bayesCalc ? all.bayesCalc :
-        all.ensembleCalc;
+      // Selection + ensemble-fallback extracted to the pure, unit-tested
+      // pickPrimaryCalc (tests/engine-pick.test.ts). dev03Calc here is the
+      // merged value (sync-null until the Web-Worker overlay resolves → falls
+      // back to ensemble for that tick).
+      const chosen = pickPrimaryCalc(engine, all);
       const primary: MatchCalc = {
         ...chosen,
         allEnginesMk: {
@@ -796,7 +840,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       };
       return { ...m, idx: i, calc: primary };
     }),
-    [matches, allEngineCalcs, engine]
+    [matches, engineCalcsMerged, engine]
   );
   const valueMatches = useMemo(() => processed.filter((m: ProcessedMatch) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: ProcessedMatch) =>
