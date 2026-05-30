@@ -508,6 +508,7 @@ const EXTRA_LEAGUE_ALIASES: ExtraAliasEntry[] = [
   // Greek SL
   { league: "greek_sl", canonical: "Larissa", aliases: ["Larisa", "AE Larissa"] },
   { league: "greek_sl", canonical: "Panaitolikos", aliases: ["Panetolikos"] },
+  { league: "greek_sl", canonical: "OFI Kreta", aliases: ["OFI Crete", "OFI"] },
   // Jupiler Pro
   { league: "jupiler_pro", canonical: "OH Leuven", aliases: ["Leuven", "Oud-Heverlee Leuven"] },
   // La Liga 2
@@ -516,16 +517,21 @@ const EXTRA_LEAGUE_ALIASES: ExtraAliasEntry[] = [
   { league: "la_liga2", canonical: "FC Andorra", aliases: ["Andorra CF", "Andorra"] },
   // League Two
   { league: "league_two", canonical: "Bristol Rovers", aliases: ["Bristol Rvs", "Bristol R"] },
+  { league: "league_two", canonical: "MK Dons", aliases: ["Milton Keynes Dons", "Milton Keynes"] },
   // Ligue 1
   { league: "ligue_1", canonical: "Paris Saint Germain", aliases: ["PSG", "Paris SG", "Paris S.G.", "Paris-SG"] },
+  { league: "ligue_1", canonical: "Stade Rennes", aliases: ["Rennes", "Stade Rennais"] },
   // Ligue 2
   { league: "ligue_2", canonical: "Saint Etienne", aliases: ["St Etienne", "St. Etienne", "AS Saint-Etienne"] },
   // Primeira Liga
   { league: "primeira_liga", canonical: "Moreirense FC", aliases: ["Moreirense"] },
   { league: "primeira_liga", canonical: "Rio Ave FC", aliases: ["Rio Ave"] },
   { league: "primeira_liga", canonical: "SC Braga", aliases: ["Braga", "Sporting Braga", "Sp Braga"] },
+  { league: "primeira_liga", canonical: "Sporting CP", aliases: ["Sporting Lisbon", "Sporting", "Sporting Lissabon"] },
   // Serie B
   { league: "serie_b", canonical: "Bari 1908", aliases: ["Bari", "AS Bari", "FC Bari"] },
+  // Austria Bundesliga
+  { league: "austria_bl", canonical: "Wattens", aliases: ["WSG Tirol", "WSG Wattens"] },
 ];
 
 // Per-league extra-alias lookup map: league → norm(alias) → canonical

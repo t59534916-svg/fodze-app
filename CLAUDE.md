@@ -20,10 +20,10 @@ Quantitative Fußball-Wettanalyse App für **22 Ligen** (+ 2 European cups). Vie
 
 **Team-Name Canonicalization (Architectural Invariant seit 2026-04-27, härter seit 2026-04-29)**:
 Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports / Understat / TheSportsDB) hatte zuvor verschiedene Schreibweisen für dasselbe Team in dieselbe Liga geschrieben — "Bayern München" / "FC Bayern München" / "Bayern Munich" als 3 separate rows. UNIQUE-constraint griff nicht weil `team` string-different. Standings + EWMA + Engine-Predictions silent verzerrt. **Fix in 2 Lagen:**
-1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — **alle 14 active write-scripts** (5 Top-Tier backfills + 4 MEDIUM-RISK syncs + 3 metadata writers + 2 follow-up importers) mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (22 lower-tier overrides). 2026-04-29 erweitert: `backfill-xg.mjs` (HIGH), `seed-understat-2526.mjs` (HIGH), `backfill-liga3-goals.mjs` (HIGH disabled-but-callable), `sync-xg-to-supabase.mjs`, `sync-npxg-to-supabase.mjs`, `fetch-fbref-stats.mjs`, `backfill-xg-by-state.mjs`, `sync-thesportsdb-metadata.mjs`, `fill-thesportsdb-missing.mjs`. 4 dormant scripts archived to `scripts/_archive/`.
+1. **Ingest-Layer:** `scripts/_lib/canonical-team.mjs::canonicalize(team, league)` — **alle 14 active write-scripts** (5 Top-Tier backfills + 4 MEDIUM-RISK syncs + 3 metadata writers + 2 follow-up importers) mappen team-names zu canonical via TEAM_REGISTRY (354 entries) + EXTRA_ALIASES (27 lower-tier overrides, JS↔TS synced 2026-05-29). 2026-04-29 erweitert: `backfill-xg.mjs` (HIGH), `seed-understat-2526.mjs` (HIGH), `backfill-liga3-goals.mjs` (HIGH disabled-but-callable), `sync-xg-to-supabase.mjs`, `sync-npxg-to-supabase.mjs`, `fetch-fbref-stats.mjs`, `backfill-xg-by-state.mjs`, `sync-thesportsdb-metadata.mjs`, `fill-thesportsdb-missing.mjs`. 4 dormant scripts archived to `scripts/_archive/`.
 2. **Read-Layer:** `src/lib/team-resolver.ts::canonicalizeTeamName(name, league)` (TS-mirror) wird in `MatchdayContext.loadCached` BEFORE `resolveXGBucket` aufgerufen — matchdays JSON darf inkonsistent sein, MatchdayContext löst über canonical auf. Fallback: `xg-history-resolver.ts` tier-2 substring.
 
-**Known JS↔TS canonical inconsistency (2026-04-29):** `dedupe-team-names.mjs::buildAliasMap` baut alias-map nur aus TEAM_REGISTRY und ignoriert EXTRA_ALIASES. Bei Konflikt-Cases (z.B. bundesliga2 "DSC Arminia Bielefeld" via EXTRA_ALIASES vs "Arminia Bielefeld" via TEAM_REGISTRY) flaggt der dedupe-dry false-positives. DB-state ist konsistent mit `canonicalize()` (canonical-team.mjs), nicht mit `findCanonical()` (lokal in dedupe-team-names.mjs). Fix: `dedupe-team-names.mjs` muss `sharedCanonicalize` als single source of truth verwenden, ohne TEAM_REGISTRY-fallback. **Out-of-scope für 2026-04-29** — separate task, low-risk weil cron nicht auto-runned wird.
+**~~Known JS↔TS canonical inconsistency (2026-04-29)~~ — RESOLVED (verifiziert 2026-05-29):** Der alte `dedupe-team-names.mjs::buildAliasMap`-Bug existiert nicht mehr — das Script nutzt jetzt `sharedCanonicalize` (aus canonical-team.mjs) als single source of truth, `findCanonical` nur als matchday-derived Fallback. Zusätzlich wurde 2026-05-29 die zuvor diagnostizierte EXTRA_ALIASES JS↔TS-Desync gefixt: beide Files (`canonical-team.mjs` JS + `team-resolver.ts` TS) tragen jetzt **27 identische Einträge** (zuvor JS 27 / TS 22 — 5 fehlten TS-seitig: MK Dons, OFI Kreta, Sporting CP, Stade Rennes, Wattens → Read-Side under-canonicalisierte diese Teams). Sync-Rule-Kommentar in beiden Files aktiv.
 
 ---
 
@@ -33,7 +33,7 @@ Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports /
 ```bash
 npm install
 npm run dev         # http://localhost:3000
-npm run test        # 565 Tests (vitest)
+npm run test        # 893 Tests / 51 Dateien (vitest) — Stand 2026-05-29
 npm run test:watch
 npm run build       # Production Build (läuft auch in CI)
 npm run lint        # Next lint (warnings nur, non-blocking)
@@ -70,7 +70,7 @@ Zero errors in `src/` expected. Two pre-existing errors in `tests/dixon-coles.te
 
 | Script | Zweck | Wann |
 |---|---|---|
-| `scripts/refresh-all.mjs` | Full-Pipeline Orchestrator (6 Phasen) | `npm run refresh[:full]` |
+| `scripts/refresh-all.mjs` | Full-Pipeline Orchestrator (13 Phasen: fetch-odds → settle-bets → liga3-backfill → sync-sofascore → rolling-8 → bridge-sofascore → sync-extras → bridge-extras → matchdays×19 → dev03-cache → retro-enrich → audit; nur fetch-odds ist abortOnFail) | `npm run refresh[:full]` |
 | `scripts/fetch-odds.mjs` | Live-Quoten + Fixtures von The-Odds-API (alle 19 Ligen) | GitHub Actions Cron 2× täglich (06:17 + 18:17 UTC) Sun/Wed/Fri/Sat — reduziert 2026-05-21 von 4h auf 12h wegen Budget |
 | `scripts/snapshot-closing-odds.mjs` | Closing-odds für pending bets innerhalb 2h vor Kickoff — füllt `bets.closing_odds` + `bets.clv`. Last-write-wins. | Im fetch-odds-Cron |
 | `scripts/fetch-results.mjs` | Auto-Settlement + CLV-Recompute beim Settlement | Täglich 02:17 + 08:17 UTC |
@@ -115,7 +115,7 @@ Alle Scripts nehmen `--dry` für Preview-ohne-Schreiben und `--league X` (wo app
 | `api-sports.mjs` | api-sports v3 Client mit daily+per-minute Rate-Limit-Guards; League-ID-Map; parseFixtureStatistics Helper |
 | `thesportsdb.mjs` | TheSportsDB v1 Client + Liga-ID/Name-Map (19 Ligen) + parseTeamRecord Helper (liefert `api_sports_id` als Cross-Source-Bridge) |
 | `odds-api.mjs` | The-Odds-API client mit Multi-Key Rotation. Liest `ODDS_API_KEY` + optional `ODDS_API_KEY_2..._10`; rotiert bei 401/429 oder remaining < minRemaining. Effektives Monatsbudget = N Keys × 500. Genutzt von fetch-odds, fetch-results, backfill-liga3-goals, health-check (seit 2026-04-29) |
-| `canonical-team.mjs` | `canonicalize(team, league)` — single source of truth für ingest-side. TEAM_REGISTRY (354 entries from team-resolver.ts) + EXTRA_ALIASES (24 lower-tier overrides). Mirror in `src/lib/team-resolver.ts::canonicalizeTeamName` für read-side |
+| `canonical-team.mjs` | `canonicalize(team, league)` — single source of truth für ingest-side. TEAM_REGISTRY (354 entries from team-resolver.ts) + EXTRA_ALIASES (27 lower-tier overrides). Mirror in `src/lib/team-resolver.ts::canonicalizeTeamName` für read-side (JS↔TS synced 2026-05-29) |
 | `trail-aggregations.mjs` | v1.1 Asymmetric Negation pure-functions: `dedupeTrails(raw)` (by trap_kind+match_key), `aggregateBurnIn(trails, outcomeMap, opts)` (graduation recommendations), `aggregateClvDecay(trails, closingByKey, opts)` (CLV convergence stats), `computeClosingHwRate(closing)` (vig-removed implied prob), `clvDecayStatus(rate, n)` (status pill). 26 vitest cases in `tests/trail-aggregations.test.ts`. Konsumiert von `burn-in-shadow-signals.mjs` + `clv-trap-decay.mjs`. |
 | `postgrest.mjs` | `inEscape(value)` + `buildInFilter(column, values)` — PostgREST-quote-escape THEN URL-encode in correct order. Naked `encodeURIComponent` lässt `"` und `\` durchrutschen → silent in-list-Truncation. Genutzt von burn-in + clv-decay crons (Quote-Escape-Fix 2026-05-20). |
 
@@ -171,7 +171,7 @@ Use-Case: Richer shots-to-xG regression (>R²=0.57 Baseline) + validation-corpus
 ```
 Supabase (DB + Auth + RLS)
   ↕
-Next.js 14 App Router (alle pages "use client")
+Next.js 16 App Router (React 19, alle pages "use client")
   │
   ├── AppContext (global: user, league, profile, bankroll, engine)
   │      └── MatchdayContext (matches, odds, calcs) — hängt an AppContext
@@ -461,8 +461,8 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ## Tests
 
-- **vitest (TS):** 1864 tests / 120 files
-- **v4 pytest (Python):** 206 tests in `tools/v4/tests/` (m3_xg + m4-7 modules)
+- **vitest (TS):** 893 tests / 51 files (verifiziert 2026-05-29: `npx vitest run` → 893 passed, `tsc --noEmit` → 0 Fehler)
+- **v4 pytest (Python):** 244 `def test_` in `tools/v4/tests/` (17 Dateien; m1–m10 modules)
 
 ```bash
 npm run test              # alle TS-Tests
@@ -503,7 +503,7 @@ Coverage-Hotspots:
 - `asymmetric-negation.test.ts` — v1.1 `evaluateLatentTopology` (M2/M4/M5/M7), 25 cases incl. persistence-contract (canonical matchKey + seconds-kickoff + ms-detectedAt)
 - `trail-aggregations.test.ts` — v1.1 Cron-Analytics (dedupeTrails, aggregateBurnIn 4-recommendations, computeClosingHwRate vig-removal, clvDecayStatus pill, aggregateClvDecay updates-vs-aggregation-dedupe), 26 cases
 
-**v4 pytest suite** (206 tests, `tools/v4/tests/`):
+**v4 pytest suite** (244 `def test_` functions, `tools/v4/tests/`):
 - `test_m1_score.py` — DC math identities + ρ-MLE + coarse-graining
 - `test_m2_lambda.py` — EWMA estimator
 - `test_m3_xg.py` — dev-03 lean feature_builder + ensemble + DC integration
@@ -1032,4 +1032,4 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 
 ## Alpha-Atlas Status (Post-Baseline-Features)
 
-Die 13 Phasen aus dem Alpha-Atlas-Plan sind **code-complete** (`docs/ALPHA-ATLAS-IMPLEMENTATION.md`). Alle Runtime-Module sind wired aber **default-off** — pre-upgrade Output bleibt bit-identisch bis Feature-Flags geflippt werden. Outstanding Ops: 9 Migrations applyen, 6 Backfill-Scraper laufen lassen, 3 Python-Fits (Benter/Dirichlet/Conformal) trainieren, 2 R-Services deployen, UI-Tabs für Corners + Player-Props. **449 Tests passing, 0 neue TS-Errors.**
+Die 13 Phasen aus dem Alpha-Atlas-Plan sind **code-complete** (`docs/ALPHA-ATLAS-IMPLEMENTATION.md`). Alle Runtime-Module sind wired aber **default-off** — pre-upgrade Output bleibt bit-identisch bis Feature-Flags geflippt werden. Outstanding Ops: 9 Migrations applyen, 6 Backfill-Scraper laufen lassen, 3 Python-Fits (Benter/Dirichlet/Conformal) trainieren, 2 R-Services deployen, UI-Tabs für Corners + Player-Props. **893 Tests passing, 0 TS-Errors (Stand 2026-05-29).**

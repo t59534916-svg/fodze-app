@@ -314,7 +314,7 @@ function _finishCalc(input: Dev03EngineInput, pred: Dev03Prediction): MatchCalc 
     Math.min(mk_low.O25, mk_high.O25),
     Math.max(mk_low.O25, mk_high.O25),
   ];
-  const uncertainty = (H_ci[1] - H_ci[0]) + (D_ci[1] - D_ci[0]) + (A_ci[1] - A_ci[0]) / 3;
+  const uncertainty = ((H_ci[1] - H_ci[0]) + (D_ci[1] - D_ci[0]) + (A_ci[1] - A_ci[0])) / 3;
 
   const ensemble = {
     H: mk.H, D: mk.D, A: mk.A, O25: mk.O25,

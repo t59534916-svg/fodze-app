@@ -49,7 +49,7 @@ export const ENGINES: EngineInfo[] = [
   {
     id: "poisson-ml-dev03",
     name: "v4 dev-03",
-    description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Cross-season-validated Money-Edge under Holm-Bonferroni (2026-05-25 audit): la_liga +36.27%, scottish_prem +36.17%, bundesliga +30.15%, primeira_liga +27.32% mean ROI across 24/25 walkfwd + 25/26 holdout — see bet-edge-policy.ts. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
+    description: "v4 LightGBM Tweedie 5-Bagged Bayesian Ensemble (16 features: m2_lambda EWMA + Elo + Momentum) + m6_benter blend with Pinnacle. Directional-only edge in 4 Ligen (la_liga/scottish_prem/bundesliga/primeira_liga — positive Kelly-ROI in BOTH 24/25-walkfwd + 25/26-holdout), aber NICHT statistisch validiert: das 2026-05-25 Self-Re-Audit fand ZERO Ligen, die Holm-Bonferroni überstehen, sobald die Per-Bet-Std empirisch gemessen wird (148%, nicht angenommene 80%) — siehe bet-edge-policy.ts Header. Returns null + falls back to ensemble when model/cache not loaded or no xG-history.",
   },
   {
     id: "poisson-ml-blend",
