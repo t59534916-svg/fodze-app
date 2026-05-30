@@ -616,11 +616,16 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // byte-equivalent to the old sync calcMatchDev03 and transparently falls
   // back to a sync predict when no Worker exists (SSR / tests / CSP). A token
   // ref discards stale batches when the matchday/odds change (league switch)
-  // so an in-flight batch can't clobber the newer one.
-  const [dev03Overlay, setDev03Overlay] = useState<(MatchCalc | null)[]>([]);
+  // so an in-flight batch can't clobber the newer one. The overlay is TAGGED
+  // with the exact `allEngineCalcs` array it was computed against; the merge
+  // below ignores it unless the tag still matches, so a new matchday can never
+  // pair its match i with a previous matchday's stale dev-03 result during the
+  // one-render gap before the new batch resolves.
+  const [dev03Overlay, setDev03Overlay] =
+    useState<{ src: unknown; results: (MatchCalc | null)[] }>({ src: null, results: [] });
   const dev03TokenRef = useRef(0);
   useEffect(() => {
-    if (!allEngineCalcs.length) { setDev03Overlay([]); return; }
+    if (!allEngineCalcs.length) { setDev03Overlay({ src: allEngineCalcs, results: [] }); return; }
     const token = ++dev03TokenRef.current;
     let cancelled = false;
     Promise.all(
@@ -630,7 +635,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
           : Promise.resolve(null),
       ),
     ).then(results => {
-      if (!cancelled && token === dev03TokenRef.current) setDev03Overlay(results);
+      if (!cancelled && token === dev03TokenRef.current) setDev03Overlay({ src: allEngineCalcs, results });
     });
     return () => { cancelled = true; };
   }, [allEngineCalcs]);
@@ -639,14 +644,14 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // merged array is the single source consumed by `processed`, the shadow-log,
   // and the /backtest capture — so dev-03 stays selectable + logged once the
   // overlay lands (the shadow-log dedup layers make the slightly-delayed POST
-  // safe). Until then, dev-03 selection falls back to ensemble via
-  // pickPrimaryCalc (dev03Calc === null).
-  const engineCalcsMerged = useMemo(
-    () => allEngineCalcs.map((all, i) =>
-      all ? { ...all, dev03Calc: all.dev03Calc ?? dev03Overlay[i] ?? null } : all,
-    ),
-    [allEngineCalcs, dev03Overlay],
-  );
+  // safe). Until then (or after a matchday switch, when the tag no longer
+  // matches), dev-03 selection falls back to ensemble via pickPrimaryCalc.
+  const engineCalcsMerged = useMemo(() => {
+    const overlay = dev03Overlay.src === allEngineCalcs ? dev03Overlay.results : [];
+    return allEngineCalcs.map((all, i) =>
+      all ? { ...all, dev03Calc: all.dev03Calc ?? overlay[i] ?? null } : all,
+    );
+  }, [allEngineCalcs, dev03Overlay]);
 
   // ── Shadow-log: fire-and-forget POST after engines finish ──
   // Captures each variant's 1X2/O25 posterior for later OOT evaluation
