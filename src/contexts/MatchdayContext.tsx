@@ -20,6 +20,7 @@ import { calcMatchDev03Async } from "@/lib/dev03-engine";
 import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { pickPrimaryCalc } from "@/lib/engine-pick";
+import { mergeDev03Overlay, type Dev03OverlayState } from "@/lib/dev03-overlay-merge";
 import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
 import { useApp } from "./AppContext";
 import { validateMatchdayJSON } from "@/lib/schemas";
@@ -689,7 +690,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // pair its match i with a previous matchday's stale dev-03 result during the
   // one-render gap before the new batch resolves.
   const [dev03Overlay, setDev03Overlay] =
-    useState<{ src: unknown; results: (MatchCalc | null)[] }>({ src: null, results: [] });
+    useState<Dev03OverlayState<MatchCalc>>({ src: null, results: [] });
   const dev03TokenRef = useRef(0);
   useEffect(() => {
     if (!allEngineCalcs.length) { setDev03Overlay({ src: allEngineCalcs, results: [] }); return; }
@@ -714,16 +715,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   // overlay lands (the shadow-log dedup layers make the slightly-delayed POST
   // safe). Until then (or after a matchday switch, when the tag no longer
   // matches), dev-03 + Blend selection fall back to ensemble via pickPrimaryCalc.
-  const engineCalcsMerged = useMemo(() => {
-    const overlay = dev03Overlay.src === allEngineCalcs ? dev03Overlay.results : [];
-    return allEngineCalcs.map((all, i) => {
-      if (!all) return all;
-      const dev03Calc = all.dev03Calc ?? overlay[i] ?? null;
-      const blendCalc = all.blendCalc ?? buildBlendCalc(dev03Calc, all.v2Calc, all.blendCtx);
-      return { ...all, dev03Calc, blendCalc };
-    });
+  const engineCalcsMerged = useMemo(
+    () => mergeDev03Overlay(allEngineCalcs, dev03Overlay, buildBlendCalc),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allEngineCalcs, dev03Overlay]);
+    [allEngineCalcs, dev03Overlay],
+  );
 
   // ── Shadow-log: fire-and-forget POST after engines finish ──
   // Captures each variant's 1X2/O25 posterior for later OOT evaluation
