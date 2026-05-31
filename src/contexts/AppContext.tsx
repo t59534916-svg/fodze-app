@@ -1,12 +1,12 @@
 "use client";
-import { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { createClient, loadProfile, updateProfile, loadUserBets } from "@/lib/supabase";
 import { LEAGUES, loadCalibrationCurves, isCalibrationActive } from "@/lib/dixon-coles";
 import { loadDirichletCalibration, setCalibrationMethod } from "@/lib/calibration";
 import { loadEnsembleModel } from "@/lib/ensemble";
 import { loadPoissonModel } from "@/lib/poisson-regression";
 import { loadLGBMModel, validateGoldenTests } from "@/lib/lgbm-runtime";
-import { loadV3Model } from "@/lib/poisson-ml-engine-v3";
+import { loadV3Model, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { loadDev03Model, validateDev03GoldenTests } from "@/lib/dev03-runtime";
 import { loadFeatureCache } from "@/lib/dev03-features";
 import { ensureDev03Worker } from "@/lib/dev03-worker-client";
@@ -75,6 +75,24 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
   const effectiveBudget = parsedBudget > 0 ? parsedBudget : bankroll;
   const kellyFraction = ({ K: 0.25, M: 0.33, A: 0.5 } as Record<string, number>)[profile.risk_profile] || 0.33;
 
+  // Lazy-load the ~12 MB v3 model only when the v3 engine is actually selected
+  // (it's preview-only + delegates to v2). Avoids fetching/parsing 12 MB on
+  // every app bootstrap. Idempotent via the attempt ref so re-selecting v3
+  // doesn't re-fetch; failures surface in modelErrors like the eager loaders.
+  const v3LoadAttempted = useRef(false);
+  useEffect(() => {
+    if (engine !== "poisson-ml-v3") return;
+    if (isV3ModelLoaded() || v3LoadAttempted.current) return;
+    v3LoadAttempted.current = true;
+    fetch("/lgbm-model-v3.json")
+      .then(res => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.json(); })
+      .then(model => loadV3Model(model))
+      .catch(err => {
+        console.error("[FODZE] Failed to load lgbm-v3:", err.message || err);
+        setModelErrors(prev => prev.includes("lgbm-v3") ? prev : [...prev, "lgbm-v3"]);
+      });
+  }, [engine]);
+
   // Load model artifacts (calibration, ensemble, LGBM) in parallel. Silent
   // `.catch(() => {})` was masking broken deploys — now each failure logs
   // and surfaces via `modelErrors` so the UI can warn instead of serving
@@ -102,13 +120,11 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
     loadModel("/lgbm-model-v2.json", "lgbm", model => {
       if (loadLGBMModel(model)) validateGoldenTests();
     });
-    // v3 — preview engine, optional; ignore failure (file may not exist yet
-    // on every deploy). When loaded, calcMatchPoissonMLv3 currently delegates
-    // to v2 internals but logs the v3-specific feature vector for shadow
-    // analysis.
-    loadModel("/lgbm-model-v3.json", "lgbm-v3", model => {
-      loadV3Model(model);
-    });
+    // v3 — preview engine. Its artifact is ~12 MB and v3 currently delegates
+    // to v2 internally, so loading it on every app bootstrap is wasted
+    // bandwidth+parse. It is now LAZY-loaded by the engine-keyed effect below,
+    // only when a user actually selects the v3 engine. Trade-off: v3 shadow-
+    // log capture happens only for sessions that select v3 (preview-only).
     // dev-03 (FODZE/v4 cross-season-validated specialist) — optional engine
     // for the 3 leagues with cross-engine cross-season-validated Money-Edge
     // (serie_a, scottish_prem, epl). Two artifacts:
@@ -174,21 +190,30 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
       loadFootBayesPosteriors(posteriors);
     });
 
-    // Dirichlet 3-class calibration (Phase 2.1) — DEFAULT ON as of
-    // commit shipping cross-engine-oot-metrics.json findings:
-    //   ECE drops 2.6× vs raw (0.0146 → 0.0056), BSS strictly ≥ raw
-    //   on every league, never worse. 6691 OOT rows, cutoff 2023-08-01.
+    // 1X2 calibration method. Production = "isotonic" (the validated choice).
+    // DEFAULT is "isotonic" so a dropped env var falls back to the VALIDATED
+    // method — NOT "dirichlet". Dirichlet was activated 2026-04-26 then REVERTED
+    // the same day after an n=8306 current-season backtest (drift +0.0075 Brier,
+    // NET NEGATIVE; helps 9/18 leagues, hurts 9/18). Defaulting to dirichlet here
+    // would silently revert production to the known-worse method on any deploy
+    // that loses the env var — exactly the footgun this default avoids.
     //
-    // NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet|isotonic|platt
-    //   unset / "dirichlet" — Dirichlet-ODIR per-cluster (default)
-    //   "isotonic"          — legacy per-market curves from calibration_curves.json
-    //   "platt"             — legacy 2-param logistic
+    // NEXT_PUBLIC_CALIBRATION_METHOD=isotonic|platt|dirichlet
+    //   unset / "isotonic" — global isotonic curves hardcoded in calibration.ts,
+    //                        applied to the ensemble Kelly track; v1/v2/dev-03
+    //                        BYPASS it (bypassSharedCalibration, 2026-05-31).
+    //                        NOTE the per-league params in calibration_curves.json
+    //                        are PLATT — dormant unless method="platt"; the live
+    //                        isotonic curves are the hardcoded CAL_* arrays. [DEFAULT]
+    //   "platt"            — that file's global + 18 per-league platt params
+    //                        (dormant ensemble-era data; NOT re-validated under the
+    //                        2026-05-31 per-engine audit — flip only with a re-fit).
+    //   "dirichlet"        — Kull ODIR 3-cluster; REVERTED, opt-in only.
     //
-    // Failure modes are silent-safe: a missing or malformed
-    // public/dirichlet-calibration.json throws from loadDirichletCalibration,
-    // setCalibrationMethod("dirichlet") is never reached, and the module-level
-    // default ("isotonic" in src/lib/calibration.ts) stays in force.
-    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "dirichlet").toLowerCase();
+    // Failure-safe: a missing/malformed public/dirichlet-calibration.json throws
+    // from loadDirichletCalibration, setCalibrationMethod("dirichlet") is never
+    // reached, and the module default ("isotonic" in calibration.ts) stays in force.
+    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "isotonic").toLowerCase();
     if (rawCalMethod === "dirichlet") {
       loadModel("/dirichlet-calibration.json", "dirichlet", weights => {
         try {

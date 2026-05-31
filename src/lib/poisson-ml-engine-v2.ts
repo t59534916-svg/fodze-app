@@ -383,7 +383,7 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   // ── 6. Dual-track calibration ─────────────────────────────────
   // Track A: raw matrix probs (market coherence, UI)
   // Track B: isotonic-calibrated (Kelly sizing, edge check)
-  const dualTrack = dualTrackCalibrate(matrixMk.H, matrixMk.D, matrixMk.A, league);
+  const dualTrack = dualTrackCalibrate(matrixMk.H, matrixMk.D, matrixMk.A, league, "v2");
 
   // The displayed market probs use Track A (raw matrix)
   const mk: MarketProbs = matrixMk;
@@ -448,8 +448,10 @@ export function calcMatchPoissonMLv2(input: PoissonMLv2Input): MatchCalc | null 
   const bets = calculateBetsEnhanced(mk, mk_low, mk_high, no, fraction, pinOdds, undefined, input.league, "v2", 1, input.shieldVetoes);
 
   // ── 9b. Goldilocks Guard (dual-track) ─────────────────────────
-  // Use Track B (isotonic-calibrated) for edge calculation vs Pinnacle.
-  // Only authorize bets in the 2.5%–7.5% edge band.
+  // Use Track B for edge calculation vs Pinnacle. For v2 (a bypass engine) Track
+  // B == Track A (raw matrix probs) — the shared ensemble-era isotonic is skipped
+  // because it degrades v2's already-well-calibrated posterior (see
+  // bypassSharedCalibration). Only authorize bets in the 2.5%–7.5% edge band.
   const sharp = input.sharpOdds;
   if (sharp?.h && sharp?.d && sharp?.a) {
     const rawSH = 1 / sharp.h, rawSD = 1 / sharp.d, rawSA = 1 / sharp.a;

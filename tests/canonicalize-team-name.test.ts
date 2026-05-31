@@ -98,6 +98,59 @@ describe("canonicalizeTeamName — TS mirror of scripts/_lib/canonical-team.mjs"
     expect(canonicalizeTeamName("Bayern", "")).toBe("Bayern");
   });
 
+  it("2026-05-29 sync: 5 aliases that were missing TS-side (JS had 27, TS had 22)", () => {
+    // Regression guard for the EXTRA_ALIASES JS↔TS desync fixed 2026-05-29.
+    // These five entries existed in scripts/_lib/canonical-team.mjs but were
+    // absent from team-resolver.ts, so the engine read-side under-canonicalized
+    // them (tier-1 miss → fuzzy fallback or silent drift).
+    expect(canonicalizeTeamName("OFI Crete", "greek_sl")).toBe("OFI Kreta");
+    expect(canonicalizeTeamName("Milton Keynes Dons", "league_two")).toBe("MK Dons");
+    expect(canonicalizeTeamName("Rennes", "ligue_1")).toBe("Stade Rennes");
+    expect(canonicalizeTeamName("Sporting Lisbon", "primeira_liga")).toBe("Sporting CP");
+    expect(canonicalizeTeamName("Sporting Lissabon", "primeira_liga")).toBe("Sporting CP");
+    expect(canonicalizeTeamName("WSG Tirol", "austria_bl")).toBe("Wattens");
+  });
+
+  it("2026-05-31 rollover fix: DB-verified source-fragmented teams merge to JSON canonical", () => {
+    // These had 2-3 spellings in team_xg_history (one per ingest source) that
+    // the read-side did NOT merge → engine read partial xG history. Canonical
+    // target = the matchday-JSON spelling (read-path + bets consistent).
+    expect(canonicalizeTeamName("SG Dynamo Dresden", "bundesliga2")).toBe("Dynamo Dresden");
+    expect(canonicalizeTeamName("Dresden", "bundesliga2")).toBe("Dynamo Dresden");
+    expect(canonicalizeTeamName("Bochum", "bundesliga2")).toBe("VfL Bochum");
+    expect(canonicalizeTeamName("VfL Bochum 1848", "bundesliga2")).toBe("VfL Bochum");
+    expect(canonicalizeTeamName("Darmstadt", "bundesliga2")).toBe("SV Darmstadt 98");
+    expect(canonicalizeTeamName("Schalke 04", "bundesliga2")).toBe("FC Schalke 04");
+    expect(canonicalizeTeamName("Basel", "swiss_sl")).toBe("FC Basel");
+    expect(canonicalizeTeamName("Servette FC", "swiss_sl")).toBe("Servette");
+    expect(canonicalizeTeamName("Valladolid", "la_liga2")).toBe("Real Valladolid CF");
+    expect(canonicalizeTeamName("UD Las Palmas", "la_liga2")).toBe("Las Palmas");
+    expect(canonicalizeTeamName("Falkirk", "scottish_prem")).toBe("Falkirk F.C.");
+    expect(canonicalizeTeamName("Konyaspor", "super_lig")).toBe("Torku Konyaspor");
+    expect(canonicalizeTeamName("SK Rapid Wien", "austria_bl")).toBe("Rapid Wien");
+    expect(canonicalizeTeamName("Atromitos", "greek_sl")).toBe("Atromitos Athens");
+  });
+
+  it("2026-05-31 rollover fix round 2: full-DB-sweep residuals merge", () => {
+    // Found by running ALL distinct DB teams through the resolver (double-check).
+    expect(canonicalizeTeamName("Blackburn", "championship")).toBe("Blackburn Rovers");
+    expect(canonicalizeTeamName("Cardiff", "league_one")).toBe("Cardiff City");
+    expect(canonicalizeTeamName("Plymouth", "league_one")).toBe("Plymouth Argyle");
+    expect(canonicalizeTeamName("Wimbledon", "league_one")).toBe("AFC Wimbledon");
+    expect(canonicalizeTeamName("Oldham", "league_two")).toBe("Oldham Athletic");
+    expect(canonicalizeTeamName("FC Zürich", "swiss_sl")).toBe("FC Zurich");
+    expect(canonicalizeTeamName("RAAL La Louviere", "jupiler_pro")).toBe("RAAL La Louvière");
+    expect(canonicalizeTeamName("Avellino", "serie_b")).toBe("US Avellino 1912");
+    expect(canonicalizeTeamName("VfB Stuttgart II U21", "liga3")).toBe("VfB Stuttgart II");
+    expect(canonicalizeTeamName("Stade de Reims", "ligue_2")).toBe("Reims");
+    // Leganés: accent-variant that was dropped in round 1
+    expect(canonicalizeTeamName("Leganes", "la_liga2")).toBe("Leganés");
+    expect(canonicalizeTeamName("Leganés", "la_liga2")).toBe("Leganés");
+    // Cottbus: pre-existing JS↔TS desync — pin to the data-bearing spelling
+    expect(canonicalizeTeamName("FC Energie Cottbus", "liga3")).toBe("Energie Cottbus");
+    expect(canonicalizeTeamName("Energie Cottbus", "liga3")).toBe("Energie Cottbus");
+  });
+
   it("Cross-league: same name in different leagues resolves per-league", () => {
     // Hertha BSC is canonical in bundesliga2 (current). In bundesliga (Top-5
     // registry), it's also canonical. Both should resolve correctly.

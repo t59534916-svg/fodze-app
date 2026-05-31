@@ -38,6 +38,11 @@ from v4.eval.metrics import (
     _check_proba_rows_sum_to_one,
 )
 
+# Repo root derived from this file's location (tools/v4/tests/ → up 3 levels),
+# NOT a hardcoded developer-machine path. The source-text lock-tests below read
+# pipeline/module files relative to this so they run portably (CI + any dev box).
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_constant_value_is_locked():
     """PROBABILITY_TOLERANCE must be 1e-6 (calibrated for float32 epsilon).
@@ -139,9 +144,7 @@ def test_stage_1_m3_imports_constant():
     PROBABILITY_TOLERANCE and uses it in the prob-sum check, rather than
     re-defining a local 0.01 tolerance.
     """
-    src = Path(
-        "/Users/vonlinck/Desktop/fodze-app-master/tools/v4/pipeline/stage_1_m3_xg.py"
-    ).read_text()
+    src = (REPO_ROOT / "tools/v4/pipeline/stage_1_m3_xg.py").read_text()
     # Must import the constant
     assert "PROBABILITY_TOLERANCE" in src, (
         "stage_1_m3_xg.py must reference PROBABILITY_TOLERANCE instead of a "
@@ -191,9 +194,7 @@ def test_identity_constant_is_tighter_than_probability_tolerance():
 def test_stage_1_m1_score_imports_both_constants():
     """Stage 1.m1_score uses both: PROBABILITY_TOLERANCE for sum-to-1 checks,
     IDENTITY_TOLERANCE for AH(0)=1X2 math identity checks."""
-    src = Path(
-        "/Users/vonlinck/Desktop/fodze-app-master/tools/v4/pipeline/stage_1_m1_score.py"
-    ).read_text()
+    src = (REPO_ROOT / "tools/v4/pipeline/stage_1_m1_score.py").read_text()
     assert "PROBABILITY_TOLERANCE" in src, "stage_1_m1_score must import PROBABILITY_TOLERANCE"
     assert "IDENTITY_TOLERANCE" in src, "stage_1_m1_score must import IDENTITY_TOLERANCE"
     # The OLD inline tol=1e-9 / tol=1e-6 should be gone from assert_close calls
@@ -207,9 +208,7 @@ def test_stage_1_m1_score_imports_both_constants():
 
 def test_stage_1_m2_lambda_imports_identity_constant():
     """Leakage delta + swap-identity tests in stage_1_m2_lambda must use the constant."""
-    src = Path(
-        "/Users/vonlinck/Desktop/fodze-app-master/tools/v4/pipeline/stage_1_m2_lambda.py"
-    ).read_text()
+    src = (REPO_ROOT / "tools/v4/pipeline/stage_1_m2_lambda.py").read_text()
     assert "IDENTITY_TOLERANCE" in src, "stage_1_m2_lambda must import IDENTITY_TOLERANCE"
     # Verify the legacy pattern `> 1e-9` is gone (specific patterns we fixed)
     assert "delta > 1e-9" not in src, "Found leftover `delta > 1e-9` in stage_1_m2_lambda"
@@ -217,9 +216,7 @@ def test_stage_1_m2_lambda_imports_identity_constant():
 
 def test_stage_1_m3_xg_imports_identity_constant():
     """Leakage delta in stage_1_m3_xg must use the constant."""
-    src = Path(
-        "/Users/vonlinck/Desktop/fodze-app-master/tools/v4/pipeline/stage_1_m3_xg.py"
-    ).read_text()
+    src = (REPO_ROOT / "tools/v4/pipeline/stage_1_m3_xg.py").read_text()
     assert "IDENTITY_TOLERANCE" in src, "stage_1_m3_xg must import IDENTITY_TOLERANCE"
     assert "delta_h > 1e-9" not in src, "Found leftover `delta_h > 1e-9` in stage_1_m3_xg"
     assert "delta_a > 1e-9" not in src, "Found leftover `delta_a > 1e-9` in stage_1_m3_xg"
@@ -254,9 +251,7 @@ def test_coarse_graining_no_inline_classification_literals():
     """The classification paths in coarse_graining must reference the named
     constants, not inline `1e-9` literals. This catches future regressions
     where someone reintroduces a bare number."""
-    src = Path(
-        "/Users/vonlinck/Desktop/fodze-app-master/tools/v4/modules/m1_score/coarse_graining.py"
-    ).read_text()
+    src = (REPO_ROOT / "tools/v4/modules/m1_score/coarse_graining.py").read_text()
     # The specific patterns we replaced — must remain gone
     assert "push > 1e-9" not in src, "Found inline `push > 1e-9` — use MIN_PUSH_MASS"
     assert "margin > 1e-9" not in src, "Found inline `margin > 1e-9` — use AH_MARGIN_EPSILON"
@@ -278,7 +273,7 @@ def test_coarse_graining_no_inline_classification_literals():
 def test_assert_close_default_uses_identity_tolerance():
     """stage_1_m1_score::assert_close default tol must be IDENTITY_TOLERANCE."""
     import sys as _sys
-    _sys.path.insert(0, "/Users/vonlinck/Desktop/fodze-app-master/tools")
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
     from v4.pipeline.stage_1_m1_score import assert_close
     sig = inspect.signature(assert_close)
     assert sig.parameters["tol"].default == IDENTITY_TOLERANCE, (
@@ -290,7 +285,7 @@ def test_assert_close_default_uses_identity_tolerance():
 def test_assert_close_fires_just_over_identity_tolerance():
     """assert_close should reject a delta just above IDENTITY_TOLERANCE."""
     import sys as _sys
-    _sys.path.insert(0, "/Users/vonlinck/Desktop/fodze-app-master/tools")
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
     from v4.pipeline.stage_1_m1_score import SanityCheckFailed, assert_close
 
     just_over = IDENTITY_TOLERANCE * 10  # 10× over tolerance
@@ -301,7 +296,7 @@ def test_assert_close_fires_just_over_identity_tolerance():
 def test_assert_close_passes_just_under_identity_tolerance():
     """assert_close should accept a delta just below IDENTITY_TOLERANCE."""
     import sys as _sys
-    _sys.path.insert(0, "/Users/vonlinck/Desktop/fodze-app-master/tools")
+    _sys.path.insert(0, str(REPO_ROOT / "tools"))
     from v4.pipeline.stage_1_m1_score import assert_close
 
     just_under = IDENTITY_TOLERANCE / 10  # well within tolerance

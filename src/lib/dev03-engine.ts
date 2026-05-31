@@ -207,11 +207,14 @@ function _finishCalc(input: Dev03EngineInput, pred: Dev03Prediction): MatchCalc 
     }
   }
 
-  // ── 6. Dual-track calibration (only for UI display + Kelly track-B) ─
-  // Same as v2: track A is the raw matrix probs (UI), track B is isotonic
-  // (Kelly edge check). For dev-03 we substitute the BENTER-blended probs
-  // as "track A" since that's the production-validated edge source.
-  const dualTrack = dualTrackCalibrate(blendedMk.H, blendedMk.D, blendedMk.A, league);
+  // ── 6. Dual-track calibration (Goldilocks Kelly track-B) ─────────
+  // Track A = the BENTER-blended probs (dev-03's production-validated edge
+  // source). dev-03 is a bypass engine, so Track B == Track A: the shared
+  // ensemble-era isotonic is skipped (it degrades dev-03's blended posterior on
+  // both Brier and ECE — see bypassSharedCalibration in calibration.ts). This
+  // keeps the Goldilocks edge gate (uses Track B below) consistent with the
+  // Kelly pModel from calculateBetsEnhanced (engine="dev-03" → also bypassed).
+  const dualTrack = dualTrackCalibrate(blendedMk.H, blendedMk.D, blendedMk.A, league, "dev-03");
   const mk: MarketProbs = blendedMk;
 
   // ── 7. Bet generation ───────────────────────────────────────────
@@ -314,7 +317,7 @@ function _finishCalc(input: Dev03EngineInput, pred: Dev03Prediction): MatchCalc 
     Math.min(mk_low.O25, mk_high.O25),
     Math.max(mk_low.O25, mk_high.O25),
   ];
-  const uncertainty = (H_ci[1] - H_ci[0]) + (D_ci[1] - D_ci[0]) + (A_ci[1] - A_ci[0]) / 3;
+  const uncertainty = ((H_ci[1] - H_ci[0]) + (D_ci[1] - D_ci[0]) + (A_ci[1] - A_ci[0])) / 3;
 
   const ensemble = {
     H: mk.H, D: mk.D, A: mk.A, O25: mk.O25,
