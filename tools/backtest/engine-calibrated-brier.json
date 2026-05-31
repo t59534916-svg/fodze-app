@@ -1,0 +1,29 @@
+[
+  {
+    "engine": "Standard",
+    "n": 7458,
+    "brier_raw": 0.6815,
+    "brier_calibrated": 0.6507,
+    "calibration_delta": -0.0309,
+    "hoch_n": 217,
+    "hoch_hit": 0.604
+  },
+  {
+    "engine": "v2",
+    "n": 6525,
+    "brier_raw": 0.6238,
+    "brier_calibrated": 0.6524,
+    "calibration_delta": 0.0286,
+    "hoch_n": 519,
+    "hoch_hit": 0.651
+  },
+  {
+    "engine": "v1",
+    "n": 6525,
+    "brier_raw": 0.6475,
+    "brier_calibrated": 0.6781,
+    "calibration_delta": 0.0306,
+    "hoch_n": 1292,
+    "hoch_hit": 0.528
+  }
+]
