@@ -33,7 +33,7 @@ Multi-source ingestion (FootyStats CSV / OpenLigaDB / shots-model / api-sports /
 ```bash
 npm install
 npm run dev         # http://localhost:3000
-npm run test        # 893 Tests / 51 Dateien (vitest) — Stand 2026-05-29
+npm run test        # 965 Tests / 56 Dateien (vitest) — Stand 2026-05-31
 npm run test:watch
 npm run build       # Production Build (läuft auch in CI)
 npm run lint        # Next lint (warnings nur, non-blocking)
@@ -43,6 +43,7 @@ npm run lint        # Next lint (warnings nur, non-blocking)
 ```bash
 npm run health              # 5s Statuscheck: Supabase + Odds-API + OpenLigaDB + TM + Groq
 npm run audit               # Daten-Qualität per Liga (coverage-Report)
+npm run doc-truth           # Doku-Wahrheits-Gate: Next/React-Version in Docs vs package.json (BLOCKING in CI) + Test-Count-Drift (soft warn)
 npm run refresh             # Update odds + matchdays ohne Injuries (~3 min)
 npm run refresh:full        # Vollständig inkl. TM-Injuries (~25 min)
 npm run refresh:quick       # Nur Odds + Audit (~30s)
@@ -461,7 +462,7 @@ Niemals neue grüne Hex-Werte inline einführen — Token nutzen oder hinzufüge
 
 ## Tests
 
-- **vitest (TS):** 893 tests / 51 files (verifiziert 2026-05-29: `npx vitest run` → 893 passed, `tsc --noEmit` → 0 Fehler)
+- **vitest (TS):** 965 tests / 56 files (verifiziert 2026-05-31: `npx vitest run` → 965 passed, `tsc --noEmit` → 0 Fehler)
 - **v4 pytest (Python):** 244 `def test_` in `tools/v4/tests/` (17 Dateien; m1–m10 modules)
 
 ```bash
@@ -1032,4 +1033,4 @@ Priority: `GROQ_API_KEY` (free) → `CLAUDE_API_KEY` (paid) → Offline (Templat
 
 ## Alpha-Atlas Status (Post-Baseline-Features)
 
-Die 13 Phasen aus dem Alpha-Atlas-Plan sind **code-complete** (`docs/ALPHA-ATLAS-IMPLEMENTATION.md`). Alle Runtime-Module sind wired aber **default-off** — pre-upgrade Output bleibt bit-identisch bis Feature-Flags geflippt werden. Outstanding Ops: 9 Migrations applyen, 6 Backfill-Scraper laufen lassen, 3 Python-Fits (Benter/Dirichlet/Conformal) trainieren, 2 R-Services deployen, UI-Tabs für Corners + Player-Props. **893 Tests passing, 0 TS-Errors (Stand 2026-05-29).**
+Die 13 Phasen aus dem Alpha-Atlas-Plan sind **code-complete** (`docs/ALPHA-ATLAS-IMPLEMENTATION.md`). Alle Runtime-Module sind wired aber **default-off** — pre-upgrade Output bleibt bit-identisch bis Feature-Flags geflippt werden. Outstanding Ops: 9 Migrations applyen, 6 Backfill-Scraper laufen lassen, 3 Python-Fits (Benter/Dirichlet/Conformal) trainieren, 2 R-Services deployen, UI-Tabs für Corners + Player-Props. **965 Tests passing, 0 TS-Errors (Stand 2026-05-31).**

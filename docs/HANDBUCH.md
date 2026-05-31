@@ -301,7 +301,7 @@ A: v2 ist eingeschaltet, aber fallbackt auf Standard wenn xG-Historie fehlt. Das
 ## 🔗 Für Entwickler
 
 - **Repo**: [github.com/…/fodze-app](https://github.com)
-- **Tech-Stack**: Next.js 14, TypeScript, Supabase, LightGBM
+- **Tech-Stack**: Next.js 16, TypeScript, Supabase, LightGBM
 - **Architektur**: `docs/ARCHITECTURE.md`
 - **Engine-Internals**: `docs/ENGINE.md`
 - **Dev-Guide**: `CLAUDE.md` im Repo-Root

@@ -1,6 +1,6 @@
 # FODZE Design Handoff
 
-> Quantitative Fußball-Wettanalyse · Next.js 14 · React 18 · TypeScript · Inline Styles + Token System
+> Quantitative Fußball-Wettanalyse · Next.js 16 · React 19 · TypeScript · Inline Styles + Token System
 
 ---
 

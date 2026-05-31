@@ -27,6 +27,7 @@
     "sofa:backfill:dry": "node scripts/backfill-sofascore-extras.mjs --dry",
     "refresh:odds": "node scripts/fetch-odds.mjs",
     "audit": "node scripts/audit-data-quality.mjs",
+    "doc-truth": "node scripts/check-doc-truth.mjs",
     "health": "node scripts/health-check.mjs",
     "suggest-aliases": "node scripts/suggest-tm-aliases.mjs",
     "wfr:export": "Rscript tools/export-worldfootballr.R",
