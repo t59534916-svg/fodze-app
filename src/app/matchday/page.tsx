@@ -63,6 +63,7 @@ export default function MatchdayPage() {
   const { effectiveBudget, bankroll, dayBudget, setDayBudget, league, setLeague, engine, setEngine } = useApp();
   const {
     data, matches, processed, valueMatches, totalStake, topTips, comboLegs,
+    convictionPicks, convictionHitFloor,
     oddsData, oddsHistory, saving, setOdds, handleSaveOdds, handleDelHist, loadCached,
   } = useMatchday();
   const { placingBet, handlePlaceBet } = useBets();
@@ -243,6 +244,53 @@ export default function MatchdayPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Selektive Vorhersage — high-conviction Subset nach validierter
+          Confidence-Tier (≥65% Top-Pick → histor. ~73% Treffer). Zeigt nur
+          Spiele die das TOP-Tier erreichen + ehrlichen Erwartungs-Floor. */}
+      {convictionPicks.length > 0 && (
+        <div style={{ ...S.card, marginBottom: 10, padding: "10px 12px",
+          background: "linear-gradient(135deg, #6aad5512, #d4b86a08)", border: "1px solid #6aad5530" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 14 }}>🎯</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#6aad55" }}>
+                SELEKTIV — {convictionPicks.length} HOCH-KONVIKTION
+              </span>
+            </div>
+            {convictionHitFloor != null && (
+              <span style={{ fontSize: 9, color: "#a89070" }}>
+                histor. ≥{Math.round(convictionHitFloor * 100)}% Treffer
+              </span>
+            )}
+          </div>
+          {convictionPicks.map((cp) => {
+            const tier = confidenceTier(cp.topProb);
+            const sideLabel = cp.pick === "1" ? cp.home : cp.pick === "2" ? cp.away : "Unentschieden";
+            return (
+              <div key={cp.matchIdx}
+                onClick={() => setSelectedMatch(cp.matchIdx)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedMatch(cp.matchIdx); } }}
+                role="button" tabIndex={0}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "6px 4px", cursor: "pointer", borderTop: "1px solid #c4a26512" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span style={{ fontSize: 11, color: "#e8dcc0" }}>{cp.home} — {cp.away}</span>
+                  <span style={{ fontSize: 9, color: "#a89070" }}>Tipp: <span style={{ color: "#6aad55", fontWeight: 600 }}>{sideLabel}</span></span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#6aad55" }}>{Math.round(cp.topProb * 100)}%</span>
+                  <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, fontWeight: 600,
+                    background: "#6aad5518", color: "#6aad55" }}>{tier.label}</span>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 8, color: "#c4a26530", marginTop: 6 }}>
+            Nur Spiele mit Top-1X2-Wahrscheinlichkeit ≥65% (einzig validierte Selektions-Achse).
+          </div>
         </div>
       )}
 
