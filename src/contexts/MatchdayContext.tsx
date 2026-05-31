@@ -425,9 +425,11 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Computes all engines per match (dev-03 deferred to the async overlay).
-  // Expensive (~15ms per match on a warm LightGBM runtime). Memoized on inputs
-  // that actually change the output — deliberately NOT on `engine` so toggling
-  // the engine dropdown is instant.
+  // Memoized on inputs that actually change the output — deliberately NOT on
+  // `engine` so toggling the engine dropdown is instant. (NB: an earlier
+  // comment claimed dev-03 costs "~15 ms/match"; scripts/bench-dev03-predict.mjs
+  // measured ~0.46 ms/match warm — the real per-match cost is ~30× smaller.
+  // The memo still earns its keep across all engines + the 200-iter bootstrap.)
   function computeAllEngines(match: RawMatch, idx: number): {
     ensembleCalc: MatchCalc;
     v1Calc: MatchCalc | null;
@@ -691,12 +693,17 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   }, [cacheVersionKey, oddsData]);
 
   // ── dev-03 off-main-thread overlay (Web Worker) ──────────────────────
-  // The 5-bagged dev-03 LightGBM is the heaviest engine. Rather than running
-  // it synchronously inside `allEngineCalcs` (which blocked the React render
-  // thread across a whole matchday — ~15 ms × N matches in one tick), it
-  // computes here via the dev-03 Web Worker: calcMatchDev03Async is
-  // byte-equivalent to the old sync calcMatchDev03 and transparently falls
-  // back to a sync predict when no Worker exists (SSR / tests / CSP). A token
+  // dev-03 (5-bagged LightGBM) computes here via the Web Worker rather than
+  // synchronously inside `allEngineCalcs`. HONEST CAVEAT: the original perf
+  // rationale ("~15 ms × N matches blocks the render thread") was overstated —
+  // scripts/bench-dev03-predict.mjs measured ~0.46 ms/match warm, so a 40-match
+  // day is ~19 ms of dev-03 compute, not ~600 ms. The worker is kept because
+  // it's harmless and already shipped, but it is NOT load-bearing for
+  // responsiveness. The bigger real cost is the one-time 7.6 MB model JSON
+  // parse (~75 ms), which the worker does NOT remove (both threads parse it).
+  // calcMatchDev03Async is byte-equivalent to the sync calcMatchDev03 and
+  // transparently falls back to a sync predict when no Worker exists
+  // (SSR / tests / CSP). A token
   // ref discards stale batches when the matchday/odds change (league switch)
   // so an in-flight batch can't clobber the newer one. The overlay is TAGGED
   // with the exact `allEngineCalcs` array it was computed against; the merge
