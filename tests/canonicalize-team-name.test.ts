@@ -131,6 +131,26 @@ describe("canonicalizeTeamName — TS mirror of scripts/_lib/canonical-team.mjs"
     expect(canonicalizeTeamName("Atromitos", "greek_sl")).toBe("Atromitos Athens");
   });
 
+  it("2026-05-31 rollover fix round 2: full-DB-sweep residuals merge", () => {
+    // Found by running ALL distinct DB teams through the resolver (double-check).
+    expect(canonicalizeTeamName("Blackburn", "championship")).toBe("Blackburn Rovers");
+    expect(canonicalizeTeamName("Cardiff", "league_one")).toBe("Cardiff City");
+    expect(canonicalizeTeamName("Plymouth", "league_one")).toBe("Plymouth Argyle");
+    expect(canonicalizeTeamName("Wimbledon", "league_one")).toBe("AFC Wimbledon");
+    expect(canonicalizeTeamName("Oldham", "league_two")).toBe("Oldham Athletic");
+    expect(canonicalizeTeamName("FC Zürich", "swiss_sl")).toBe("FC Zurich");
+    expect(canonicalizeTeamName("RAAL La Louviere", "jupiler_pro")).toBe("RAAL La Louvière");
+    expect(canonicalizeTeamName("Avellino", "serie_b")).toBe("US Avellino 1912");
+    expect(canonicalizeTeamName("VfB Stuttgart II U21", "liga3")).toBe("VfB Stuttgart II");
+    expect(canonicalizeTeamName("Stade de Reims", "ligue_2")).toBe("Reims");
+    // Leganés: accent-variant that was dropped in round 1
+    expect(canonicalizeTeamName("Leganes", "la_liga2")).toBe("Leganés");
+    expect(canonicalizeTeamName("Leganés", "la_liga2")).toBe("Leganés");
+    // Cottbus: pre-existing JS↔TS desync — pin to the data-bearing spelling
+    expect(canonicalizeTeamName("FC Energie Cottbus", "liga3")).toBe("Energie Cottbus");
+    expect(canonicalizeTeamName("Energie Cottbus", "liga3")).toBe("Energie Cottbus");
+  });
+
   it("Cross-league: same name in different leagues resolves per-league", () => {
     // Hertha BSC is canonical in bundesliga2 (current). In bundesliga (Top-5
     // registry), it's also canonical. Both should resolve correctly.

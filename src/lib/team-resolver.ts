@@ -576,6 +576,33 @@ const EXTRA_LEAGUE_ALIASES: ExtraAliasEntry[] = [
   { league: "swiss_sl", canonical: "FC Basel", aliases: ["Basel"] },
   { league: "swiss_sl", canonical: "FC St Gallen", aliases: ["FC St. Gallen 1879", "St. Gallen", "St Gallen"] },
   { league: "swiss_sl", canonical: "Servette", aliases: ["Servette FC"] },
+
+  // ── Rollover fix round 2 (2026-05-31, full-DB double-check) — 18 more ──
+  // Found by running ALL distinct (league,team) through the resolver. Same
+  // sync requirement with canonical-team.mjs.
+  { league: "bundesliga2", canonical: "Fortuna Düsseldorf", aliases: ["Fortuna Dusseldorf"] },
+  { league: "championship", canonical: "Blackburn Rovers", aliases: ["Blackburn"] },
+  { league: "la_liga2", canonical: "Leganés", aliases: ["Leganes"] },
+  // Cottbus: pin to "Energie Cottbus" (the spelling team_xg_history uses) —
+  // overrides a TEAM_REGISTRY row that resolved to a zero-xG-row spelling.
+  // EXTRA aliases run BEFORE TEAM_REGISTRY (tier-1), so this wins. JS-synced.
+  { league: "liga3", canonical: "Energie Cottbus", aliases: ["FC Energie Cottbus"] },
+  { league: "greek_sl", canonical: "Kifisia", aliases: ["AE Kifisia", "AE Kifisia FC"] },
+  { league: "jupiler_pro", canonical: "RAAL La Louvière", aliases: ["RAAL La Louviere"] },
+  { league: "league_one", canonical: "AFC Wimbledon", aliases: ["Wimbledon"] },
+  { league: "league_one", canonical: "Bradford City", aliases: ["Bradford"] },
+  { league: "league_one", canonical: "Cardiff City", aliases: ["Cardiff"] },
+  { league: "league_one", canonical: "Doncaster Rovers", aliases: ["Doncaster"] },
+  { league: "league_one", canonical: "Luton Town", aliases: ["Luton"] },
+  { league: "league_one", canonical: "Plymouth Argyle", aliases: ["Plymouth"] },
+  { league: "league_two", canonical: "Cambridge United", aliases: ["Cambridge"] },
+  { league: "league_two", canonical: "Oldham Athletic", aliases: ["Oldham"] },
+  { league: "league_two", canonical: "Shrewsbury Town", aliases: ["Shrewsbury"] },
+  { league: "liga3", canonical: "VfB Stuttgart II", aliases: ["VfB Stuttgart II U21"] },
+  { league: "ligue_2", canonical: "Le Mans", aliases: ["Le Mans FC"] },
+  { league: "ligue_2", canonical: "Reims", aliases: ["Stade de Reims"] },
+  { league: "serie_b", canonical: "US Avellino 1912", aliases: ["Avellino"] },
+  { league: "swiss_sl", canonical: "FC Zurich", aliases: ["FC Zürich"] },
 ];
 
 // Per-league extra-alias lookup map: league → norm(alias) → canonical

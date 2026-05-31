@@ -201,6 +201,39 @@ const EXTRA_ALIASES = [
   { league: "swiss_sl", canonical: "FC Basel", aliases: ["Basel"] },
   { league: "swiss_sl", canonical: "FC St Gallen", aliases: ["FC St. Gallen 1879", "St. Gallen", "St Gallen"] },
   { league: "swiss_sl", canonical: "Servette", aliases: ["Servette FC"] },
+
+  // ── Rollover fix, round 2 (2026-05-31, found via full-DB double-check) ──
+  // A second sweep ran ALL distinct (league,team) through the updated resolver
+  // and flagged 21 residual fragmented pairs the first pass missed (their
+  // spellings weren't in the matchday-JSON sample / fell outside the league
+  // filter). All DB-verified as active duplicates (30-47 rows each, separate
+  // sources). Canonical target = matchday-JSON spelling where present, else the
+  // richest-source / most-rows spelling. Several isolate sofascore xG
+  // (Blackburn Rovers, RAAL La Louvière, VfB Stuttgart II, US Avellino, FC Zürich).
+  { league: "bundesliga2", canonical: "Fortuna Düsseldorf", aliases: ["Fortuna Dusseldorf"] },
+  { league: "championship", canonical: "Blackburn Rovers", aliases: ["Blackburn"] },
+  { league: "la_liga2", canonical: "Leganés", aliases: ["Leganes"] },
+  // Cottbus: team_xg_history + most matchday JSONs use "Energie Cottbus" (38
+  // xG rows); the TEAM_REGISTRY row {fodze:"FC Energie Cottbus"} made the TS
+  // read-side resolve to a spelling with ZERO xG rows (pre-existing JS↔TS
+  // desync, verified 2026-05-31). Pin both sides to the data-bearing spelling.
+  { league: "liga3", canonical: "Energie Cottbus", aliases: ["FC Energie Cottbus"] },
+  { league: "greek_sl", canonical: "Kifisia", aliases: ["AE Kifisia", "AE Kifisia FC"] },
+  { league: "jupiler_pro", canonical: "RAAL La Louvière", aliases: ["RAAL La Louviere"] },
+  { league: "league_one", canonical: "AFC Wimbledon", aliases: ["Wimbledon"] },
+  { league: "league_one", canonical: "Bradford City", aliases: ["Bradford"] },
+  { league: "league_one", canonical: "Cardiff City", aliases: ["Cardiff"] },
+  { league: "league_one", canonical: "Doncaster Rovers", aliases: ["Doncaster"] },
+  { league: "league_one", canonical: "Luton Town", aliases: ["Luton"] },
+  { league: "league_one", canonical: "Plymouth Argyle", aliases: ["Plymouth"] },
+  { league: "league_two", canonical: "Cambridge United", aliases: ["Cambridge"] },
+  { league: "league_two", canonical: "Oldham Athletic", aliases: ["Oldham"] },
+  { league: "league_two", canonical: "Shrewsbury Town", aliases: ["Shrewsbury"] },
+  { league: "liga3", canonical: "VfB Stuttgart II", aliases: ["VfB Stuttgart II U21"] },
+  { league: "ligue_2", canonical: "Le Mans", aliases: ["Le Mans FC"] },
+  { league: "ligue_2", canonical: "Reims", aliases: ["Stade de Reims"] },
+  { league: "serie_b", canonical: "US Avellino 1912", aliases: ["Avellino"] },
+  { league: "swiss_sl", canonical: "FC Zurich", aliases: ["FC Zürich"] },
 ];
 
 // ─── Registry loader (cached) ───────────────────────────────────────
