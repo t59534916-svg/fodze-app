@@ -1017,9 +1017,23 @@ export function calculateBetsEnhanced(
   // ensemble keeps the curve (it genuinely helps the distribution it owns).
   // O25 is NOT gated — its per-engine calibration effect was not measured.
   const skipIso = bypassSharedCalibration(engine);
+  // calIso = always the shared-calibration output. Two consumers, different needs:
+  //   • pModel / edge / Kelly → `cal` (bypass-aware: raw posterior for v1/v2/
+  //     dev-03, since the ensemble-era curve degrades their Brier+ECE).
+  //   • Conformal staking gate → `calIso` ALWAYS. Before the 2026-05-31 bypass,
+  //     the gate received calibrate1X2(...) output for EVERY engine; the bypass
+  //     flipped `cal` to raw for v1/v2/dev-03, which would silently change the
+  //     gate's input too. The conformal quantiles were fit on CALIBRATED probs
+  //     (public/conformal-quantiles.json _meta.calibration), NOT raw — so the
+  //     gate must keep seeing the calibrated probs. Using calIso restores the
+  //     gate's exact pre-bypass input, so a future NEXT_PUBLIC_CONFORMAL_GATE=
+  //     enforce|dampen flip behaves identically for the bypass engines as it
+  //     would have pre-bypass. (No-op today: gate mode is warn → factor 1.0.)
+  // For non-bypass engines `cal === calIso`, so this is zero behavior change.
+  const calIso = calibrate1X2(blended.H, blended.D, blended.A, league);
   const cal = skipIso
     ? { H: blended.H, D: blended.D, A: blended.A }
-    : calibrate1X2(blended.H, blended.D, blended.A, league);
+    : calIso;
   const calO25 = calibrateOU25(mk.O25, league);
   const calLow = skipIso
     ? { H: mk_low.H, D: mk_low.D, A: mk_low.A }
@@ -1065,7 +1079,9 @@ export function calculateBetsEnhanced(
     // BTTS gate factor stays 1.0 (no BTTS conformal fit yet).
     let conformalFactor = 1.0;
     if (m.key === "H" || m.key === "D" || m.key === "A") {
-      conformalFactor = conformalKellyFactor({ H: cal.H, D: cal.D, A: cal.A }, league);
+      // calIso (the calibrated probs), NOT the bypass-aware `cal` — the gate's
+      // quantiles were fit on calibrated probs. See the calIso definition above.
+      conformalFactor = conformalKellyFactor({ H: calIso.H, D: calIso.D, A: calIso.A }, league);
     } else if (m.key === "O25" || m.key === "U25") {
       // Binary O/U conformal — gate logic is symmetric in p(over25):
       // - For "Über 2.5" (O25): p_o25 must clear p_o25 ≥ 1-q (high confidence over)
