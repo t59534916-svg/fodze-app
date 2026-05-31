@@ -20,6 +20,7 @@ import { calcMatchDev03Async } from "@/lib/dev03-engine";
 import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v3";
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { pickPrimaryCalc } from "@/lib/engine-pick";
+import { selectHighConviction, aggregateExpectedHitFloor, type ConvictionResult } from "@/lib/selective-prediction";
 import { mergeDev03Overlay, type Dev03OverlayState } from "@/lib/dev03-overlay-merge";
 import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
 import { useApp } from "./AppContext";
@@ -31,6 +32,19 @@ interface TopTip extends BetCalc {
   away: string;
   matchIdx: number;
   kickoff?: string;
+}
+
+/** A match selected by the validated confidence tier (selective prediction). */
+interface ConvictionPick {
+  matchIdx: number;
+  home: string;
+  away: string;
+  kickoff?: string;
+  /** Benter-blended top-pick prob, max(H,D,A). */
+  topProb: number;
+  /** Which 1X2 outcome the model favours, for display. */
+  pick: "1" | "X" | "2";
+  conviction: ConvictionResult;
 }
 
 interface MatchdayContextValue {
@@ -56,6 +70,11 @@ interface MatchdayContextValue {
   totalStake: number;
   comboLegs: ComboLeg[];
   topTips: TopTip[];
+  /** Selective-prediction subset: matches whose top 1X2 pick clears the
+   *  validated confidence tier (default TOP / ≥65% → ~73% floor). */
+  convictionPicks: ConvictionPick[];
+  /** Honest blended expected-hit floor across convictionPicks (null if none). */
+  convictionHitFloor: number | null;
   sosRatings: SoSRatings | null;
   setData: (d: MatchdayData | null) => void;
 }
@@ -916,6 +935,42 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     }),
     [matches, engineCalcsMerged, engine]
   );
+  // Selective prediction: surface the high-conviction subset by the VALIDATED
+  // confidence tier (max(H,D,A) of the chosen engine's Benter-blended probs).
+  // This is the "which matches to trust" lever — see selective-prediction.ts.
+  // Market consensus is intentionally NOT folded in (unvalidated; would need
+  // the gitignored backtest corpus to gate per the 5-Gate protocol).
+  const convictionPicks: ConvictionPick[] = useMemo(() => {
+    const rows = processed.map((m: ProcessedMatch) => {
+      const mk = m.calc?.mk;
+      const topProb = mk ? Math.max(mk.H, mk.D, mk.A) : null;
+      return { m, topProb };
+    });
+    const selected = selectHighConviction(
+      rows.map(r => ({ topProb: r.topProb })),
+      { minLevel: "TOP" },
+    );
+    return selected.map(s => {
+      const { m, topProb } = rows[s.index];
+      const mk = m.calc!.mk;
+      const pick: "1" | "X" | "2" = mk.H >= mk.D && mk.H >= mk.A ? "1" : mk.A >= mk.D ? "2" : "X";
+      return {
+        matchIdx: m.idx,
+        home: m.home?.name || "",
+        away: m.away?.name || "",
+        kickoff: m.kickoff,
+        topProb: topProb as number,
+        pick,
+        conviction: s.conviction,
+      };
+    });
+  }, [processed]);
+
+  const convictionHitFloor = useMemo(
+    () => aggregateExpectedHitFloor(convictionPicks),
+    [convictionPicks],
+  );
+
   const valueMatches = useMemo(() => processed.filter((m: ProcessedMatch) => m.calc?.hasValue), [processed]);
   const totalStake = useMemo(() => valueMatches.reduce((sum: number, m: ProcessedMatch) =>
     sum + (m.calc?.bets ?? []).filter((b: BetCalc) => b.isValue).reduce((s: number, b: BetCalc) => s + b.kelly * br, 0), 0),
@@ -967,10 +1022,12 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     oddsData, oddsHistory, liveOdds, oddsSource, saving,
     setOdds, loadCached, handleImport, doAutoFetch, handleStartManual,
     handleSaveOdds, handleDelHist,
-    matches, processed, valueMatches, totalStake, comboLegs, topTips, sosRatings, setData,
+    matches, processed, valueMatches, totalStake, comboLegs, topTips,
+    convictionPicks, convictionHitFloor, sosRatings, setData,
   }), [data, loading, loadMsg, error, oddsData, oddsHistory, liveOdds, oddsSource, saving,
     setOdds, loadCached, handleImport, doAutoFetch, handleStartManual, handleSaveOdds, handleDelHist,
-    matches, processed, valueMatches, totalStake, comboLegs, topTips, sosRatings]);
+    matches, processed, valueMatches, totalStake, comboLegs, topTips,
+    convictionPicks, convictionHitFloor, sosRatings]);
 
   return <MatchdayContext.Provider value={value}>{children}</MatchdayContext.Provider>;
 }
