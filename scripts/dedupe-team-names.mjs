@@ -63,9 +63,14 @@ if (existsSync(envPath)) {
   }
 }
 
+// True only when this file is executed directly (node scripts/dedupe-...mjs),
+// false when imported (e.g. by tests for the pure helpers). Guards the
+// env-check + main() so importing the module never triggers process.exit.
+const RUN_DIRECTLY = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+
 const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPA_KEY = process.env.SUPABASE_SERVICE_KEY;
-if (!SUPA_URL || !SUPA_KEY) {
+if (RUN_DIRECTLY && (!SUPA_URL || !SUPA_KEY)) {
   console.error("❌ Missing SUPABASE env (need SUPABASE_SERVICE_KEY for write).");
   process.exit(1);
 }
@@ -140,6 +145,112 @@ async function fetchAll(url) {
     if (page.length < PAGE) break;
   }
   return out;
+}
+
+// ─── Source-priority merge (conflict resolution) ───────────────────
+//
+// When renaming alias→canonical hits the UNIQUE (team,league,match_date,venue)
+// constraint, BOTH rows describe the same real match from different ingest
+// sources. We must keep the row with the richest data, not blindly delete the
+// alias. Priority (higher = richer): sofascore (real per-shot xG) > understat
+// (real xG) > api-sports (real xG) > footystats (xG via CSV) > shots-model
+// (modelled xG) > goals-proxy (goals only, no xG). Unknown sources sort lowest.
+export const SOURCE_PRIORITY = [
+  "sofascore", "understat", "api-sports", "footystats",
+  "shots-model-pooled", "shots-model", "goals-proxy",
+];
+
+/** Priority rank of a source string (higher = better). shots-model-<liga>
+ *  variants map to the generic shots-model rank. Unknown → -1 (lowest). */
+export function sourcePriority(source) {
+  if (!source) return -1;
+  const s = String(source);
+  let best = -1;
+  for (let i = 0; i < SOURCE_PRIORITY.length; i++) {
+    const tag = SOURCE_PRIORITY[i];
+    // prefix-match so "shots-model-bundesliga2" matches "shots-model"
+    if (s === tag || s.startsWith(tag)) {
+      const rank = SOURCE_PRIORITY.length - i;
+      if (rank > best) best = rank;
+    }
+  }
+  return best;
+}
+
+/**
+ * Decide, per (match_date, venue) conflict, whether the ALIAS row or the
+ * existing CANONICAL row wins. Pure + testable.
+ *
+ * @returns "alias" | "canonical" — which row to KEEP. The loser is deleted.
+ *   Ties go to "canonical" (it already holds the slot; no churn, and the alias
+ *   adds nothing the canonical lacks).
+ */
+export function pickWinner(aliasSource, canonicalSource) {
+  return sourcePriority(aliasSource) > sourcePriority(canonicalSource)
+    ? "alias" : "canonical";
+}
+
+/**
+ * Resolve a rename conflict by per-(date,venue) source priority instead of the
+ * old blind bulk-DELETE. For each conflicting slot: keep the higher-priority
+ * source. Non-conflicting alias rows are renamed to canonical. Returns the
+ * count of slots where the alias won (i.e. canonical row replaced), or null on
+ * error. No-op in DRY mode (callers gate on DRY before invoking).
+ */
+async function mergeConflictingRows(league, aliasName, canonicalName) {
+  const enc = encodeURIComponent;
+  const aliasRows = await fetchAll(
+    `${SUPA_URL}/rest/v1/team_xg_history?select=match_date,venue,source&team=eq.${enc(aliasName)}&league=eq.${enc(league)}&order=match_date`,
+  );
+  const canonRows = await fetchAll(
+    `${SUPA_URL}/rest/v1/team_xg_history?select=match_date,venue,source&team=eq.${enc(canonicalName)}&league=eq.${enc(league)}&order=match_date`,
+  );
+  const canonBySlot = new Map();
+  for (const c of canonRows) canonBySlot.set(`${c.match_date}|${c.venue}`, c);
+
+  let aliasWins = 0;
+  for (const a of aliasRows) {
+    const slot = `${a.match_date}|${a.venue}`;
+    const canon = canonBySlot.get(slot);
+    if (!canon) {
+      // No conflict for this slot — rename the alias row into canonical.
+      const ok = await patchTeam(league, aliasName, canonicalName, a.match_date, a.venue);
+      if (!ok) return null;
+      continue;
+    }
+    if (pickWinner(a.source, canon.source) === "alias") {
+      // Alias is richer: delete the canonical slot, then rename the alias in.
+      const delOk = await deleteRow(league, canonicalName, a.match_date, a.venue);
+      const renOk = delOk && await patchTeam(league, aliasName, canonicalName, a.match_date, a.venue);
+      if (!renOk) return null;
+      aliasWins++;
+    } else {
+      // Canonical is equal-or-richer: drop the redundant alias slot.
+      const ok = await deleteRow(league, aliasName, a.match_date, a.venue);
+      if (!ok) return null;
+    }
+  }
+  return aliasWins;
+}
+
+async function patchTeam(league, fromTeam, toTeam, matchDate, venue) {
+  const enc = encodeURIComponent;
+  const r = await fetch(
+    `${SUPA_URL}/rest/v1/team_xg_history?team=eq.${enc(fromTeam)}&league=eq.${enc(league)}&match_date=eq.${enc(matchDate)}&venue=eq.${enc(venue)}`,
+    { method: "PATCH", headers: { ...SUPA_HEADERS, Prefer: "return=minimal" }, body: JSON.stringify({ team: toTeam }) },
+  );
+  if (!r.ok) console.error(`\n  ⚠ PATCH ${league}/${fromTeam}@${matchDate}/${venue}: ${r.status}`);
+  return r.ok;
+}
+
+async function deleteRow(league, team, matchDate, venue) {
+  const enc = encodeURIComponent;
+  const r = await fetch(
+    `${SUPA_URL}/rest/v1/team_xg_history?team=eq.${enc(team)}&league=eq.${enc(league)}&match_date=eq.${enc(matchDate)}&venue=eq.${enc(venue)}`,
+    { method: "DELETE", headers: { ...SUPA_HEADERS, Prefer: "return=minimal" } },
+  );
+  if (!r.ok) console.error(`\n  ⚠ DELETE ${league}/${team}@${matchDate}/${venue}: ${r.status}`);
+  return r.ok;
 }
 
 // Build canonical team list per league from matchdays JSONB. Each raw
@@ -310,21 +421,18 @@ async function main() {
         applied += info.n;
         process.stdout.write(`\r  Applied: ${applied}/${totalRowsToFix} rows`);
       } else if (r.status === 409) {
-        // Conflict — canonical row already exists for some (league,date,venue).
-        // Need to delete the duplicate (the one being renamed) since the
-        // canonical row already has data. The MERGE-priority rule:
-        //   footystats > goals-proxy > shots-model
-        // But for now, just DELETE the alias rows that conflict — the
-        // canonical row from another source remains.
-        const fallbackR = await fetch(
-          `${SUPA_URL}/rest/v1/team_xg_history?team=eq.${encodeURIComponent(oldName)}&league=eq.${league}`,
-          { method: "DELETE", headers: { ...SUPA_HEADERS, Prefer: "return=minimal" } },
-        );
-        if (fallbackR.ok) {
+        // Conflict — a canonical row already exists for some (date,venue).
+        // The OLD behaviour was a blind bulk-DELETE of ALL alias rows, which
+        // destroyed the higher-quality source (e.g. sofascore xG) whenever the
+        // canonical row came from a weaker source (goals-proxy/shots-model).
+        // Now we resolve PER (date,venue) by source priority so the BEST data
+        // survives the merge. See mergeConflictingRows.
+        const merged = await mergeConflictingRows(league, oldName, info.canonical);
+        if (merged != null) {
           applied += info.n;
-          process.stdout.write(`\r  Applied (conflict→delete): ${applied}/${totalRowsToFix} rows`);
+          process.stdout.write(`\r  Applied (merge: ${merged} alias-wins): ${applied}/${totalRowsToFix} rows`);
         } else {
-          console.error(`\n  ⚠ Failed ${league}/${oldName}: ${fallbackR.status} ${await fallbackR.text()}`);
+          console.error(`\n  ⚠ Merge failed ${league}/${oldName}`);
         }
       } else {
         console.error(`\n  ⚠ Failed ${league}/${oldName}: ${r.status} ${await r.text()}`);
@@ -341,8 +449,10 @@ async function main() {
   console.log(`\n\n✅ Done — ${applied} rows updated to canonical names.\n`);
 }
 
-main().catch((e) => {
-  console.error(`Fatal: ${e.message}`);
-  console.error(e.stack);
-  process.exit(1);
-});
+if (RUN_DIRECTLY) {
+  main().catch((e) => {
+    console.error(`Fatal: ${e.message}`);
+    console.error(e.stack);
+    process.exit(1);
+  });
+}
