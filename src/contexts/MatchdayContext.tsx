@@ -21,6 +21,7 @@ import { calcMatchPoissonMLv3, isV3ModelLoaded } from "@/lib/poisson-ml-engine-v
 import { calcMatchFootBayesLambdas } from "@/lib/footbayes-engine";
 import { pickPrimaryCalc } from "@/lib/engine-pick";
 import { selectHighConviction, aggregateExpectedHitFloor, type ConvictionResult } from "@/lib/selective-prediction";
+import { engineCacheKey, engineCacheVersionKey, favouredSide, parseOddsMap } from "@/lib/matchday-cache";
 import { mergeDev03Overlay, type Dev03OverlayState } from "@/lib/dev03-overlay-merge";
 import { computeLeagueKellyMultiplier } from "@/lib/clv-feedback";
 import { useApp } from "./AppContext";
@@ -445,8 +446,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     if (!h?.xg_h8 || !a?.xg_a8) return null;
 
     const o = oddsData[idx] || {};
-    const no: Record<string, number> = {};
-    for (const k of ["h", "d", "a", "o25", "u25", "btts"]) { const v = parseFloat(String(o[k] ?? "")); if (v > 0) no[k] = v; }
+    const no = parseOddsMap(o);
     const matchHf = getHomeFactor(h.name, ld.hf);
     const hasOdds = no.h > 0 && no.d > 0 && no.a > 0;
 
@@ -656,24 +656,19 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
   const lastVersionRef = useRef<string>("");
 
   const cacheVersionKey = useMemo(() => {
-    const matchIds = (data?.matches || [])
-      .map(m => `${m.home?.name}:${m.away?.name}`)
-      .join(",");
-    // Include playerXgIndex size so post-load hydration invalidates the
-    // memo cache and absences get re-enriched without a manual refresh.
-    // sosKey uses team-count — when SoS re-computes (e.g., league
-    // switch) the team set changes and the cache invalidates. The
-    // prior "y" / "n" flag only caught null → present, not content
-    // changes within the rating table.
-    const sosKey = sosRatings ? `sos${Object.keys(sosRatings).length}` : "sos0";
-    // Include leagueKellyMultiplier so per-league CLV-feedback dampening
-    // changes (e.g., new bet settlement flips the trigger) invalidate the
-    // engine cache and re-compute Kelly stakes immediately.
-    // Include filterShieldLoaded so once /filter-shield-config.json arrives
-    // (async after first render), the memo invalidates and CSD vetoes start
-    // firing for already-loaded matches. Without this, first-render matches
-    // would silently skip vetoes forever (race-condition fix 2026-05-22).
-    return `${league}|${ld.avg}|${ld.hf}|${frac}|${calLoaded}|${filterShieldLoaded}|${sosKey}|pxg${playerXgIndex.size}|lkm${leagueKellyMultiplier}|${matchIds}`;
+    // Pure key builder lives in matchday-cache.ts (locked by tests). Each input
+    // here MUST invalidate the engine cache on change — e.g. filterShieldLoaded
+    // (race-condition fix 2026-05-22), sosTeamCount content (not just presence),
+    // playerXgSize (post-load hydration re-enrich), leagueKellyMultiplier
+    // (CLV-feedback flip), and matchIds set+order (re-sort safety).
+    return engineCacheVersionKey({
+      league, leagueAvg: ld.avg, homeFactor: ld.hf, fraction: frac,
+      calLoaded, filterShieldLoaded,
+      sosTeamCount: sosRatings ? Object.keys(sosRatings).length : null,
+      playerXgSize: playerXgIndex.size,
+      leagueKellyMultiplier,
+      matchIds: (data?.matches || []).map(m => `${m.home?.name}:${m.away?.name}`),
+    });
   }, [league, ld.avg, ld.hf, frac, calLoaded, filterShieldLoaded, sosRatings, data, playerXgIndex, leagueKellyMultiplier]);
 
   const allEngineCalcs = useMemo(() => {
@@ -685,7 +680,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
       lastVersionRef.current = cacheVersionKey;
     }
     return matches.map((m: RawMatch, i: number) => {
-      const cacheKey = `${m.home?.name}|${m.away?.name}|${JSON.stringify(oddsData[i] || {})}`;
+      const cacheKey = engineCacheKey(m.home?.name, m.away?.name, oddsData[i]);
       const cached = engineCache.current.get(cacheKey);
       if (cached !== undefined) return cached;
       const result = computeAllEngines(m, i);
@@ -953,7 +948,7 @@ export function MatchdayProvider({ children }: { children: React.ReactNode }) {
     return selected.map(s => {
       const { m, topProb } = rows[s.index];
       const mk = m.calc!.mk;
-      const pick: "1" | "X" | "2" = mk.H >= mk.D && mk.H >= mk.A ? "1" : mk.A >= mk.D ? "2" : "X";
+      const pick = favouredSide(mk);
       return {
         matchIdx: m.idx,
         home: m.home?.name || "",
