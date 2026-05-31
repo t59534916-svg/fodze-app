@@ -177,6 +177,35 @@ Layer** (Coverage-Gate, warn-Modus) ist OOT-kalibriert.
 
 ---
 
+## 5c · Confidence-Validierung der λ-Blends (2026-05-31)
+
+Die §5-Tabelle (research-Blend dev-03⊕dev-09) wurde via
+`tools/v4/diagnostics/blend_confidence_calibration.py` aus einem **unabhängigen**
+Code-Pfad nachgerechnet und **exakt reproduziert** (dev-03 raw-HOCH 73.7%/68.9% ·
+Blend 74.5%/70.7% · Blend-Brier 0.6118/0.6093 — landet auf den publizierten
+§3/§5-Werten). Zusätzlich **erstmals** validiert: der *tatsächlich gewirte*
+Blend-Engine **dev-03⊕v2** (`engine-registry.ts`, commit 7e628d6) — dessen
+Badge-mk ist der **rohe λ-Blend** (Benter berührt nur die Wetten, nicht die
+Anzeige — `blendCalc`-Zweig in `MatchdayContext`). Auf 25/26 OOT hält **jeder**
+der 4 Tiers seine dev-03-kalibrierte Claim, HOCH + MITTEL mit Marge:
+
+| Tier | Claim | dev-03 | dev-03⊕dev-09 | **dev-03⊕v2 (gewirt)** |
+|---|---|---|---|---|
+| <45% | 40% | 39.4% | 40.2% | 41.0% |
+| 45–55% | 48% | 48.1% | 49.9% | 48.7% |
+| 55–65% | 53% | 52.7% | 56.4% | **61.9%** |
+| ≥65% (HOCH) | 73% | 73.7% | 74.5% | **76.4%** (n=386) |
+
+(25/26 OOT, RAW λ-Blend = Badge-Pfad.) Damit ist die offene Doku-Lücke
+geschlossen: die dev-03-kalibrierten Badge-Claims sind für die Blends eine
+**sichere, eher konservative** Näherung. Die Claim-Werte bleiben dev-03-verankert
+(das Badge liest `calc.mk` für JEDE Engine, also nicht per-Engine nachtunen).
+Einzige milde Weichheit: HOCH im 24/25-Cross-Season (Blend 70.7%, dev-03 selbst
+68.9%) — der Blend ist überall **mindestens so gut** kalibriert wie dev-03.
+Single-source der Boundaries+Claims: `src/lib/confidence-tier.ts`.
+
+---
+
 ## 5b · Markt-Head-to-Head — schlagen wir Pinnacle? (2026-05-29)
 
 Der härteste Test, direkt gegen Pinnacle-Closing (`analyze_pick_quality.py` für

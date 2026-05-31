@@ -54,7 +54,7 @@ export const ENGINES: EngineInfo[] = [
   {
     id: "poisson-ml-blend",
     name: "Blend (dev-03 ⊕ v2)",
-    description: "50/50 λ-Mittel aus dev-03 + v2. Schärfster Forecaster der Suite durch Ensemble-Varianzreduktion zweier starker, dekorrelierter Modelle (Brier −0.0066 vs dev-03 auf 25/26 OOT; Mechanismus cross-season via dev-09 bestätigt, eval_blend_partners.py). Kein Lineup / keine neue Pipeline nötig — beide Beine werden ohnehin pro Match berechnet. Null wenn dev-03 oder v2 fehlt (Fallback: ensemble). Hinweis: die Confidence-Badge-Trefferquoten sind auf dev-03 (Benter-blended) kalibriert — für den Blend (roher λ-Blend) eine Näherung, nicht engine-spezifisch validiert.",
+    description: "50/50 λ-Mittel aus dev-03 + v2. Schärfster Forecaster der Suite durch Ensemble-Varianzreduktion zweier starker, dekorrelierter Modelle (Brier −0.0066 vs dev-03 auf 25/26 OOT; Mechanismus cross-season via dev-09 bestätigt, eval_blend_partners.py). Kein Lineup / keine neue Pipeline nötig — beide Beine werden ohnehin pro Match berechnet. Null wenn dev-03 oder v2 fehlt (Fallback: ensemble). Confidence-Badge ist auf dev-03 kalibriert und für den Blend verifiziert (blend_confidence_calibration.py): der Badge-mk IST der rohe λ-Blend (Benter berührt nur die Wetten), und alle 4 Tiers halten auf 25/26 OOT — HOCH 76.4% (Claim 73%, n=386), MITTEL 61.9% (Claim 53%) — also eine sichere, eher konservative Näherung.",
   },
   {
     id: "footbayes-hierarchical",
