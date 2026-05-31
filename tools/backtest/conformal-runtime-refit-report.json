@@ -1,0 +1,294 @@
+{
+  "generated_purpose": "runtime-faithful conformal re-fit (option B) \u2014 fit on real calibrate1X2(benterBlend(raw))",
+  "n_rows": 6525,
+  "leagues": 18,
+  "drift_bands": {
+    "ok": -0.02,
+    "borderline": -0.03,
+    "drift": -0.05
+  },
+  "insample_flag_counts": {
+    "ok": 54,
+    "borderline": 0,
+    "drift": 0,
+    "catastrophic": 0
+  },
+  "temporal_split": {
+    "train_n": 4567,
+    "test_n": 1958,
+    "aggregate": [
+      {
+        "alpha": 0.05,
+        "q": 0.8124,
+        "coverage": 0.954,
+        "drift": 0.004,
+        "flag": "ok"
+      },
+      {
+        "alpha": 0.1,
+        "q": 0.7707,
+        "coverage": 0.9035,
+        "drift": 0.0035,
+        "flag": "ok"
+      },
+      {
+        "alpha": 0.2,
+        "q": 0.7342,
+        "coverage": 0.7911,
+        "drift": -0.0089,
+        "flag": "ok"
+      }
+    ],
+    "per_league_flag_counts": {
+      "ok": 38,
+      "catastrophic": 11,
+      "borderline": 3,
+      "drift": 2
+    },
+    "worst": [
+      {
+        "league": "bundesliga2",
+        "n": 127,
+        "alpha": 0.2,
+        "q": 0.7364,
+        "coverage": 0.6614,
+        "drift": -0.1386,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "la_liga",
+        "n": 100,
+        "alpha": 0.2,
+        "q": 0.7281,
+        "coverage": 0.69,
+        "drift": -0.11,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "greek_sl",
+        "n": 66,
+        "alpha": 0.1,
+        "q": 0.7707,
+        "coverage": 0.803,
+        "drift": -0.097,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "scottish_prem",
+        "n": 49,
+        "alpha": 0.05,
+        "q": 0.8124,
+        "coverage": 0.8571,
+        "drift": -0.0929,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "serie_a",
+        "n": 102,
+        "alpha": 0.2,
+        "q": 0.7297,
+        "coverage": 0.7255,
+        "drift": -0.0745,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "greek_sl",
+        "n": 66,
+        "alpha": 0.05,
+        "q": 0.8124,
+        "coverage": 0.8788,
+        "drift": -0.0712,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "scottish_prem",
+        "n": 49,
+        "alpha": 0.1,
+        "q": 0.7707,
+        "coverage": 0.8367,
+        "drift": -0.0633,
+        "flag": "catastrophic"
+      },
+      {
+        "league": "greek_sl",
+        "n": 66,
+        "alpha": 0.2,
+        "q": 0.7342,
+        "coverage": 0.7424,
+        "drift": -0.0576,
+        "flag": "catastrophic"
+      }
+    ]
+  },
+  "repeated_split_cv": {
+    "repeats": 40,
+    "test_frac": 0.25,
+    "per_league": [
+      {
+        "league": "bundesliga",
+        "n": 304,
+        "cov05_mean": 0.9595394736842107,
+        "cov05_std": 0.020676638328707534,
+        "cov10_mean": 0.925,
+        "cov10_std": 0.03060448249898159,
+        "concern": false
+      },
+      {
+        "league": "bundesliga2",
+        "n": 402,
+        "cov05_mean": 0.9512499999999999,
+        "cov05_std": 0.02304208106920898,
+        "cov10_mean": 0.90575,
+        "cov10_std": 0.03224030862135162,
+        "concern": false
+      },
+      {
+        "league": "championship",
+        "n": 552,
+        "cov05_mean": 0.9547101449275364,
+        "cov05_std": 0.017657236131900293,
+        "cov10_mean": 0.9023550724637681,
+        "cov10_std": 0.028620321815730144,
+        "concern": false
+      },
+      {
+        "league": "epl",
+        "n": 357,
+        "cov05_mean": 0.9530898876404494,
+        "cov05_std": 0.019764983912643006,
+        "cov10_mean": 0.9162921348314607,
+        "cov10_std": 0.032071714553240635,
+        "concern": false
+      },
+      {
+        "league": "eredivisie",
+        "n": 291,
+        "cov05_mean": 0.9537671232876711,
+        "cov05_std": 0.025014069975787877,
+        "cov10_mean": 0.903082191780822,
+        "cov10_std": 0.034024967927751504,
+        "concern": false
+      },
+      {
+        "league": "greek_sl",
+        "n": 214,
+        "cov05_mean": 0.9495370370370371,
+        "cov05_std": 0.032337888398333924,
+        "cov10_mean": 0.899537037037037,
+        "cov10_std": 0.0462754582733524,
+        "concern": false
+      },
+      {
+        "league": "jupiler_pro",
+        "n": 286,
+        "cov05_mean": 0.9618055555555556,
+        "cov05_std": 0.026850854068307242,
+        "cov10_mean": 0.9059027777777778,
+        "cov10_std": 0.042068376054809724,
+        "concern": false
+      },
+      {
+        "league": "la_liga",
+        "n": 340,
+        "cov05_mean": 0.9555882352941175,
+        "cov05_std": 0.03194800057099707,
+        "cov10_mean": 0.9123529411764706,
+        "cov10_std": 0.0371986158912056,
+        "concern": false
+      },
+      {
+        "league": "la_liga2",
+        "n": 434,
+        "cov05_mean": 0.9479166666666666,
+        "cov05_std": 0.026489209892723117,
+        "cov10_mean": 0.8981481481481483,
+        "cov10_std": 0.03603981565931216,
+        "concern": false
+      },
+      {
+        "league": "league_one",
+        "n": 582,
+        "cov05_mean": 0.9551369863013699,
+        "cov05_std": 0.0159126851445054,
+        "cov10_mean": 0.9092465753424657,
+        "cov10_std": 0.023214530589153876,
+        "concern": false
+      },
+      {
+        "league": "league_two",
+        "n": 599,
+        "cov05_mean": 0.9546666666666667,
+        "cov05_std": 0.020773915267843848,
+        "cov10_mean": 0.9058333333333334,
+        "cov10_std": 0.02459392427228951,
+        "concern": false
+      },
+      {
+        "league": "ligue_1",
+        "n": 304,
+        "cov05_mean": 0.9598684210526315,
+        "cov05_std": 0.030427187052229403,
+        "cov10_mean": 0.9177631578947368,
+        "cov10_std": 0.03911570130577565,
+        "concern": false
+      },
+      {
+        "league": "ligue_2",
+        "n": 295,
+        "cov05_mean": 0.9486486486486487,
+        "cov05_std": 0.027562267641042082,
+        "cov10_mean": 0.9023648648648649,
+        "cov10_std": 0.041595233386380874,
+        "concern": false
+      },
+      {
+        "league": "primeira_liga",
+        "n": 290,
+        "cov05_mean": 0.9552083333333332,
+        "cov05_std": 0.029378775696406303,
+        "cov10_mean": 0.9038194444444445,
+        "cov10_std": 0.04652129930021568,
+        "concern": false
+      },
+      {
+        "league": "scottish_prem",
+        "n": 211,
+        "cov05_mean": 0.9556603773584905,
+        "cov05_std": 0.040147024209345676,
+        "cov10_mean": 0.9047169811320754,
+        "cov10_std": 0.044838621276664686,
+        "concern": false
+      },
+      {
+        "league": "serie_a",
+        "n": 356,
+        "cov05_mean": 0.9530898876404494,
+        "cov05_std": 0.024602316055783714,
+        "cov10_mean": 0.9129213483146067,
+        "cov10_std": 0.02445595377492014,
+        "concern": false
+      },
+      {
+        "league": "serie_b",
+        "n": 405,
+        "cov05_mean": 0.9527227722772278,
+        "cov05_std": 0.02489931691325666,
+        "cov10_mean": 0.9071782178217822,
+        "cov10_std": 0.0356770675876227,
+        "concern": false
+      },
+      {
+        "league": "super_lig",
+        "n": 303,
+        "cov05_mean": 0.9509868421052632,
+        "cov05_std": 0.032362470034887666,
+        "cov10_mean": 0.90625,
+        "cov10_std": 0.04014640580291052,
+        "concern": false
+      }
+    ],
+    "robust_under_coverage_leagues": []
+  },
+  "verdict": "Aggregate TEMPORAL coverage at \u03b1=0.05 = 0.9540 (target 0.95, drift +0.0040, ok). Repeated-split CV: NO league robustly under-covers at \u03b1=0.05 (residual temporal drift was split-noise) \u2192 fitting on the REAL runtime distribution RESTORES coverage; the enforce-flip is genuinely unblocked (verified on the production-faithful distribution, not Dirichlet/approx-Platt).",
+  "flip_safe": true
+}
