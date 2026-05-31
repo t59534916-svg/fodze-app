@@ -76,8 +76,14 @@ describe("calculateBetsEnhanced — pipeline integration", () => {
   it("CI bounds (mk_low/mk_high) are NOT blended toward Pinnacle", () => {
     setBenterMode("on");
     loadBenterWeights(mockBenterOn);
+    // Both calls MUST use the same engine so the only varying input is the
+    // presence of Pinnacle (the Benter trigger). v2 calibrates the CI bounds
+    // from mk_low/mk_high — Benter never touches them — so they must be
+    // identical with vs without Pinnacle. (Using a different engine per call
+    // would also vary the per-engine shared-isotonic bypass and conflate the
+    // two effects — that is what this test deliberately isolates.)
     const withPinn   = calculateBetsEnhanced(mk, mkLow, mkHigh, odds, 0.33, PINN, undefined, "bundesliga", "v2");
-    const noPinn     = calculateBetsEnhanced(mk, mkLow, mkHigh, odds, 0.33);
+    const noPinn     = calculateBetsEnhanced(mk, mkLow, mkHigh, odds, 0.33, undefined, undefined, "bundesliga", "v2");
     const hWith = withPinn.find(b => b.label === "Heim")!;
     const hNo   = noPinn.find(b => b.label === "Heim")!;
     // pModel_low and pModel_high must be identical between the two runs:

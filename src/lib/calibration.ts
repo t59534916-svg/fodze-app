@@ -77,6 +77,53 @@ let CALIBRATION_ACTIVE = true;
 //                 (O25 still runs through Platt/Isotonic, since it's 2-class)
 export type CalibrationMethod = "isotonic" | "platt" | "dirichlet";
 let CALIBRATION_METHOD: CalibrationMethod = "isotonic";
+
+// ─── Per-engine shared-calibration gate (2026-05-31) ─────────────────
+// The global isotonic curves in public/calibration_curves.json were fit on the
+// ensemble / Dixon-Coles DISPLAY distribution (file header: "TRAINED on 14,359
+// games 2017-2025"; git: "Train Dixon-Coles calibration on real xG data",
+// "Per-league calibration", "Retrain engine from 28,718 Supabase xG entries").
+// Applying that curve to the *better-calibrated* v1/v2/dev-03 posteriors degrades
+// BOTH Brier AND top-label ECE on the Kelly/edge track — measured by running the
+// REAL production calibrate1X2 over the 25/26 OOT parquet
+// (tools/backtest/engine_calibrated_brier.mts → validate_calibration_bypass.py):
+//
+//   engine    Brier raw→cal    ECE raw→cal     verdict
+//   Standard  0.682 → 0.651    0.151 → 0.052   curve HELPS (it owns this dist) → keep
+//   v1        0.648 → 0.678    0.075 → 0.106   curve HURTS both axes → bypass
+//   v2        0.624 → 0.652    0.013 → 0.058   curve HURTS both axes (ECE 4×) → bypass
+//   dev-03    0.621 → 0.650    0.021 → 0.063   curve HURTS both axes (ECE 3×) → bypass
+//
+// Both axes worsening rules out a reliability-for-sharpness trade — the curve is
+// simply mis-applied. All four deltas are Holm-significant + powered (n≥6.5k).
+// The dev-03 Money-Eval (G5) ROI "worsening" under bypass is NOT robust: a
+// 2000-sample match-level bootstrap puts the profit/match Δ CI across 0
+// (tools/backtest/_bootstrap_roi_delta.py). Betting edge vs Pinnacle is
+// validated-impossible (docs/FORECAST-QUALITY-ANALYSIS.md §5b), so the goal is
+// forecast/Kelly probability quality — which bypass strictly improves.
+//
+// Bypass (identity), NOT a per-engine refit: v2/dev-03 raw ECE is already
+// 1.3 % / 2.1 % — there is essentially nothing for a refit to gain, and a fresh
+// fit on 25/26 would re-introduce the exact single-season-overfit failure mode
+// that produced this stale curve. Bypass removes a transform and adds no fit →
+// zero leakage / overfit risk. Scope is 1X2 only (the markets measured); the
+// O25 isotonic curve is left untouched (unmeasured per-engine).
+//
+// ⚠ Conformal coupling: conformalKellyFactor consumes the post-calibration 1X2.
+// The gate is `warn` (inert, factor 1.0) in production today, so bypass has no
+// live effect on it. IF it is ever flipped to `enforce`, the conformal quantiles
+// MUST be refit per-engine on the bypassed (raw/blended) distribution — see
+// tools/backtest/refit-all.sh.
+export const BYPASS_SHARED_CALIBRATION_ENGINES: ReadonlySet<string> = new Set([
+  "v1", "v2", "dev-03",
+]);
+
+/** True when this engine's Kelly/edge 1X2 track should SKIP the shared global
+ *  isotonic curve (it is better-calibrated on its own — see the table above).
+ *  `undefined`/`ensemble` → false (keep calibration). */
+export function bypassSharedCalibration(engine?: string): boolean {
+  return engine != null && BYPASS_SHARED_CALIBRATION_ENGINES.has(engine);
+}
 let PLATT_PARAMS: Record<string, { a: number; b: number }> = {};
 
 // Per-league Platt params (loaded from retrained model)
@@ -368,13 +415,18 @@ export function dualTrackCalibrate(
   rawH: number,
   rawD: number,
   rawA: number,
-  league?: string
+  league?: string,
+  engine?: string,
 ): DualTrackResult {
   // Track A: raw matrix probabilities (used for market derivation, display)
   const trackA = { H: rawH, D: rawD, A: rawA };
 
-  // Track B: pass through isotonic calibration (used for Kelly + edge)
-  if (!CALIBRATION_ACTIVE) {
+  // Track B: isotonic-calibrated (used for the Goldilocks edge-vs-Pinnacle gate).
+  // Bypass for engines whose own posterior is better-calibrated than the shared
+  // ensemble-era curve (v1/v2/dev-03) — Track B then equals Track A, so the
+  // Goldilocks edge is measured on the engine's honest probs, consistent with
+  // the Kelly `pModel` in calculateBetsEnhanced. See bypassSharedCalibration.
+  if (!CALIBRATION_ACTIVE || bypassSharedCalibration(engine)) {
     return { trackA, trackB: { ...trackA } };
   }
 
