@@ -4,6 +4,18 @@
 FODZE — Conformal Gate Drift Validation (Phase 2.5 Audit)
 ═══════════════════════════════════════════════════════════════════
 
+⚠ DEPRECATED (2026-05-31) — DO NOT TRUST FOR FLIP DECISIONS. This validator
+  applies calibration in the WRONG ORDER vs the runtime: it does Platt THEN
+  Benter (apply_platt → apply_benter, line ~275/290), but production runs
+  Benter BEFORE calibrate1X2 (dixon-coles.ts:992/1000/1012). Platt and Benter
+  do not commute. It also uses an APPROXIMATE Platt (no D-clamp/H-A caps that
+  calibrate1X2 has). Result: it scores a distribution production never serves,
+  so its drift verdicts (incl. the old "5 catastrophic / BLOCK") are unreliable.
+  → Use the runtime-faithful pipeline instead (runs the REAL TS calibrate1X2):
+       tools/backtest/_conformal_export_raw.py        (B1)
+       tools/backtest/conformal_runtime_calibrate.mts (B2, via dedicated config)
+       tools/backtest/refit_conformal_runtime.py      (B3 fit + validate)
+
 Validates whether the trained conformal quantiles in
 `public/conformal-quantiles.json` (fitted 2026-04-21 against the
 2023-08 → 2024-06 OOT window) still hold empirical coverage on the
@@ -221,7 +233,8 @@ def main():
     print(" FODZE — Conformal Gate Drift Validation")
     print("═══════════════════════════════════════════════════════════")
     print(f"   Window: {args.date_from} → {args.date_to}")
-    print(f"   Pipeline: isotonic + Benter (production-stack)")
+    print("   ⚠ DEPRECATED: applies Platt→Benter (runtime is Benter→Platt) + approximate Platt.")
+    print("     Verdicts unreliable — use refit_conformal_runtime.py (runs the REAL calibrate1X2).")
     if args.no_benter:
         print(f"   --no-benter → isotonic-only sanity check")
     print()
