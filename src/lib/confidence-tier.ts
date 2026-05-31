@@ -16,14 +16,15 @@
 // MESSAGE: only HOCH (≥65%) is clearly above-average; below it is only just
 // over 50%. Validated 2026-05-28, see docs/FORECAST-QUALITY-ANALYSIS.md.
 //
-// ENGINE-SCOPE CAVEAT (2026-05-31): these claims are validated on the dev-03
-// path (the production default). The dev-03 ⊕ dev-09 BLEND engine is the
-// validated-best FORECASTER (lower Brier), but it uses a raw λ-average, so
-// these tier hit-rates are only an APPROXIMATION for the Blend — not
-// blend-specific-validated. The blend-specific re-validation is codified in
-// tools/v4/diagnostics/blend_confidence_calibration.py (runnable once the
-// 1.13 GB Sofa mirror + Pinnacle parquets are present, i.e. at season start).
-// Until then, the Blend badge cites these dev-03 numbers as a labelled proxy.
+// ALSO VALIDATED FOR THE λ-BLENDS (2026-05-31, blend_confidence_calibration.py):
+// the wired "Blend (dev-03⊕v2)" engine shows the RAW λ-blend as its badge mk
+// (Benter adjusts only its bets, not the display — see the blendCalc branch in
+// MatchdayContext), and on 25/26 OOT every tier meets/exceeds these claims —
+// HOCH 76.4% (n=386), MITTEL 61.9% (n=651) — so the dev-03 claims are a safe,
+// mildly conservative approximation for it. The research blend dev-03⊕dev-09
+// reproduces FORECAST §5 (HOCH 74.5% 25/26 · 70.7% 24/25). Claims stay
+// dev-03-anchored: the badge reads calc.mk for ANY selected engine, so they
+// must not be re-tuned per engine.
 //
 // Colors live in the components (design tokens in MatchDetail, raw hex in
 // MatchCard per that file's convention); THIS module owns the drift-prone
