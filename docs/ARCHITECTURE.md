@@ -7,7 +7,7 @@ FODZE ist eine quantitative Fußball-Wettanalyse-Plattform. Der Kern ist ein Dix
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        FRONTEND                              │
-│  Next.js 14 App Router · React 18 · TypeScript              │
+│  Next.js 16 App Router · React 19 · TypeScript              │
 │                                                              │
 │  ┌──────┐  ┌──────────┐  ┌───────┐  ┌──────┐  ┌─────┐     │
 │  │ Home │  │ Matchday  │  │ Anna  │  │ Sim  │  │Stats│     │

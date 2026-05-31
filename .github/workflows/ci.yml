@@ -43,6 +43,15 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy-key-for-build
 
+      # 2026-05-31: doc-truth gate. Catches the stale-documentation drift the
+      # SWOT flagged as the biggest weakness (this session found docs claiming
+      # Next 14 / React 18 / wrong test counts). BLOCKING on version mismatch
+      # (Next/React major in any doc must match package.json); test-count drift
+      # is a soft warning only (changes every test PR). Node-builtin only, no
+      # install. See scripts/check-doc-truth.mjs.
+      - name: Doc-truth gate (versions BLOCKING)
+        run: node scripts/check-doc-truth.mjs
+
   # 2026-05-28: NEW — the v4 Python invariant gates (bug-class-A leakage,
   # determinism, eval-metric identities, m1-m9 module contracts) were
   # local-only until now. This job runs the data-INDEPENDENT subset

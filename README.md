@@ -1,6 +1,6 @@
 # FODZE — Quantitative Fußball-Wettanalyse
 
-Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson, **isotonic + Benter calibration**, **Conformal Prediction Gates** und Kelly-Criterion Staking. **22 Ligen** live + 2 European cups, **4 Prediction-Engines** parallel, **~87.000 xG-history-rows** aus 7 Datenquellen, **6.856 Sofa-extras games** (100% v1+v2 coverage seit 2026-05-10), **550+ Tests** grün.
+Quantitative Wettanalyse mit Dixon-Coles Bivariate Poisson, **isotonic + Benter calibration**, **Conformal Prediction Gates** und Kelly-Criterion Staking. **22 Ligen** live + 2 European cups, **4 Prediction-Engines** parallel, **~87.000 xG-history-rows** aus 7 Datenquellen, **6.856 Sofa-extras games** (100% v1+v2 coverage seit 2026-05-10), **965 Tests** grün.
 
 **Next.js 16** · React 19 · TypeScript · Supabase · Vercel
 
@@ -201,7 +201,7 @@ node scripts/seed-understat-2526.mjs
 ### Development
 ```bash
 npm run build            # Production Build
-npm run test             # 550 Tests (vitest)
+npm run test             # 965 Tests (vitest)
 npm run test:watch       # Watch-Mode
 npm run lint             # ESLint
 ```
