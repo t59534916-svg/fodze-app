@@ -37,6 +37,11 @@ const reactMajor = String(pkg.dependencies.react).replace(/[^0-9.]/g, "").split(
 const DOCS = ["README.md", "CLAUDE.md",
   "docs/ARCHITECTURE.md", "docs/DESIGN-HANDOFF.md", "docs/HANDBUCH.md"];
 
+// KNOWN LIMITATION: the version regex is literal — it can't tell a real claim
+// ("built on Next.js 16") from prose that mentions a version as an example
+// ("the gate caught docs saying Next.js 14"). If you need to reference an old
+// version in prose, phrase it without the literal "Next.js <N>" / "React <N>"
+// token (e.g. "a major too low"), or the gate will flag your description.
 const hardErrors = [];
 const softWarnings = [];
 
