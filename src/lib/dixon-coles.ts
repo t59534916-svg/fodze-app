@@ -4,7 +4,7 @@
 // XGBoost Residuals · Pinnacle Anchoring · Shin's Vig
 // ═══════════════════════════════════════════════════════════════════════
 
-import { calibrate1X2, calibrateOU25 } from "./calibration";
+import { calibrate1X2, calibrateOU25, bypassSharedCalibration } from "./calibration";
 import { SoSRatings, applySoSAdjustment } from "./sos";
 import { PlayerProfile, calcAbsenceImpact } from "./player-impact";
 import { createPMF, getAlpha, type OverdispersionConfig } from "./neg-binomial";
@@ -1004,15 +1004,29 @@ export function calculateBetsEnhanced(
     league,
   );
 
-  // ── Isotonic/Dirichlet Calibration ──
+  // ── Isotonic/Dirichlet Calibration (1X2, engine-gated) ──
   // Calibrate H/D/A independently, then renormalize to sum=1.0. Operates on
   // the BLENDED posterior so Platt/Dirichlet sees a cleaner signal. CI
   // bounds remain on raw mk_low/mk_high — Benter would artificially shrink
   // confidence intervals toward Pinnacle, which is not what CI represents.
-  const cal = calibrate1X2(blended.H, blended.D, blended.A, league);
+  //
+  // v1/v2/dev-03 BYPASS the shared global isotonic on this Kelly/edge track:
+  // that curve was fit on the ensemble/DC display distribution and degrades the
+  // already-better-calibrated v1/v2/dev-03 posteriors on BOTH Brier and ECE
+  // (see bypassSharedCalibration in calibration.ts for the measured table).
+  // ensemble keeps the curve (it genuinely helps the distribution it owns).
+  // O25 is NOT gated — its per-engine calibration effect was not measured.
+  const skipIso = bypassSharedCalibration(engine);
+  const cal = skipIso
+    ? { H: blended.H, D: blended.D, A: blended.A }
+    : calibrate1X2(blended.H, blended.D, blended.A, league);
   const calO25 = calibrateOU25(mk.O25, league);
-  const calLow = calibrate1X2(mk_low.H, mk_low.D, mk_low.A, league);
-  const calHigh = calibrate1X2(mk_high.H, mk_high.D, mk_high.A, league);
+  const calLow = skipIso
+    ? { H: mk_low.H, D: mk_low.D, A: mk_low.A }
+    : calibrate1X2(mk_low.H, mk_low.D, mk_low.A, league);
+  const calHigh = skipIso
+    ? { H: mk_high.H, D: mk_high.D, A: mk_high.A }
+    : calibrate1X2(mk_high.H, mk_high.D, mk_high.A, league);
 
   // Map: raw model values for display, calibrated for edge/kelly
   const calMap: Record<string, number> = {
