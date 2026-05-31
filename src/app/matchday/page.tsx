@@ -14,6 +14,7 @@ import MatchCard from "@/components/match/MatchCard";
 import MatchDetail from "@/components/match/MatchDetail";
 import BetTracker from "@/components/matchday/BetTracker";
 import ManualBetForm from "@/components/matchday/ManualBetForm";
+import { confidenceTier } from "@/lib/confidence-tier";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
 const pe = (v: number) => (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + "%";
