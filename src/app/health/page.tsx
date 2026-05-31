@@ -176,8 +176,8 @@ export default function HealthPage() {
       status: isDirichletLoaded() && getCalibrationMethod() === "dirichlet" ? "on" : "off",
       detail: isDirichletLoaded() ? `method=${getCalibrationMethod()}, 3-cluster ODIR` : `method=${getCalibrationMethod()}, fallback`,
       envVar: "NEXT_PUBLIC_CALIBRATION_METHOD",
-      envVal: process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "dirichlet",
-      brierImpact: "-0.0019 (gemessen, ECE 3× besser)",
+      envVal: process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "isotonic",
+      brierImpact: "dirichlet REVERTED (drift +0.0075) — default now isotonic",
     },
     {
       name: "Benter Market×Model Blend",

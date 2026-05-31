@@ -174,21 +174,30 @@ export function AppProvider({ user, children }: { user: any; children: React.Rea
       loadFootBayesPosteriors(posteriors);
     });
 
-    // Dirichlet 3-class calibration (Phase 2.1) — DEFAULT ON as of
-    // commit shipping cross-engine-oot-metrics.json findings:
-    //   ECE drops 2.6× vs raw (0.0146 → 0.0056), BSS strictly ≥ raw
-    //   on every league, never worse. 6691 OOT rows, cutoff 2023-08-01.
+    // 1X2 calibration method. Production = "isotonic" (the validated choice).
+    // DEFAULT is "isotonic" so a dropped env var falls back to the VALIDATED
+    // method — NOT "dirichlet". Dirichlet was activated 2026-04-26 then REVERTED
+    // the same day after an n=8306 current-season backtest (drift +0.0075 Brier,
+    // NET NEGATIVE; helps 9/18 leagues, hurts 9/18). Defaulting to dirichlet here
+    // would silently revert production to the known-worse method on any deploy
+    // that loses the env var — exactly the footgun this default avoids.
     //
-    // NEXT_PUBLIC_CALIBRATION_METHOD=dirichlet|isotonic|platt
-    //   unset / "dirichlet" — Dirichlet-ODIR per-cluster (default)
-    //   "isotonic"          — legacy per-market curves from calibration_curves.json
-    //   "platt"             — legacy 2-param logistic
+    // NEXT_PUBLIC_CALIBRATION_METHOD=isotonic|platt|dirichlet
+    //   unset / "isotonic" — global isotonic curves hardcoded in calibration.ts,
+    //                        applied to the ensemble Kelly track; v1/v2/dev-03
+    //                        BYPASS it (bypassSharedCalibration, 2026-05-31).
+    //                        NOTE the per-league params in calibration_curves.json
+    //                        are PLATT — dormant unless method="platt"; the live
+    //                        isotonic curves are the hardcoded CAL_* arrays. [DEFAULT]
+    //   "platt"            — that file's global + 18 per-league platt params
+    //                        (dormant ensemble-era data; NOT re-validated under the
+    //                        2026-05-31 per-engine audit — flip only with a re-fit).
+    //   "dirichlet"        — Kull ODIR 3-cluster; REVERTED, opt-in only.
     //
-    // Failure modes are silent-safe: a missing or malformed
-    // public/dirichlet-calibration.json throws from loadDirichletCalibration,
-    // setCalibrationMethod("dirichlet") is never reached, and the module-level
-    // default ("isotonic" in src/lib/calibration.ts) stays in force.
-    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "dirichlet").toLowerCase();
+    // Failure-safe: a missing/malformed public/dirichlet-calibration.json throws
+    // from loadDirichletCalibration, setCalibrationMethod("dirichlet") is never
+    // reached, and the module default ("isotonic" in calibration.ts) stays in force.
+    const rawCalMethod = (process.env.NEXT_PUBLIC_CALIBRATION_METHOD || "isotonic").toLowerCase();
     if (rawCalMethod === "dirichlet") {
       loadModel("/dirichlet-calibration.json", "dirichlet", weights => {
         try {
