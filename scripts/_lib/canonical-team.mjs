@@ -138,6 +138,69 @@ const EXTRA_ALIASES = [
   // ── Austria Bundesliga ──
   { league: "austria_bl", canonical: "Wattens",
     aliases: ["WSG Tirol", "WSG Wattens"] },
+
+  // ════════════════════════════════════════════════════════════════
+  // Season-rollover fragmentation fix (2026-05-31)
+  // ════════════════════════════════════════════════════════════════
+  // Verified against the live DB: these teams had 2-3 spellings in
+  // team_xg_history (one per ingest source: sofascore / footystats /
+  // shots-model / goals-proxy), and the read-side canonicalize merged
+  // NONE of them — so the engine read only a fraction of each team's xG
+  // history (split standings + EWMA). Each canonical below is the exact
+  // spelling the matchday JSONs + bets table use (read-path consistent).
+  // All entries auto-classified SAFE-NEW (no reversal of existing aliases).
+
+  // austria_bl
+  { league: "austria_bl", canonical: "Austria Wien", aliases: ["FK Austria Wien"] },
+  { league: "austria_bl", canonical: "Grazer AK", aliases: ["Grazer AK 1902"] },
+  { league: "austria_bl", canonical: "Hartberg", aliases: ["TSV Hartberg"] },
+  { league: "austria_bl", canonical: "Rapid Wien", aliases: ["SK Rapid Wien"] },
+  { league: "austria_bl", canonical: "Sturm Graz", aliases: ["SK Sturm Graz"] },
+  // bundesliga2
+  { league: "bundesliga2", canonical: "1. FC Kaiserslautern", aliases: ["Kaiserslautern"] },
+  { league: "bundesliga2", canonical: "1. FC Magdeburg", aliases: ["Magdeburg"] },
+  { league: "bundesliga2", canonical: "1. FC Nürnberg", aliases: ["Nurnberg", "Nürnberg"] },
+  { league: "bundesliga2", canonical: "Dynamo Dresden", aliases: ["Dresden", "SG Dynamo Dresden"] },
+  { league: "bundesliga2", canonical: "Eintracht Braunschweig", aliases: ["Braunschweig"] },
+  { league: "bundesliga2", canonical: "FC Schalke 04", aliases: ["Schalke 04"] },
+  { league: "bundesliga2", canonical: "Hannover 96", aliases: ["Hannover"] },
+  { league: "bundesliga2", canonical: "Karlsruher SC", aliases: ["Karlsruhe"] },
+  { league: "bundesliga2", canonical: "SV Darmstadt 98", aliases: ["Darmstadt", "Darmstadt 98"] },
+  { league: "bundesliga2", canonical: "VfL Bochum", aliases: ["Bochum", "VfL Bochum 1848"] },
+  // eredivisie
+  { league: "eredivisie", canonical: "FC Twente Enschede", aliases: ["FC Twente"] },
+  // greek_sl
+  { league: "greek_sl", canonical: "Atromitos Athens", aliases: ["Atromitos"] },
+  { league: "greek_sl", canonical: "Panserraikos FC", aliases: ["Panserraikos"] },
+  // jupiler_pro
+  { league: "jupiler_pro", canonical: "Royal Antwerp", aliases: ["Royal Antwerp FC"] },
+  // la_liga2
+  { league: "la_liga2", canonical: "AD Ceuta FC", aliases: ["Ceuta"] },
+  { league: "la_liga2", canonical: "Almería", aliases: ["UD Almería"] },
+  { league: "la_liga2", canonical: "Las Palmas", aliases: ["UD Las Palmas"] },
+  { league: "la_liga2", canonical: "Málaga", aliases: ["Málaga CF"] },
+  { league: "la_liga2", canonical: "Real Valladolid CF", aliases: ["Real Valladolid", "Valladolid"] },
+  // league_one / league_two
+  { league: "league_one", canonical: "Stockport County FC", aliases: ["Stockport County"] },
+  { league: "league_two", canonical: "Chesterfield FC", aliases: ["Chesterfield"] },
+  // liga3
+  { league: "liga3", canonical: "Hansa Rostock", aliases: ["F.C. Hansa Rostock"] },
+  { league: "liga3", canonical: "Jahn Regensburg", aliases: ["SSV Jahn Regensburg"] },
+  { league: "liga3", canonical: "Waldhof Mannheim", aliases: ["SV Waldhof Mannheim"] },
+  // primeira_liga
+  { league: "primeira_liga", canonical: "Alverca", aliases: ["FC Alverca"] },
+  // scottish_prem
+  { league: "scottish_prem", canonical: "Falkirk F.C.", aliases: ["Falkirk", "Falkirk FC"] },
+  // serie_b
+  { league: "serie_b", canonical: "US Catanzaro 1929", aliases: ["Catanzaro"] },
+  // super_lig
+  { league: "super_lig", canonical: "Fatih Karagümrük", aliases: ["Karagumruk", "Karagümrük"] },
+  { league: "super_lig", canonical: "Genclerbirligi SK", aliases: ["Genclerbirligi"] },
+  { league: "super_lig", canonical: "Torku Konyaspor", aliases: ["Konyaspor"] },
+  // swiss_sl
+  { league: "swiss_sl", canonical: "FC Basel", aliases: ["Basel"] },
+  { league: "swiss_sl", canonical: "FC St Gallen", aliases: ["FC St. Gallen 1879", "St. Gallen", "St Gallen"] },
+  { league: "swiss_sl", canonical: "Servette", aliases: ["Servette FC"] },
 ];
 
 // ─── Registry loader (cached) ───────────────────────────────────────
