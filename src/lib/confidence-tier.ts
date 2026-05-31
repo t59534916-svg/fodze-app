@@ -16,6 +16,15 @@
 // MESSAGE: only HOCH (≥65%) is clearly above-average; below it is only just
 // over 50%. Validated 2026-05-28, see docs/FORECAST-QUALITY-ANALYSIS.md.
 //
+// ENGINE-SCOPE CAVEAT (2026-05-31): these claims are validated on the dev-03
+// path (the production default). The dev-03 ⊕ dev-09 BLEND engine is the
+// validated-best FORECASTER (lower Brier), but it uses a raw λ-average, so
+// these tier hit-rates are only an APPROXIMATION for the Blend — not
+// blend-specific-validated. The blend-specific re-validation is codified in
+// tools/v4/diagnostics/blend_confidence_calibration.py (runnable once the
+// 1.13 GB Sofa mirror + Pinnacle parquets are present, i.e. at season start).
+// Until then, the Blend badge cites these dev-03 numbers as a labelled proxy.
+//
 // Colors live in the components (design tokens in MatchDetail, raw hex in
 // MatchCard per that file's convention); THIS module owns the drift-prone
 // parts — the boundaries and the hit-rate claims — so they cannot diverge.
