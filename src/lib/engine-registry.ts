@@ -63,7 +63,15 @@ export const ENGINES: EngineInfo[] = [
   },
 ];
 
-export const DEFAULT_ENGINE: PredictionEngine = "ensemble-v1";
+// dev-03 is the sharpest forecaster a new user can safely get by default: on
+// the user-facing (raw model) display path its 1X2 Brier is ~0.62 vs Standard's
+// ~0.68 (FORECAST-QUALITY-ANALYSIS.md §3; confirmed on the calibrated path via
+// tools/backtest/engine_calibrated_brier.mts), its confidence badge is validated
+// (HOCH ≥65% ~73.7%), and Goldilocks/Money-Eval/badge already assume it. Per-match
+// it falls back to ensemble when model/cache/xG-history is missing (MatchdayContext
+// routing), so this is strictly ≥ the old ensemble-v1 default. Users with a saved
+// profile.prediction_engine are unaffected (AppContext overrides on load).
+export const DEFAULT_ENGINE: PredictionEngine = "poisson-ml-dev03";
 
 export function isValidEngine(id: string): id is PredictionEngine {
   return ENGINES.some(e => e.id === id);

@@ -1,0 +1,52 @@
+{
+  "n_boot": 2000,
+  "seed": 12345,
+  "edge_min_pp": 3.0,
+  "convention": "delta = CURRENT(isotonic) - BYPASS(raw); >0 = keeping stale curve reduces losses",
+  "variants": {
+    "blended": {
+      "label": "dev-03:blended",
+      "n_matches": 2268,
+      "n_bets_current": 2653,
+      "n_bets_bypass": 1410,
+      "roi_current_pct": -0.289,
+      "roi_bypass_pct": -3.082,
+      "roi_delta_pct_point": 2.793,
+      "roi_delta_pct_CI95": [
+        -5.113,
+        10.541
+      ],
+      "ppm_current": -0.0034,
+      "ppm_bypass": -0.0192,
+      "ppm_delta_point": 0.0158,
+      "ppm_delta_CI95": [
+        -0.0524,
+        0.0817
+      ],
+      "frac_resamples_keep_better_ppm": 0.695,
+      "ppm_delta_significant": false
+    },
+    "raw_dc": {
+      "label": "dev-03:raw_dc",
+      "n_matches": 2268,
+      "n_bets_current": 2745,
+      "n_bets_bypass": 1899,
+      "roi_current_pct": -2.861,
+      "roi_bypass_pct": -3.604,
+      "roi_delta_pct_point": 0.743,
+      "roi_delta_pct_CI95": [
+        -5.358,
+        6.662
+      ],
+      "ppm_current": -0.0346,
+      "ppm_bypass": -0.0302,
+      "ppm_delta_point": -0.0044,
+      "ppm_delta_CI95": [
+        -0.0675,
+        0.0558
+      ],
+      "frac_resamples_keep_better_ppm": 0.44,
+      "ppm_delta_significant": false
+    }
+  }
+}

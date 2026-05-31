@@ -1,0 +1,41 @@
+{
+  "Standard": {
+    "n": 7458,
+    "brier_raw": 0.6815,
+    "brier_cal": 0.6507,
+    "brier_delta": -0.0309,
+    "ece_raw": 0.1511,
+    "ece_cal": 0.052,
+    "ece_delta": -0.0991,
+    "sharp_raw": 0.552,
+    "sharp_cal": 0.472,
+    "defect": false,
+    "verdict": "ECE-improved (sharpness trade)"
+  },
+  "v1": {
+    "n": 6525,
+    "brier_raw": 0.6475,
+    "brier_cal": 0.6781,
+    "brier_delta": 0.0306,
+    "ece_raw": 0.0751,
+    "ece_cal": 0.1058,
+    "ece_delta": 0.0308,
+    "sharp_raw": 0.53,
+    "sharp_cal": 0.535,
+    "defect": true,
+    "verdict": "DEFECT (worse Brier, no ECE gain)"
+  },
+  "v2": {
+    "n": 6525,
+    "brier_raw": 0.6238,
+    "brier_cal": 0.6524,
+    "brier_delta": 0.0286,
+    "ece_raw": 0.0133,
+    "ece_cal": 0.0576,
+    "ece_delta": 0.0443,
+    "sharp_raw": 0.481,
+    "sharp_cal": 0.479,
+    "defect": true,
+    "verdict": "DEFECT (worse Brier, no ECE gain)"
+  }
+}
