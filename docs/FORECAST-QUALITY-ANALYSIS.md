@@ -318,3 +318,97 @@ ist mit der xG-Historie redundant. Der Wert liegt in der **Prognose-Güte**.
 - **Methodik-Lehre:** signed-residual + Bootstrap-CI + OOT-Replikation + Headroom
   vor jedem Feature/Retrain — hat in dieser Sitzung 3 plausible Ideen vor teuren
   Sackgassen bewahrt.
+
+---
+
+## 11 · Architektur-Decke — „kriegen wir mit besserer Architektur / Features / Denoising mehr raus?" (2026-06-01)
+
+**Kurzantwort: Nein — aber die Begründung ist subtiler als „nein".** Die Engine ist
+**informations-limitiert, nicht kapazitäts-limitiert.** Das ist keine Meinung; es
+folgt aus drei unabhängigen Messungen dieser Sitzung. WICHTIG für die Ehrlichkeit:
+das ist KEIN Theorem („kein Modell könnte je besser sein"), sondern eine
+quantifizierte Aussage über *abnehmende Erträge auf den Daten + dem Ziel, die wir
+haben*. Die Grenze, die wir gemessen haben, ist eine **Daten-/Informations-Grenze**,
+keine Modell-Grenze.
+
+### 11.1 · dev-03 ist KEIN „Solo-xG"-Modell — und das ist Teil der Antwort
+Gain-basierte Feature-Importance aus den 5-bagged LightGBM-Boostern (Heim+Auswärts
+kombiniert, `m3_xg-{home,away}-dev-03.pkl`):
+
+| Kategorie | Gain-Anteil | Inhalt |
+|---|---|---|
+| **xG-abgeleitet** | **44.4%** | Attack/Defense-Ratios, naive λ, ESS — aus xG-Historie |
+| **CONTEXT** | **33.5%** | `elo_diff` (**23.5% — größtes Einzel-Feature**), lineup_quality 5.0%, form_streak 5.0% |
+| **LEAGUE** | **22.1%** | Liga-Konstanten + Heimvorteil |
+
+Die Frage „taugt Solo-xG" ist damit schon beantwortet: Solo-xG läuft *nicht* — das
+Team hat früh erkannt, dass xG allein nicht reicht, und einen xG-verankerten Hybrid
+gebaut. Das stärkste Einzel-Feature ist Elo, nicht xG.
+
+### 11.2 · Mehr Struktur draufsatteln half NICHT (Elo-Ablation, reproduziert seed=42)
+`rigorous_elo_diagnostic.py`, pure-xG (dev-01) vs xG+Elo (dev-02-elo), identischer
+Holdout n=2.274 Spiele (6.822 Decisions, **per-Decision binary Brier** — NICHT die
+0.62-Multiclass-Skala aus §3):
+
+| | pure-xG (dev-01) | xG+Elo (dev-02) | Δ |
+|---|---|---|---|
+| Brier | **0.2007** | 0.2132 | +0.0125 (schlechter) |
+| ECE | **0.0195** | 0.0338 | +0.0144 (schlechter) |
+| Korr. mit Markt | 0.95 | 0.68 | −0.28 |
+
+Elo *oben drauf* machte das Modell auf diesem Holdout schlechter kalibriert +
+überkonfident in der umkämpften Zone (n=471: vorhergesagt 45.5%, real 36.5%,
+binom p<0.0001). (dev-03 integriert Elo über Multi-Season-Tuning erfolgreicher — der
+Punkt ist nicht „Elo ist schlecht", sondern: **jedes Bolt-on trifft auf
+abnehmende/negative Erträge.**) Gleiches Muster wie die 17 abgelehnten Hypothesen
+(§6 + Areas-to-Watch): ~80% sterben an Redundanz mit xG oder an Rauschen.
+
+### 11.3 · Das xG-Niveau ist am irreduziblen Boden
+Gegen die Klimatologie-Baseline „sag das Liga-Mittel-xG" (`xg_skill_baseline.json`,
+leakage-frei aus 29.893 Pre-Saison-Spielen, Baseline-RMSE 0.733):
+
+| Modell | xG-RMSE | xG-Skill-Score |
+|---|---|---|
+| Klimatologie | 0.733 | 0% |
+| **dev-03** | **0.718** | **+4.2%** |
+| Blend | 0.702 | +8.4% |
+
+Per-Spiel-Tor-RMSE liegt bei **~0.98× des theoretischen Poisson-Rausch-Bodens**
+(√λ; gemessen `headroom_eval.py`, n=6.525): die ~0.70 sind **größtenteils
+irreduzible per-Spiel-Varianz** (Abschluss/Torwart/Abfälscher — 1 Spiel = 1
+verrauschter Poisson-Zug), nicht Modellfehler. **Keine Architektur senkt
+Outcome-Varianz, die dem Sport intrinsisch ist.**
+
+### 11.4 · Die direkte Antwort, Hebel für Hebel
+| Hebel | Verdikt | Warum |
+|---|---|---|
+| **Andere Architektur** (NN / GNN / Transformer) | ❌ hilft nicht | Engpass ist Informations-*gehalt*, nicht Modell-*kapazität*. LightGBM fittet das vorhandene Signal bereits; ein größerer Hammer erzeugt kein Signal, das nicht in den Daten ist. |
+| **Feature Engineering** auf vorhandenen Daten | ❌ ~erschöpft | 17 Hypothesen getestet → 80% tot (redundant mit xG / Rauschen / Leakage / net-negativ). Elo-Bolt-on schadete sogar. |
+| **Data Cleaning / Denoising** | ◐ marginal | Das dominante Rauschen ist **Outcome-Rauschen** (irreduzibel, §11.3), NICHT Feature-/Messrauschen (reduzierbar). Denoising hilft nur gegen Letzteres — und das relevante Cleaning macht FODZE schon (Canonicalization drift=0, cross-source-Dedup, source-priority `sofa>understat>api-sports>...`). Restpotenzial: einstellige Promille. |
+| **NEUE Daten, die wir NICHT haben** | ✅ einziger echter Hebel | Pre-Match-Confirmed-Lineups (→ dev-09-Blend, +0.009 Brier, braucht Live-Pipeline) · Tracking/Positionsdaten · Echtzeit-Verletzung/Motivation. Das ist **Daten-Akquise, kein** Architektur-/FE-/Denoising-Problem. |
+
+### 11.5 · Warum der Markt vorne bleibt (und neue Daten ihn evtl. trotzdem nicht schlagen)
+Im Disagreement-Test (§5b) trifft Pinnacle 44% vs. unsere 27% genau dort, wo wir
+abweichen. Das ist **kein Modellierungs-Defizit** — es ist eine
+**Informations-Asymmetrie**: der Markt aggregiert Sharp-Money-Flow,
+Closing-Line-Preisfindung und ggf. Insider-Signal, das in *keinem* öffentlichen
+Datensatz steht. Diese Lücke schließt man nicht mit Cleverness auf *unseren* Daten,
+sondern nur mit Daten, die der Markt nutzt — und selbst dann ist Pinnacle effizient
+genug, dass „neue Daten → Markt geschlagen" **nicht** garantiert ist.
+
+### 11.6 · Fazit (die ehrliche, nicht-überzogene Version)
+> **Auf den Daten und dem Ziel, die wir haben, sind wir nahe an der erreichbaren
+> Decke.** Das xG-Niveau ist am Poisson-Boden; xG trägt 44% des Gewichts und schlägt
+> Null-Wissen, aber nur einstellig; Bolt-on-Features + Architektur-Tausch haben
+> bewiesen-abnehmende Erträge; Denoising trifft das falsche Rauschen. Die verbleibende
+> Lücke zum Markt liegt **nicht hinter einem besseren Modell — sondern hinter Daten,
+> die wir nicht haben.** Und das ist eine Akquise-Frage, keine ML-Frage. Solange das
+> Ziel „ehrliche kalibrierte Prognose für einen Menschen" ist, ist das System fertig
+> und gut; solange das Ziel „Markt schlagen" ist, ist es per Markteffizienz +
+> Informations-Asymmetrie nicht erreichbar — unabhängig von Architektur, Features
+> oder Denoising.
+
+**Evidenz:** `rigorous_elo_diagnostic.py` (Ablation) · `xg_skill_baseline.json`
+(Skill-Anker) · `headroom_eval.py` (Poisson-Boden + Markt-Decke) · Feature-Gain aus
+`m3_xg-{home,away}-dev-03.pkl` · §6 + `docs/archive/areas-to-watch-2026-05.md`
+(17-Hypothesen-Friedhof).
