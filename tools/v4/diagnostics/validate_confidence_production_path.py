@@ -217,34 +217,60 @@ def main() -> int:
                        "tiers_blended_oddsSub": bl_sub,
                        "_raw": raw_p, "_bl": bl_p, "_y": y, "_odds": odds}
 
-    # ── verdict (25/26 PRIMARY): does the production-blended ≥65% tier hold the claim? ──
+    # ── verdict: is each shipped claim a sound CONSERVATIVE FLOOR across the
+    # full {season × display-path} grid? ──────────────────────────────────────
+    # The badge claim is a FLOOR, not a point estimate. The old check compared it
+    # to the SINGLE richest cell (25/26 blended) and fired "fix badge" whenever a
+    # claim sat below that peak — one-sided, and it pushed the claim toward
+    # over-stating every other cell. A floor is judged against the WHOLE spread:
+    # the four cells the badge can actually show a user are
+    #   {25/26, 24/25} × {blended (with-odds), raw-full (no-odds fallback)}.
+    # raw-full also IS the wired Blend engine's badge path (Benter touches only
+    # bets, not the display). A claim is a sound floor when it sits at/below the
+    # cross-season median and is not far above the worst cell.
+    def _cells(tier_label):
+        out = []
+        for s in ("25/26", "24/25"):
+            for key in ("tiers_blended_oddsSub", "tiers_raw_full"):
+                t = next((x for x in res[s][key] if x["tier"] == tier_label), None)
+                if t and t.get("accuracy") is not None:
+                    path = "blended(+odds)" if "blended" in key else "raw(no-odds)"
+                    out.append((f"{s} {path}", t["accuracy"]))
+        return out
+
+    def _judge(tier_label, claim_key):
+        claim = BADGE_CLAIM[claim_key]
+        cells = _cells(tier_label)
+        accs = sorted(a for _, a in cells)
+        if not accs:
+            return None, f"{claim_key}: no cells", cells, claim
+        lo, hi = accs[0], accs[-1]
+        med = float(np.median(accs))
+        # Floor is sound if: claim ≤ median + 1pp (not over-claiming the centre)
+        # AND claim ≥ worst cell − 5pp (not absurdly above the floor).
+        if claim > med + 0.01:
+            tag = "OVER-CLAIMS (claim > cross-season median)"
+        elif claim < lo - 0.05:
+            tag = "TOO CONSERVATIVE (well below worst cell)"
+        else:
+            tag = "HOLDS as conservative floor"
+        desc = (f"{claim_key} claim {claim:.0%} vs grid [{lo:.1%}…{hi:.1%}] "
+                f"median {med:.1%} (n={len(accs)} cells) → {tag}")
+        return tag.startswith("HOLDS"), desc, cells, claim
+
+    hi_ok, hi_desc, hi_cells, _ = _judge("≥65%", "≥65%")
+    mid_ok, mid_desc, mid_cells, _ = _judge("55-65%", "55-65%")
     pr = res["25/26"]
-    bl_hi = next(t for t in pr["tiers_blended_oddsSub"] if t["tier"] == "≥65%")
-    bl_mid = next(t for t in pr["tiers_blended_oddsSub"] if t["tier"] == "55-65%")
-    raw_hi = next(t for t in pr["tiers_raw_oddsSub"] if t["tier"] == "≥65%")
-
-    def _delta(tier_obj, claim_key):
-        if tier_obj["accuracy"] is None:
-            return None
-        return tier_obj["accuracy"] - BADGE_CLAIM[claim_key]
-
-    hi_d = _delta(bl_hi, "≥65%")
-    mid_d = _delta(bl_mid, "55-65%")
-    # Within ±0.05 of the shipped claim = badge holds on the production path.
-    hi_ok = hi_d is not None and abs(hi_d) <= 0.05
-    mid_ok = mid_d is not None and abs(mid_d) <= 0.05
     verdict = (
-        f"PRODUCTION-PATH CHECK (25/26, Benter-blended = what the badge shows): "
-        f"HOCH ≥65% hits {bl_hi['accuracy']:.1%} "
-        f"(claim 73%, Δ {hi_d:+.1%}, {'HOLDS' if hi_ok else 'OFF — fix badge'}); "
-        f"MITTEL 55-65% hits {bl_mid['accuracy']:.1%} "
-        f"(claim 53%, Δ {mid_d:+.1%}, {'HOLDS' if mid_ok else 'OFF — fix badge'}). "
-        f"Odds-coverage {pr['odds_coverage']:.0%} → blend applies to that share; "
-        f"the rest fall back to raw matrix probs. "
+        "PRODUCTION-PATH FLOOR CHECK (claim judged as a conservative floor across "
+        "{season × display-path} cells, NOT vs the single best cell). "
+        f"HOCH: {hi_desc}. MITTEL: {mid_desc}. "
         f"Blend {'IMPROVES' if pr['brier_blended_oddsSub'] < pr['brier_raw_oddsSub'] else 'worsens'} "
-        f"Brier ({pr['brier_raw_oddsSub']:.4f}→{pr['brier_blended_oddsSub']:.4f}). "
-        f"NOTE: isotonic is NOT applied to the display mk (Track-B/Kelly only) — "
-        f"the only display-path transform is this Benter blend."
+        f"Brier 25/26 ({pr['brier_raw_oddsSub']:.4f}→{pr['brier_blended_oddsSub']:.4f}). "
+        "NOTE: isotonic is NOT on the display path (Track-B/Kelly only); the only "
+        "display-path transform is the Benter blend, and the no-odds fallback + "
+        "the wired Blend engine show the RAW λ probs — so the floor must hold on "
+        "BOTH paths, which is why it is anchored below the with-odds peak."
     )
     print("\n" + "─" * 76)
     print(f"  VERDICT: {verdict}")
@@ -254,6 +280,11 @@ def main() -> int:
     out["verdict"] = verdict
     out["hochTier_holds"] = bool(hi_ok)
     out["mittelTier_holds"] = bool(mid_ok)
+    # The full grid the floor was judged against (auditable, drift-proof).
+    out["floor_grid"] = {
+        "HOCH": {label: acc for label, acc in hi_cells},
+        "MITTEL": {label: acc for label, acc in mid_cells},
+    }
     (D / "validate_confidence_production_path.json").write_text(json.dumps(out, indent=2, default=float))
 
     # ── figure: raw vs blended tier accuracy, 25/26 odds-covered ──

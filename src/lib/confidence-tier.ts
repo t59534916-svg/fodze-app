@@ -11,10 +11,24 @@
 // tools/v4/diagnostics/validate_confidence_production_path.py.
 //
 // The `claim` values are CONSERVATIVE FLOORS — the Benter blend IMPROVES Brier
-// (0.619→0.604) and lifts the HOCH tier to ~76% mean (25/26 78.7% · 24/25
-// 73.5% OOT); MITTEL/NIEDRIG/TOSS-UP hold within ±3pp of their claim. CORE
+// (0.619→0.604); MITTEL/NIEDRIG/TOSS-UP hold within ±3pp of their claim. CORE
 // MESSAGE: only HOCH (≥65%) is clearly above-average; below it is only just
 // over 50%. Validated 2026-05-28, see docs/FORECAST-QUALITY-ANALYSIS.md.
+//
+// HOCH=0.73 IS THE CROSS-SEASON FLOOR — DO NOT RAISE IT (re-validated
+// 2026-06-01, validate_confidence_production_path.py). The full HOCH grid across
+// {season} × {display path} is:
+//        25/26 blended(+odds) 78.7%  ·  25/26 raw(no-odds) 73.7%
+//        24/25 blended(+odds) 73.5%  ·  24/25 raw(no-odds) 68.9%
+//   → mean 73.7% · median 73.6% · MIN 68.9% (24/25 raw OOT).
+// 0.73 is the median and the with-odds cross-season floor (min 73.5%). The
+// 78.7% is the SINGLE BEST CELL (25/26 + odds only) — a diagnostic verdict that
+// reads "HOCH 78.7% > claim → fix badge" is ONE-SIDED (it checks only that one
+// cell). Raising the claim to ~76% would OVER-claim three of four cells: the
+// no-odds fallback path (73.7%/68.9%), the wired Blend engine (shows the RAW
+// λ-blend — Benter touches only bets, not the badge), and the whole 24/25
+// cross-season holdout. The badge is honest precisely because 0.73 sits at the
+// central/floor of the spread, not at its peak.
 //
 // ALSO VALIDATED FOR THE λ-BLENDS (2026-05-31, blend_confidence_calibration.py):
 // the wired "Blend (dev-03⊕v2)" engine shows the RAW λ-blend as its badge mk
