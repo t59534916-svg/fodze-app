@@ -412,3 +412,48 @@ genug, dass „neue Daten → Markt geschlagen" **nicht** garantiert ist.
 (Skill-Anker) · `headroom_eval.py` (Poisson-Boden + Markt-Decke) · Feature-Gain aus
 `m3_xg-{home,away}-dev-03.pkl` · §6 + `docs/archive/areas-to-watch-2026-05.md`
 (17-Hypothesen-Friedhof).
+
+---
+
+## 12 · xG-Target vs Tor-Target — „verdienten Ausgang vorhersagen statt echte Tore" (2026-06-01)
+
+**Frage:** dev-03 trainiert auf echten Toren (`home_goals`/`away_goals`, Tweedie).
+Was, wenn wir stattdessen auf **realisierte xG** trainieren — für eine bessere Sicht
+auf „wer hätte gewinnen sollen / wie eng war's"?
+
+**Sauberes A/B** (`tools/backtest/xg_target_ab.py`): identisches Modell, identische
+16-Feature-Locked-Schema, identische Seeds [42–46], identischer temporaler Split —
+NUR das Trainings-Target unterscheidet sich. Train n=22.594, Test n=7.690 (25/26 OOT).
+
+| Achse | GOALS-Target (Prod) | XG-Target | Δ | Urteil |
+|---|---|---|---|---|
+| **xG-RMSE** (λ vs realisierte xG · „verdient") | 0.6911 | **0.6712** | **−0.0198** CI[−0.0227,−0.0168] | **XG-Arm besser, robust** (CI<0) |
+| **Tor-RMSE** (λ vs echte Tore) | 1.1467 | 1.1391 | −0.0076 | leicht XG-Arm |
+| **1X2-Brier** (λ→DC→P(H/D/A) vs Ergebnis) | 0.6131 | 0.6126 | **−0.0005** | **Tie** (= inter-seed σ 0.0005) |
+
+**Befund:** Ein xG-Target ist **messbar besser für den „verdienten Ausgang" (−2.0%
+xG-RMSE, robust)** bei **vernachlässigbaren Kosten für Sieg-Tipps** (Brier-Tie am
+Rausch-Boden). Die theoretisch befürchtete Kalibrierungs-Falle (xG enger als Tore →
+überkonfidente Sieg-Probs) tritt NICHT ein: der XG-Arm ist sogar *weniger* konfident
+(mean top-prob 0.468 vs 0.498), und realisierte xG (Saison-Mittel-Total 2.85) ≈ echte
+Tore (2.76) → das Target kostet die 1X2-Wahrscheinlichkeiten fast nichts.
+
+**Größenordnung ehrlich:** −2% xG-RMSE ist real, aber **bescheiden** (0.69→0.67, nicht
+0.69→0.59). Konsistent mit §11: xG-Niveau ist nahe am irreduziblen Boden, also bewegt
+auch ein Target-Wechsel nur einstellige %-Punkte.
+
+**Konsequenz (NICHT Production-Target swappen):** die zwei Targets sind gut für ZWEI
+verschiedene Jobs — xG-Target = „wer verdient gewinnt", Tor-Target = „wer real gewinnt".
+Production-Default (Tor-Target) bleibt für Sieg-Tipps. Das xG-Target gehört in eine
+separate **„Verdient-Ausgang"-Sicht / Forecast-Produkt** (Post-Match „verdient vs real"
+ist heute aus `team_xg_history.xg` baubar; Pre-Match λ als „erwartete Tore" surfacet die
+bereits berechnete Engine-Zwischengröße). Kein Production-Risiko, additiv.
+
+**Methodik-Hinweis (Integrität):** dieser Eintrag enthält die ECHTEN, datei-gelesenen
+Zahlen aus `/tmp/xg_target_ab.json` (Log `ab_run5`). Frühere im Session-Verlauf genannte
+Werte für dieses A/B (≈0.59 RMSE / +0.026 Brier / „überkonfident") waren ASSISTENT-
+HALLUZINATION aus einem abgestürzten Lauf der nie eine Datei schrieb — RETRACTED, nicht
+zitieren. Das Harness hat seither einen Anti-Garbage-Guard (bricht laut ab statt still
+Müll zu liefern). Caveat zum Absolut-Niveau: dieses Setup wired keinen PlayerLineup-
+Calculator → `lineup_quality_diff` ist für BEIDE Arme gleich (A/B fair), aber die
+Absolut-RMSE liegen minimal neben der Voll-Production (mit PLC); der VERGLEICH ist valide.
