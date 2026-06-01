@@ -457,3 +457,85 @@ zitieren. Das Harness hat seither einen Anti-Garbage-Guard (bricht laut ab statt
 Müll zu liefern). Caveat zum Absolut-Niveau: dieses Setup wired keinen PlayerLineup-
 Calculator → `lineup_quality_diff` ist für BEIDE Arme gleich (A/B fair), aber die
 Absolut-RMSE liegen minimal neben der Voll-Production (mit PLC); der VERGLEICH ist valide.
+
+---
+
+## 13 · „Wege zu genaueren Signalen" — zwei Kandidaten geprüft, BEIDE liefern keine Zusatz-Genauigkeit (2026-06-01)
+
+**Frage:** gibt es Wege zu *genaueren Signalen* jenseits der in §11 gedeckelten Punkt-
+Prognose? Zwei konkrete Kandidaten rigoros gemessen + validiert (rein historisch,
+Sommerpause irrelevant). **Ergebnis: beide liefern KEINE zusätzliche Genauigkeit** —
+dritte unabhängige Bestätigung der §11-These (informations-, nicht modell-limitiert).
+
+### 13.1 · Weg 1 — Ensemble-Varianz als Selektions-Signal → REJECTED
+dev-03 berechnet pro Match eine **Ensemble-Varianz** (Streuung der 5 gebaggten Modelle,
+`expected_{home,away}_lambda_var`, schon in `public/dev03-model.json` exportiert, fließt
+in Kelly-Shrinkage, aber NICHT in die Confidence-/Selektions-Logik). Hypothese: „niedrige
+Varianz = Modelle einig = verlässlicher" → schärferes Hoch-Konfidenz-Set.
+
+Gemessen (`tools/backtest/variance_gated_selection.py`, dev-03-goals-Ensemble, train
+n=22.746 → OOT n=7.704; echte Zahlen aus `/tmp/variance_gated_selection.json`):
+
+| Test | Ergebnis |
+|---|---|
+| HOCH-Tier (top_prob≥0.65, n=902) nach Median-Varianz | low-var **69.4%** vs high-var **74.3%** Treffer — **falsches Vorzeichen** |
+| Gap (low−high) | **−4.9pp**, CI [−10.9, +1.1] → nicht robust |
+| corr(Varianz, Treffer) | **+0.089** (positiv = mehr Varianz → *mehr* Treffer) |
+| equal-coverage (top 5/10/25%) var-aware vs prob-only | **−0.9 bis −1.3pp schlechter** durchweg |
+| **partial corr(Varianz, Treffer \| top_prob)** | **+0.016 ≈ 0** |
+
+**Mechanismus (gemessen, nicht behauptet):** corr(Varianz, total_λ) = **+0.444** — die
+Varianz ist ein verrauschter Proxy für λ-Magnitude (klare Favoriten/torreiche Spiele
+streuen absolut mehr über die Modelle), die `top_prob` bereits besser einfängt. Kontrol-
+liert man für `top_prob`, kollabiert das Varianz-Signal auf +0.016. **Verdikt: wertlos
+bis schädlich als Selektions-Achse. `top_prob` allein bleibt richtig.** Gleiches Muster
+wie der 17-Hypothesen-Friedhof (§6): plausibler zweiter Kanal, der sich als redundant-
+mit-Rauschen entpuppt.
+
+### 13.2 · Weg 2 — engere/aggregiertere Märkte → mein „schärfer"-Claim FALSIFIZIERT
+Hypothese: 1X2 erbt das volle Poisson-Tor-Rauschen; aggregiertere Märkte (Ü/U, BTTS,
+Doppelte Chance) könnten höheren Skill-über-Null-Wissen (BSS) tragen.
+
+Gemessen (`tools/backtest/market_sharpness.py`, 25/26 OOT n=6525, BSS vs per-Liga-Basisrate;
+unabhängig per Hand reproduziert, 4 Dezimalstellen identisch):
+
+| Markt | BSS | Diskriminierungs-Spread (top−bottom Tercil) |
+|---|---|---|
+| **DC-X2** (nicht-Heimsieg) | +0.0581 | +0.243 |
+| **DC-1X** (nicht-Auswärtssieg) | +0.0531 | +0.219 |
+| **1X2** (Baseline) | +0.0393 | (1X-home: +0.243) |
+| DC-12 (kein Remis) | +0.0008 | +0.041 |
+| Ü/U 2.5 | −0.0041 | +0.096 |
+| BTTS | −0.0078 | — |
+
+**⚠ Zwischenzeitlicher Assistant-Claim „DC-X2 ist das schärfste Signal" → ZURÜCKGEZOGEN
++ FALSIFIZIERT.** Zwei Fehler, beim Double-Check (user-initiiert) aufgedeckt:
+- **Tautologie:** der „Beleg" via gleichem Tercile-Spread war zirkulär — `P(X2) ≡ 1−P(H)`
+  exakt (100% Index-Overlap), die Spreads MÜSSEN per Algebra gleich sein, beweist nichts.
+- **Coarsening-Beweis (der korrekte, stärkere Grund):** DC-X2 = P(D)+P(A) ist eine
+  **deterministische Vergröberung** des 1X2-Vektors → kann mathematisch **keine Information
+  hinzufügen**, nur den D-vs-A-Split verwerfen. DC ist also **beweisbar kein genaueres
+  Signal**; der höhere BSS ist ein 3-Klassen-vs-binär-Skalen-Artefakt (binär ist leichter
+  zu kalibrieren), kein Skill. BSS ist NICHT partitions-invariant → ein markt-übergreifendes
+  BSS-Ranking ist KEIN sauberes Skill-Ranking.
+
+**Echter Rest-Befund (gültig):** Ü/U + BTTS + DC-12 tragen ~null Diskriminierung (Spread
+0.04–0.10) — die Tor-/Remis-Achsen sind signal-arm, konsistent mit §11 + §5b. Das einzige
+robuste Diskriminierungs-Signal ist die **Heim-Stärke-Achse** (Spread +0.243), die 1X2
+bereits voll enthält.
+
+### 13.3 · Fazit
+> Beide geprüften „genauere-Signal"-Wege scheitern: Varianz-Gating ist Rauschen
+> (partial corr +0.016, validiert), engere Märkte/DC sind dasselbe 1X2-Signal in anderer
+> Verpackung (Coarsening-Beweis). **Genauigkeit kommt nicht aus Re-Framing vorhandener
+> Outputs — sie ist durch den Informationsgehalt der Daten gedeckelt (§11).** DC bleibt
+> als reine *Darstellungs*-Option legitim („X verliert nicht: 69%" ist als Binär besser
+> kalibriert zu zeigen), aber das ist Präsentation, nicht Genauigkeit.
+
+**Methodik-Lektion (verstärkt §12):** der user-initiierte „validate first" deckte einen
+übertriebenen Assistant-Claim auf, der schon ausgesprochen war (DC „schärfstes Signal").
+Zahlen waren korrekt; die Interpretation war zweimal zu großzügig. Lehre: BSS über
+verschiedene Outcome-Partitionen NICHT als Skill-Ranking lesen; Coarsenings können nie
+Information addieren; jeden Selektions-Kandidaten partial gegen das bestehende Signal
+kontrollieren. **Evidenz:** `variance_gated_selection.py` + `market_sharpness.py` (beide
+mit Anti-Garbage-Guard; Logs == JSONs verifiziert; DC-X2/1X2-BSS unabhängig handgerechnet).
