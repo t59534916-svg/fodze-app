@@ -11,6 +11,7 @@ import { useApp } from "@/contexts/AppContext";
 import { analyzeLineMovement, getCorrectScores, getHtFt, getWinningMargin, getGoalBothHalves, vigAdjustBest } from "@/lib/dixon-coles";
 import { color } from "@/styles/tokens";
 import { confidenceTier, type ConfTierKey } from "@/lib/confidence-tier";
+import { deservedPicture } from "@/lib/deserved-outcome";
 import type { RawMatch, MatchCalc, OddsData, OddsSnapshot, BetCalc } from "@/types/match";
 
 const pc = (v: number) => (v * 100).toFixed(1) + "%";
@@ -399,6 +400,31 @@ function TabOverview({ match, calc, budget, onPlaceBet, placingBet, league, odds
             <div style={{ width: `${calc.mk.D * 100}%`, background: `${color.goldMid}60`, borderRadius: 5 }} />
             <div style={{ width: `${calc.mk.A * 100}%`, background: `linear-gradient(90deg, ${color.warn}, #a04040)`, borderRadius: 5 }} />
           </div>
+
+          {/* Erwartetes Bild — die Engine-λ (erwartete Tore) als "verdienter
+              Ausgang"-Lesart. PRÄSENTATION des bereits berechneten Signals, KEINE
+              genauere Prognose (docs/FORECAST-QUALITY-ANALYSIS.md §12/§13): λ ist
+              dieselbe Information wie die Wkt-Leiste, als erwartete Tore ausgedrückt
+              — "wie das Modell das Duell sieht", nicht eine Score-Vorhersage. */}
+          {(() => {
+            const d = deservedPicture(calc.lambdaH, calc.lambdaA);
+            const hueFor = d.side === "home" ? color.value : d.side === "away" ? color.warn : color.goldMid;
+            return (
+              <div title="Erwartetes Bild = die vom Modell erwarteten Tore je Team (λ, Dixon-Coles). Das ist die GLEICHE Information wie die Wahrscheinlichkeits-Leiste, nur als erwartete Tore ausgedrückt — wer hätte verdient gewinnen sollen und wie eng. KEINE Vorhersage des echten Ergebnisses (das trägt unvermeidbares Zufalls-Rauschen)."
+                   style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 10, color: `${color.goldMid}70`, letterSpacing: 0.5, fontWeight: 600 }}>ERWARTETES BILD</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: color.value }}>{d.homeXg.toFixed(1)}</span>
+                <span style={{ fontSize: 10, color: `${color.goldMid}60` }}>erwartete Tore</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: color.warn }}>{d.awayXg.toFixed(1)}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: hueFor, background: `${hueFor}1a`, border: `1px solid ${hueFor}33`, borderRadius: 6, padding: "2px 8px" }}>
+                  {d.label}
+                </span>
+                <span style={{ fontSize: 10, color: `${color.goldMid}55` }}>
+                  {d.total >= 3.0 ? "torreich erwartet" : d.total <= 2.0 ? "torarm erwartet" : "mittlere Tor-Erwartung"}
+                </span>
+              </div>
+            );
+          })()}
         </div>
       )}
 
